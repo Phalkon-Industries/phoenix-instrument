@@ -1,0 +1,6 @@
+{
+    "script": "addons/misra.py",
+    "args": [
+        "--rule-texts=formatted-misra.txt"
+    ]
+}
