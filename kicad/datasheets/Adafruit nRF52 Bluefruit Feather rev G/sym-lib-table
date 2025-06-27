@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 0)
+  (lib (name "Adafruit nRF52 Bluefruit Feather rev G-eagle-import")(type "KiCad")(uri "${KIPRJMOD}/Adafruit nRF52 Bluefruit Feather rev G-eagle-import.kicad_sym")(options "")(descr ""))
+)

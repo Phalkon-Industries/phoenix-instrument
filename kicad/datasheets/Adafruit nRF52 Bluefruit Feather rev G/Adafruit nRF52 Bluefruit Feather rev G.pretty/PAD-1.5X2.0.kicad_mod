@@ -1,0 +1,107 @@
+(footprint "PAD-1.5X2.0"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "1.5 x 2.0mm SMT pad (no solder paste)")
+	(property "Reference" "REF**"
+		(at 1.1 0 0)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "934320f7-2530-44bb-905c-50da007604a4")
+		(effects
+			(font
+				(size 0.666496 0.666496)
+				(thickness 0.146304)
+			)
+			(justify left bottom)
+		)
+	)
+	(property "Value" "PAD-1.5X2.0"
+		(at 1.1 0.7 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "d971f060-4613-483b-8002-19fe13d7db9a")
+		(effects
+			(font
+				(size 0.36576 0.36576)
+				(thickness 0.04064)
+			)
+			(justify left bottom)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "8864e344-f965-4e44-b267-418b6d1fdf19")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "c4dd3926-3084-44fe-8913-dc703eb1f17e")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(fp_line
+		(start -0.95 -1.2)
+		(end 0.95 -1.2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "291c3512-53d0-4a70-a4a8-d5a72c2b860f")
+	)
+	(fp_line
+		(start -0.95 1.2)
+		(end -0.95 -1.2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "c8e741ee-e223-4cfd-9070-36179f0f4369")
+	)
+	(fp_line
+		(start 0.95 -1.2)
+		(end 0.95 1.2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "f628379d-de34-47f6-b5ec-d65e8e4603d4")
+	)
+	(fp_line
+		(start 0.95 1.2)
+		(end -0.95 1.2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "ea629b28-ea54-4a15-9ffc-9f07419ea0d8")
+	)
+	(pad "P$1" smd rect
+		(at 0 0)
+		(size 1.5 2)
+		(layers "F.Cu" "F.Mask")
+		(solder_mask_margin 0.0508)
+		(solder_paste_margin 0)
+		(thermal_bridge_angle 0)
+		(uuid "2338b2fb-c5c9-4e04-8949-979d13a44f2b")
+	)
+	(embedded_fonts no)
+)
