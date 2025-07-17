@@ -1,7 +1,7 @@
 (footprint "Adafruit Feather nrf52840 Express"
-	(version 20240108)
+	(version 20241229)
 	(generator "pcbnew")
-	(generator_version "8.0")
+	(generator_version "9.0")
 	(layer "F.Cu")
 	(property "Reference" "REF**"
 		(at 1.143673 -1.025307 0)
@@ -20,19 +20,6 @@
 		(unlocked yes)
 		(layer "F.Fab")
 		(uuid "a1e3c6d4-1f50-424e-ab81-99771a0ff51c")
-		(effects
-			(font
-				(size 1 1)
-				(thickness 0.15)
-			)
-		)
-	)
-	(property "Footprint" ""
-		(at 1.143673 -0.525307 0)
-		(unlocked yes)
-		(layer "F.Fab")
-		(hide yes)
-		(uuid "71188429-0df5-478e-864a-a3c23bf5d009")
 		(effects
 			(font
 				(size 1 1)
@@ -74,7 +61,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "037ba3f8-9170-4ac5-9709-4703a00cde7c")
 	)
 	(fp_line
@@ -84,7 +71,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "cec8d055-533c-4edd-8ad3-89aca4974d1c")
 	)
 	(fp_line
@@ -94,7 +81,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "d4585b91-4e8b-4298-a227-2a1eb4cb557e")
 	)
 	(fp_line
@@ -104,7 +91,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "f4460656-e66c-494a-aee5-cbc3138e15e2")
 	)
 	(fp_line
@@ -114,7 +101,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "75a54ad9-fe48-4ae7-95f3-9c37e4d18e36")
 	)
 	(fp_line
@@ -124,7 +111,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "d4e142be-bed4-47ec-9386-4d00ff13260d")
 	)
 	(fp_line
@@ -134,7 +121,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "3cf868a9-6d93-479a-be45-85535b7e2c9d")
 	)
 	(fp_line
@@ -144,7 +131,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "3d9effeb-a4f2-4a56-8e2f-88596173d04a")
 	)
 	(fp_arc
@@ -155,7 +142,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "a7d5fb7c-7237-4227-83b9-f3a625434ddb")
 	)
 	(fp_arc
@@ -166,7 +153,7 @@
 			(width 0.05)
 			(type solid)
 		)
-		(layer "Edge.Cuts")
+		(layer "F.SilkS")
 		(uuid "92f0f891-005b-4572-9aa6-981f55fc1e81")
 	)
 	(fp_text user "${REFERENCE}"
@@ -180,20 +167,6 @@
 				(thickness 0.15)
 			)
 		)
-	)
-	(pad "" np_thru_hole circle
-		(at 20.67 -7.23)
-		(size 2.54 2.54)
-		(drill 2.54)
-		(layers "*.Cu" "*.Mask")
-		(uuid "961efcda-1a32-4fde-bee6-8f06e2ac9f59")
-	)
-	(pad "" np_thru_hole circle
-		(at 20.67 10.55)
-		(size 2.54 2.54)
-		(drill 2.54)
-		(layers "*.Cu" "*.Mask")
-		(uuid "cc1969b0-56ad-4b8d-8ce7-a74d9ec2e19a")
 	)
 	(pad "1" thru_hole circle
 		(at -21.24 11.82)
@@ -475,24 +448,5 @@
 		(thermal_bridge_angle 0)
 		(uuid "28723f3c-efea-40d0-9b59-623cbb6e4f6a")
 	)
-	(pad "P$1" thru_hole circle
-		(at -25.05 -7.23)
-		(size 3.81 3.81)
-		(drill 2.5)
-		(layers "*.Cu" "*.Mask")
-		(remove_unused_layers no)
-		(solder_mask_margin 0.0508)
-		(thermal_bridge_angle 0)
-		(uuid "7df58ab9-bf8b-4c00-bc70-9b11d60641e5")
-	)
-	(pad "P$2" thru_hole circle
-		(at -25.05 10.55)
-		(size 3.81 3.81)
-		(drill 2.5)
-		(layers "*.Cu" "*.Mask")
-		(remove_unused_layers no)
-		(solder_mask_margin 0.0508)
-		(thermal_bridge_angle 0)
-		(uuid "ee35883b-420c-4cc6-852e-c8ed849f6cd9")
-	)
+	(embedded_fonts no)
 )
