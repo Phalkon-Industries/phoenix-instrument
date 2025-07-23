@@ -5258,7 +5258,7 @@
 	)
 	(text "For this version, will use onboard battery charger of feather, and its simple\nbattery voltage monitor to account for charge. I can go fancier some other time if \nit seems actually necessary.\n\n\n"
 		(exclude_from_sim no)
-		(at 233.934 40.64 0)
+		(at 229.87 30.48 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5275,16 +5275,6 @@
 			)
 		)
 		(uuid "1403daf3-cac6-42e0-9f2f-d33082230915")
-	)
-	(text "Goals for this iteration\nPeople can hand solder it if they need to. \nThis could be like the \"basic\" version of the instrument, and I could follow it up with a \"pro\" model later\n"
-		(exclude_from_sim no)
-		(at 226.822 21.336 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "349da1db-cf94-464d-a9e3-b4662e08cffe")
 	)
 	(text "Photodiode Amplification"
 		(exclude_from_sim no)
@@ -5318,7 +5308,7 @@
 	)
 	(text "thinking I'm just gonna use mcp3561 on this guy. 24 bit, $3, and high sample rate with low temp drift. \nI think it's our best best for starting out simple"
 		(exclude_from_sim no)
-		(at 225.806 32.512 0)
+		(at 225.552 19.05 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -8600,6 +8590,16 @@
 		)
 		(uuid "626e8be0-8732-4c82-a0bb-90a318700715")
 	)
+	(label "NO1"
+		(at 50.8 246.38 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "65510089-3a74-4b89-857b-d5504cbea626")
+	)
 	(label "CH2"
 		(at 330.2 95.25 180)
 		(effects
@@ -8740,6 +8740,16 @@
 		)
 		(uuid "c4eae11f-361d-43fd-82d3-518909582b43")
 	)
+	(label "NO0"
+		(at 59.69 242.57 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "c50a157a-4f30-4804-b521-2dc5447032b4")
+	)
 	(label "SDA"
 		(at 250.19 233.68 180)
 		(effects
@@ -8839,6 +8849,26 @@
 			(justify right bottom)
 		)
 		(uuid "ed8aa771-fe1b-4045-8c12-33e4c24a6c92")
+	)
+	(label "NO2"
+		(at 49.53 250.19 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "ef30de23-f826-4fda-9623-45faccf651e7")
+	)
+	(label "CSOURCE"
+		(at 60.96 231.14 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "f3c8e181-f89c-48bd-b93a-19b98577e06c")
 	)
 	(label "EnablePower"
 		(at 33.02 187.96 0)
