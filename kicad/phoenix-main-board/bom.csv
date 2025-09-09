@@ -1,0 +1,30 @@
+Reference,Value,Datasheet,Footprint,Qty,DNP,Mfr Part Number Chosen
+"C4,C5,C7,C8,C12,C13,C19,C20,C25",100nF,~,Capacitor_SMD:C_0603_1608Metric,9,,CL10B104KB8NNWC
+"C6,C21,C23,C24",10uF,~,Capacitor_SMD:C_0603_1608Metric,4,,0603X106M100CT
+"C9,C18",4.7uF,~,Capacitor_SMD:C_0603_1608Metric,2,,CL10A475KP8NNNC
+C22,22uF,~,Capacitor_SMD:C_0603_1608Metric,1,,GRM188R61A226ME15D
+"C26,C27",1uF,~,Capacitor_SMD:C_0603_1608Metric,2,,CL10B105KO8NNNC
+D1,GreenLED,~,LED_THT:LED_D5.0mm_Horizontal_O1.27mm_Z3.0mm,1,x,x
+D2,BlueLED,~,LED_THT:LED_D5.0mm_Horizontal_O1.27mm_Z3.0mm,1,x,x
+FB1,120ohm@100MHz,~,Resistor_SMD:R_0603_1608Metric,1,,BLM18KG121TN1D
+L1,4.7uH,~,Inductor_SMD:L_0603_1608Metric,1,,LQM18PN4R7MFRL
+"PD1,PD2",Photodiode,~,LED_THT:LED_D5.0mm_Horizontal_O1.27mm_Z3.0mm,2,,already have a few
+"R1,R2",2K,~,Resistor_SMD:R_0603_1608Metric,2,,RC0603JR-072KL
+R3,175,~,Resistor_SMD:R_0603_1608Metric,1,,RC0603FR-07174KL
+"R4,R5,R6,R7,R8,R9,R10,R11,Rout1",10,~,Resistor_SMD:R_0603_1608Metric,9,,ERJ-3EKF10R0V
+"R12,R21,R22,R23,R24",10k,~,Resistor_SMD:R_0603_1608Metric,5,,RMCF0603FT10K0
+"R15,R16",100,~,Resistor_SMD:R_0603_1608Metric,2,,RMCF0603FT100R
+"RFB5,RFB6",0,~,Resistor_SMD:R_0603_1608Metric,2,,RC0603JR-070RL
+Rset1,20k,~,Resistor_SMD:R_0603_1608Metric,1,,RC0603FR-0720KL
+TH1,Sample Thermistor,~,Connector_Wire:SolderWire-0.1sqmm_1x02_P3.6mm_D0.4mm_OD1mm_Relief,1,,already have a few
+TH2,EnclosureThermistor,~,Resistor_SMD:R_0603_1608Metric,1,,NCU18XH103F6SRB
+"TP1,TP2,TP3,TP4,TP5,TP9,TP10,TP11,TP12,TP13,TP14,TP15,TP16,TP17,TP18,TP19,TP20,TP23,TP24,TP25,TP26,TP27,TP31,TP32,TP33,TP34,TP36,TP37",TestPoint_Small,~,TestPoint:TestPoint_Keystone_5000-5004_Miniature,28,,5001
+U1,LT3092xDD,https://www.analog.com/media/en/technical-documentation/data-sheets/3092fc.pdf,Package_DFN_QFN:DFN-8-1EP_3x3mm_P0.5mm_EP1.66x2.38mm,1,,LT3092EDD#TRPBF
+U2,LM7705,http://www.ti.com/lit/ds/symlink/lm7705.pdf,Package_SO:VSSOP-8_3x3mm_P0.65mm,1,,LM7705MMX/NOPB
+U3,Adafruit_Feather_nrf52840_Express,,#NAME?,1,,already have a few
+U4,MCP3564,,Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm,1,,MCP3564RT-E/ST
+U5,TS5A3359,,Package_SO:VSSOP-8_2.3x2mm_P0.5mm,1,,TS5A3359DCUR
+U6,TPS61222DCK,http://www.ti.com/lit/ds/symlink/tps61220.pdf,Package_TO_SOT_SMD:Texas_R-PDSO-G6,1,,TPS61222DCKR
+U7,OPA2380,,Package_SO:MSOP-8_3x3mm_P0.65mm,1,,OPA2380AIDGKR
+U8,TPS7A2033DQN,https://www.ti.com/lit/ds/symlink/tps7a20.pdf,Package_TO_SOT_SMD:SOT-23-5,1,,TPS7A2033PDBVR
+U9,AD5242,,Package_SO:TSSOP-16_4.4x5mm_P0.65mm,1,,AD5242BRUZ10

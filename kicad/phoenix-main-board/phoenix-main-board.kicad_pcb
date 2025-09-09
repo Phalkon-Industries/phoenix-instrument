@@ -105,6 +105,7 @@
 		(pad_to_mask_clearance 0)
 		(allow_soldermask_bridges_in_footprints no)
 		(tenting front back)
+		(aux_axis_origin 33.5 74.5)
 		(grid_origin 30 20)
 		(pcbplotparams
 			(layerselection 0x00000000_00000000_55555555_5755f5ff)
@@ -144,7 +145,7 @@
 			(mirror no)
 			(drillshape 0)
 			(scaleselection 1)
-			(outputdirectory "")
+			(outputdirectory "./output")
 		)
 	)
 	(net 0 "")
@@ -2797,9 +2798,10 @@
 		(layer "F.Cu")
 		(uuid "25f7f965-e29a-464b-b83e-611ab0cbf9f7")
 		(at 135 58)
-		(property "Reference" ""
+		(property "Reference" "FID3"
 			(at 1.5 -1 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "885f5395-28d2-4f4a-abb9-23346a52ddf8")
 			(effects
 				(font
@@ -8035,9 +8037,10 @@
 		(layer "F.Cu")
 		(uuid "4b358f62-9468-4d7f-b759-bf1cfbf985c1")
 		(at 38.5 75)
-		(property "Reference" ""
+		(property "Reference" "FID2"
 			(at 1.5 -1 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "2b31d2da-6d19-4e7f-8df3-ad2f2671a1e2")
 			(effects
 				(font
@@ -12867,7 +12870,7 @@
 		(at 40 23.5)
 		(descr "Circular Fiducial, 1mm bare copper, 2mm soldermask opening (Level A)")
 		(tags "fiducial")
-		(property "Reference" "REF**"
+		(property "Reference" "FID1"
 			(at 0 -2 0)
 			(layer "F.SilkS")
 			(hide yes)
