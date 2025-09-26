@@ -7,7 +7,7 @@
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
-#include <variant.h> //Pin efinitions and stuff
+#include <variant.h> //Pin definitions and stuff
 
 // ADC Chip select (MCP3564)
 #define PIN_ADC_CS 13
