@@ -22,7 +22,14 @@
 #define PIN_IRQ 9
 
 // LED path control
-#define PIN_IN1 17
-#define PIN_IN2 18
+#define TS5A3359_IN1 17
+#define TS5A3359_IN2 18
+/* Function table for TS5A3359
+IN2 IN1 OUT
+L   L   Off
+L   H   NO0(LED1)
+H   L   NO1(LED2)
+H   H   NO2(Drain)
+*/
 
 #endif  // MAIN_HPP
