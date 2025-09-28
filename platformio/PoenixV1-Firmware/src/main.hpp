@@ -4,10 +4,13 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
+#include "MCP356x.h"
+#include <AD524x.h>
+#include <Adafruit_NeoPixel.h>
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
-#include <Adafruit_NeoPixel.h>
-#include <variant.h> //Pin definitions and stuff
+#include <SPI.h>
+#include <variant.h>  //Pin definitions and stuff
 
 // ADC Chip select (MCP3564)
 #define PIN_ADC_CS 13
@@ -19,7 +22,7 @@
 #define PIN_THERMISTOR_ON 11
 
 // IRQ pin
-#define PIN_IRQ 9
+#define PIN_ADC_IRQ 9
 
 // LED path control
 #define TS5A3359_IN1 17
