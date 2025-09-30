@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 // ===================== Device Register Addresses (logical) =====================
 // Address space 0x0..0xF (see detailed spec notes). Incremental read wraps 0xF->0x0,
@@ -68,8 +69,66 @@
 #define MCP356X_ERR_NOT_INITIALIZED    -5
 
 // ===================== Minimal Public API =====================================
+// These helpers intentionally mirror the datasheet command encodings and expose
+// only the functionality we actively exercise in tests. Each call assumes the
+// device address bits are 0b01 (matching the Phoenix hardware configuration).
+
+/**
+ * @brief Initialise driver state and configure the SPI bus pins.
+ *
+ * Sets the chip-select pin to OUTPUT/high, optionally configures the DRDY pin
+ * as INPUT, and caches the SPISettings instance used for all subsequent
+ * transactions. The function is idempotent and may be called multiple times.
+ *
+ * @param chip_select_pin GPIO used for MCP356x CS/SS (active low).
+ * @param data_ready_pin  Optional GPIO for DRDY (pass -1 if unused).
+ * @param spi_clock_hz    SPI clock frequency to request via SPISettings.
+ * @return MCP356X_OK on success or a negative error code on invalid arguments.
+ */
 int mcp356x_initialize(int chip_select_pin, int data_ready_pin, uint32_t spi_clock_hz);
+
+/**
+ * @brief Issue one of the MCP356x "Fast Command" opcodes.
+ *
+ * Fast commands share a single byte where CMD[5:2] identifies the action and
+ * CMD[1:0] = 0b00 selects the fast-command mode. The STATUS byte returned by
+ * the device during the transfer is copied into @p status_byte.
+ *
+ * @param command_code 4-bit fast-command code (see MCP356X_FASTCMD_* constants).
+ * @param status_byte  Pointer that receives the STATUS response (must not be NULL).
+ * @return MCP356X_OK when the transfer succeeded, else a negative error code.
+ */
 int mcp356x_send_fast_command(uint8_t command_code, uint8_t *status_byte);
+
+/**
+ * @brief Read one or more bytes from a static register.
+ *
+ * Issues a static read command (CMD[1:0] = 0b01) followed by @p length bytes of
+ * dummy writes to clock data out of the device. Useful for 8/24/32-bit register
+ * reads; passes back the STATUS byte if @p status_byte is non-null.
+ *
+ * @param register_address Logical register index (0x0..0xF only).
+ * @param buffer           Caller-provided output buffer.
+ * @param length           Number of bytes to read (1..4).
+ * @param status_byte      Optional pointer to receive STATUS (may be NULL).
+ * @return MCP356X_OK on success or a negative error code.
+ */
+int mcp356x_read_register(uint8_t register_address, uint8_t *buffer, size_t length, uint8_t *status_byte);
+
+/**
+ * @brief Write one or more bytes to a static register.
+ *
+ * Issues a static write command (CMD[1:0] = 0b10) and clocks @p length bytes
+ * into the part. STATUS is optionally returned via @p status_byte so higher
+ * layers can inspect DR/POR flags after register updates.
+ *
+ * @param register_address Logical register index (0x0..0xF only).
+ * @param buffer           Pointer to the data to write.
+ * @param length           Number of bytes to write (1..4).
+ * @param status_byte      Optional pointer to receive STATUS (may be NULL).
+ * @return MCP356X_OK on success or a negative error code.
+ */
+int mcp356x_write_register(uint8_t register_address, const uint8_t *buffer, size_t length, uint8_t *status_byte);
 
 
 
