@@ -4,7 +4,7 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
-#include "MCP356x.h"
+#include "mcp356x.hpp"
 #include <AD524x.h>
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_TinyUSB.h>
