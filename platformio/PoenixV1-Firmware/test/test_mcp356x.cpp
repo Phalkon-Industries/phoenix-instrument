@@ -2,6 +2,7 @@
 // Goal: verify that sending FAST START command (0b01101000) returns STATUS 0b00010111.
 
 #include <unity.h>
+#include "unity_config.h"
 #include "main.hpp"
 
 #ifndef MCP356X_TEST_CS_PIN
@@ -30,12 +31,7 @@ void tearDown(void) {}
 
 void setup()
 {
-  Serial.begin(115200);
-  Serial.flush();
-  while (!Serial)
-    ;
-  UNITY_BEGIN();
-  delay(2000);  // service delay
+  UNITY_SETUP_SERIAL_DEFAULT();
     RUN_TEST(test_fast_command_start_status);
     UNITY_END();
 }

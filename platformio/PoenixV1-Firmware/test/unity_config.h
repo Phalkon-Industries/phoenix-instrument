@@ -25,6 +25,12 @@ void unityOutputComplete(void);
 #define UNITY_OUTPUT_COMPLETE() unityOutputComplete()
 
 #ifdef __cplusplus
+void unity_platform_setup_serial(unsigned long baudrate = 115200UL,
+								 unsigned long service_delay_ms = 2000UL);
+#define UNITY_SETUP_SERIAL_DEFAULT() unity_platform_setup_serial()
+#endif
+
+#ifdef __cplusplus
 }
 #endif /* extern "C" */
 

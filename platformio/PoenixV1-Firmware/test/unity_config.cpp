@@ -1,4 +1,5 @@
 #include "unity_config.h"
+#include <unity.h>
 
 #if !defined(UNITY_WEAK_ATTRIBUTE) && !defined(UNITY_WEAK_PRAGMA)
 #if defined(__GNUC__) || defined(__ghs__) /* __GNUC__ includes clang */
@@ -52,3 +53,13 @@ void unityOutputStart(unsigned long baudrate)
 void unityOutputChar(unsigned int character) { Serial.write(character); }
 void unityOutputFlush(void) { Serial.flush(); }
 void unityOutputComplete(void) {}
+
+void unity_platform_setup_serial(unsigned long baudrate, unsigned long service_delay_ms)
+{
+    Serial.begin(baudrate);
+    Serial.flush();
+    while (!Serial)
+        ;
+    UNITY_BEGIN();
+    delay(service_delay_ms);
+}
