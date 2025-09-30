@@ -129,6 +129,18 @@ int mcp356x_read_register(uint8_t register_address, uint8_t *buffer, size_t leng
  */
 int mcp356x_write_register(uint8_t register_address, const uint8_t *buffer, size_t length, uint8_t *status_byte);
 
+/**
+ * @brief Configure the ADC MUX for a single-ended channel relative to AGND.
+ *
+ * Helps application code quickly select a channel without exposing raw register
+ * encoding details. Only channels 0-7 are valid; the helper leaves hardware
+ * untouched if an invalid channel index is provided.
+ *
+ * @param channel_index Logical single-ended channel (0-7 inclusive).
+ * @return MCP356X_OK if the register write succeeded, otherwise a negative error code.
+ */
+int mcp356x_select_single_ended_channel(uint8_t channel_index);
+
 
 
 #endif // MCP356X_H

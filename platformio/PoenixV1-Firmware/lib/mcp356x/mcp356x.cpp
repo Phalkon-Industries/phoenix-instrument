@@ -130,3 +130,14 @@ int mcp356x_write_register(uint8_t register_address, const uint8_t *buffer, size
     }
     return MCP356X_OK;
 }
+
+int mcp356x_select_single_ended_channel(uint8_t channel_index)
+{
+    // Only channels 0-7 map to the single-ended inputs; reject anything outside that range.
+    if (channel_index > MCP356X_MUX_CH7) {
+        return MCP356X_ERR_INVALID_ARG;
+    }
+
+    uint8_t mux_value = (uint8_t)((channel_index << 4) | MCP356X_MUX_AGND);
+    return mcp356x_write_register(MCP356X_REG_MUX, &mux_value, 1u, NULL);
+}
