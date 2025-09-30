@@ -76,16 +76,15 @@
 /**
  * @brief Initialise driver state and configure the SPI bus pins.
  *
- * Sets the chip-select pin to OUTPUT/high, optionally configures the DRDY pin
- * as INPUT, and caches the SPISettings instance used for all subsequent
- * transactions. The function is idempotent and may be called multiple times.
+ * Sets the chip-select pin to OUTPUT/high and caches the SPISettings instance
+ * used for all subsequent transactions. The function is idempotent and may be
+ * called multiple times.
  *
  * @param chip_select_pin GPIO used for MCP356x CS/SS (active low).
- * @param data_ready_pin  Optional GPIO for DRDY (pass -1 if unused).
  * @param spi_clock_hz    SPI clock frequency to request via SPISettings.
  * @return MCP356X_OK on success or a negative error code on invalid arguments.
  */
-int mcp356x_initialize(int chip_select_pin, int data_ready_pin, uint32_t spi_clock_hz);
+int mcp356x_initialize(int chip_select_pin, uint32_t spi_clock_hz);
 
 /**
  * @brief Issue one of the MCP356x "Fast Command" opcodes.

@@ -6,7 +6,6 @@
 // ------------------------------ Driver state ---------------------------------
 // These globals track the runtime configuration selected via mcp356x_initialize.
 static int g_chip_select_pin = -1;
-static int g_data_ready_pin = -1;
 static bool g_initialized = false;
 static SPISettings g_spi_settings(1000000UL, MSBFIRST, SPI_MODE0);
 
@@ -26,7 +25,7 @@ static inline uint8_t mcp356x_command_byte(uint8_t register_or_command, uint8_t 
                      (command_type & 0x03u));
 }
 
-int mcp356x_initialize(int chip_select_pin, int data_ready_pin, uint32_t spi_clock_hz)
+int mcp356x_initialize(int chip_select_pin, uint32_t spi_clock_hz)
 {
     // Guardrail checks: CS must be valid, SPI clock must be non-zero.
     if (chip_select_pin < 0 || spi_clock_hz == 0) {
@@ -34,15 +33,10 @@ int mcp356x_initialize(int chip_select_pin, int data_ready_pin, uint32_t spi_clo
     }
 
     g_chip_select_pin = chip_select_pin;
-    g_data_ready_pin = data_ready_pin;
     g_spi_settings = SPISettings(spi_clock_hz, MSBFIRST, SPI_MODE0);
 
     pinMode(g_chip_select_pin, OUTPUT);
     digitalWrite(g_chip_select_pin, HIGH);
-
-    if (g_data_ready_pin >= 0) {
-        pinMode(g_data_ready_pin, INPUT);
-    }
 
     SPI.begin();
     g_initialized = true;

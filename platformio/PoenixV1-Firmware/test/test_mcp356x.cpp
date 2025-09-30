@@ -5,19 +5,12 @@
 #include "unity_config.h"
 #include "main.hpp"
 
-#ifndef MCP356X_TEST_CS_PIN
-#define MCP356X_TEST_CS_PIN 13
-#endif
-#ifndef MCP356X_TEST_DRDY_PIN
-#define MCP356X_TEST_DRDY_PIN 41
-#endif
-
 // Expected status byte when issuing FAST START command (device address bits = 0b01)
 #define MCP356X_EXPECTED_STATUS_START 0x17u
 
 static void test_fast_command_start_status(void)
 {
-    TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(MCP356X_TEST_CS_PIN, MCP356X_TEST_DRDY_PIN, 500000UL));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, 500000UL));
 
     uint8_t status = 0xFF;
     int rc = mcp356x_send_fast_command(MCP356X_FASTCMD_START, &status);
@@ -29,7 +22,7 @@ static void test_fast_command_start_status(void)
 static void test_config0_register_roundtrip(void)
 {
   // Arrange: start the driver and capture the current CONFIG0 byte.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(MCP356X_TEST_CS_PIN, MCP356X_TEST_DRDY_PIN, 500000UL));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, 500000UL));
 
   uint8_t config0_before = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK,
@@ -64,7 +57,7 @@ static void test_single_ended_ch0_conversion(void)
   //   4. Confirm the data register is non-zero, decode it, and ensure DR_STATUS
   //      clears after the read (meaning we consumed the sample).
   //   5. Return the device to a quiescent state (standby + reset) for the next test.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(MCP356X_TEST_CS_PIN, MCP356X_TEST_DRDY_PIN, 500000UL));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, 500000UL));
 
   uint8_t status = 0xFFu;
   TEST_ASSERT_EQUAL(MCP356X_OK,
