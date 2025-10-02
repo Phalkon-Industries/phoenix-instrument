@@ -7,13 +7,32 @@ struct PhotodiodeSample {
 };
 
 static const uint32_t k_spi_clock_hz          = 500000UL;
-static const uint32_t k_settle_delay_ms       = 10UL;
+static const uint32_t k_settle_delay_ms       = 100UL;
 static const uint8_t  k_digipot_channels[]    = {0u, 1u};
 static const size_t   k_digipot_channel_count = sizeof(k_digipot_channels) / sizeof(k_digipot_channels[0]);
 static const uint8_t  k_wiper_codes[]         = {0x00, 0x10, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0, 0xFF};
 static const size_t   k_sample_count          = sizeof(k_wiper_codes) / sizeof(k_wiper_codes[0]);
 
 static PhotodiodeSample g_samples[k_sample_count];
+
+enum class LedSwitchState : uint8_t {
+  kOff,
+  kLed1,
+  kLed2,
+  kDrain,
+};
+
+struct LedSweepRequest {
+  const char*    label;
+  LedSwitchState state;
+};
+
+static const LedSweepRequest k_led_sweep_sequence[] = {
+    {"Drain", LedSwitchState::kDrain},
+    {"LED1", LedSwitchState::kLed1},
+    {"LED2", LedSwitchState::kLed2},
+};
+static const size_t k_led_sweep_count = sizeof(k_led_sweep_sequence) / sizeof(k_led_sweep_sequence[0]);
 
 static void wait_for_serial(void) {
   unsigned long start_ms = millis();
@@ -32,6 +51,27 @@ static void configure_led_paths_off(void) {
   pinMode(LED_BLUE, OUTPUT);
   digitalWrite(LED_RED, LOW);
   digitalWrite(LED_BLUE, LOW);
+}
+
+static void select_led_switch_state(LedSwitchState state) {
+  switch (state) {
+    case LedSwitchState::kOff:
+      digitalWrite(TS5A3359_IN1, LOW);
+      digitalWrite(TS5A3359_IN2, LOW);
+      break;
+    case LedSwitchState::kLed1:
+      digitalWrite(TS5A3359_IN1, HIGH);
+      digitalWrite(TS5A3359_IN2, LOW);
+      break;
+    case LedSwitchState::kLed2:
+      digitalWrite(TS5A3359_IN1, LOW);
+      digitalWrite(TS5A3359_IN2, HIGH);
+      break;
+    case LedSwitchState::kDrain:
+      digitalWrite(TS5A3359_IN1, HIGH);
+      digitalWrite(TS5A3359_IN2, HIGH);
+      break;
+  }
 }
 
 static void enable_power_domains(void) {
@@ -138,7 +178,10 @@ static bool collect_samples(void) {
   return true;
 }
 
-static void print_samples_inline(void) {
+static void print_samples_inline(const char* label) {
+  Serial.print(label);
+  Serial.print('\t');
+
   for (size_t i = 0; i < k_sample_count; ++i) {
     const PhotodiodeSample& sample = g_samples[i];
 
@@ -185,17 +228,31 @@ void setup() {
     return;
   }
 
-  Serial.println(F("# Sweep format per line: wiper_hex,ch4_code,ch5_code repeated for all samples"));
+  select_led_switch_state(LedSwitchState::kDrain);
+  Serial.println(F("# Sweep format per line: state\t(wiper_hex,ch4_code,ch5_code)*"));
 }
 
 void loop() {
-  if (collect_samples()) {
-    print_samples_inline();
+  bool sweep_failed = false;
+  for (size_t i = 0; i < k_led_sweep_count; ++i) {
+    const LedSweepRequest& request = k_led_sweep_sequence[i];
+    select_led_switch_state(request.state);
+
+    if (collect_samples()) {
+      print_samples_inline(request.label);
+    }
+    else {
+      Serial.print(F("# Photodiode sweep failed for state: "));
+      Serial.println(request.label);
+      sweep_failed = true;
+    }
   }
-  else {
-    Serial.println(F("# Photodiode sweep failed; see prior error messages."));
+
+  if (!sweep_failed) {
+    Serial.println();  // Blank line separator between sweep cycles.
   }
 
   park_hardware();
+  select_led_switch_state(LedSwitchState::kDrain);
   delay(1000);
 }
