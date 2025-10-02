@@ -14,7 +14,6 @@ static const uint8_t  k_wiper_codes[]         = {0x00, 0x10, 0x20, 0x40, 0x60, 0
 static const size_t   k_sample_count          = sizeof(k_wiper_codes) / sizeof(k_wiper_codes[0]);
 
 static PhotodiodeSample g_samples[k_sample_count];
-static bool             g_sweep_completed = false;
 
 static void wait_for_serial(void) {
   unsigned long start_ms = millis();
@@ -139,8 +138,7 @@ static bool collect_samples(void) {
   return true;
 }
 
-static void print_samples(void) {
-  Serial.println(F("Wiper\tCH4\tCH5"));
+static void print_samples_inline(void) {
   for (size_t i = 0; i < k_sample_count; ++i) {
     const PhotodiodeSample& sample = g_samples[i];
 
@@ -149,13 +147,16 @@ static void print_samples(void) {
       Serial.print('0');
     }
     Serial.print(sample.wiper_code, HEX);
-    Serial.print('\t');
+    Serial.print(',');
     Serial.print(sample.channel4_code);
-    Serial.print('\t');
-    Serial.println(sample.channel5_code);
+    Serial.print(',');
+    Serial.print(sample.channel5_code);
+
+    if ((i + 1u) < k_sample_count) {
+      Serial.print('\t');
+    }
   }
-  Serial.println(F(
-      "# Higher wiper codes increase the feedback resistance; expect photodiode current to translate into larger ADC magnitude."));
+  Serial.println();
 }
 
 static void park_hardware(void) {
@@ -184,19 +185,17 @@ void setup() {
     return;
   }
 
-  if (collect_samples()) {
-    print_samples();
-  }
-
-  park_hardware();
-  g_sweep_completed = true;
+  Serial.println(F("# Sweep format per line: wiper_hex,ch4_code,ch5_code repeated for all samples"));
 }
 
 void loop() {
-  if (!g_sweep_completed) {
-    delay(1000);
-    return;
+  if (collect_samples()) {
+    print_samples_inline();
+  }
+  else {
+    Serial.println(F("# Photodiode sweep failed; see prior error messages."));
   }
 
+  park_hardware();
   delay(1000);
 }
