@@ -9,7 +9,7 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 - **Functions and free helpers:** Use `lower_snake_case`. Example: `read_config_value()`.
 - **Unity test names:** Use clear test identifiers in `lower_snake_case` following Unity conventions—prefer `test_action` or `test_unit_action` so the name describes the behavior and expected result (e.g. `test_adc_read_returns_error_on_null_buffer`, `test_config_load_sets_defaults`).
 - **Static globals:** Prefix with `g_` (e.g. `g_initialized`). Prefer file-local `static` over `extern`.
-- **Local variables:** Use `lower_snake_case` (e.g. `config0_before`, `status_after`).
+- **Local variables:** Use `lower_snake_case` (e.g. `config0_before`, `status_after`). Favour descriptive names over terse shorthands; for function return values capture them in a variable named `return_code` instead of `rc`.
 - **Constants:**
   - C macros: `UPPER_SNAKE_CASE` (e.g. `MCP356X_STATUS_DR_MASK`).
   - File- or function-local `static const` values: prefix with `k_` and keep the remainder `lower_snake_case` (e.g. `k_spi_clock_hz`).
