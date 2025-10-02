@@ -2,6 +2,13 @@
 
 #include <Arduino.h>
 #include <SPI.h>
+#include <limits.h>
+
+// Forward declare delay helper so we can abstract for tests if needed in future.
+static inline void mcp356x_delay_ms(uint32_t milliseconds)
+{
+    delay(milliseconds);
+}
 
 // ------------------------------ Driver state ---------------------------------
 // These globals track the runtime configuration selected via mcp356x_initialize.
@@ -140,4 +147,85 @@ int mcp356x_select_single_ended_channel(uint8_t channel_index)
 
     uint8_t mux_value = (uint8_t)((channel_index << 4) | MCP356X_MUX_AGND);
     return mcp356x_write_register(MCP356X_REG_MUX, &mux_value, 1u, NULL);
+}
+
+int mcp356x_apply_default_config(void)
+{
+    if (!g_initialized) {
+        return MCP356X_ERR_NOT_INITIALIZED;
+    }
+
+    const uint8_t config_defaults[] = {
+        MCP356X_CONFIG0_DEFAULT,
+        MCP356X_CONFIG1_DEFAULT,
+        MCP356X_CONFIG2_DEFAULT,
+        MCP356X_CONFIG3_DEFAULT,
+    };
+
+    int rc = mcp356x_write_register(MCP356X_REG_CONFIG0, &config_defaults[0], 1u, NULL);
+    if (rc != MCP356X_OK) {
+        return rc;
+    }
+    rc = mcp356x_write_register(MCP356X_REG_CONFIG1, &config_defaults[1], 1u, NULL);
+    if (rc != MCP356X_OK) {
+        return rc;
+    }
+    rc = mcp356x_write_register(MCP356X_REG_CONFIG2, &config_defaults[2], 1u, NULL);
+    if (rc != MCP356X_OK) {
+        return rc;
+    }
+    return mcp356x_write_register(MCP356X_REG_CONFIG3, &config_defaults[3], 1u, NULL);
+}
+
+int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t *result)
+{
+    if (result == NULL) {
+        return MCP356X_ERR_INVALID_ARG;
+    }
+    if (!g_initialized) {
+        return MCP356X_ERR_NOT_INITIALIZED;
+    }
+
+    int rc = mcp356x_select_single_ended_channel(channel_index);
+    if (rc != MCP356X_OK) {
+        return rc;
+    }
+
+    uint8_t status = 0xFFu;
+    rc = mcp356x_send_fast_command(MCP356X_FASTCMD_START, &status);
+    if (rc != MCP356X_OK) {
+        return rc;
+    }
+
+    uint8_t adc_bytes[3] = {0};
+    uint32_t elapsed_ms = 0u;
+    bool data_ready = false;
+
+    while (!data_ready) {
+        uint8_t read_status = 0xFFu;
+        rc = mcp356x_read_register(MCP356X_REG_ADCDATA, adc_bytes, sizeof adc_bytes, &read_status);
+        if (rc != MCP356X_OK) {
+            return rc;
+        }
+
+        data_ready = ((read_status & MCP356X_STATUS_DR_MASK) == 0u);
+        if (data_ready) {
+            break;
+        }
+
+        if (elapsed_ms >= timeout_ms) {
+            return MCP356X_ERR_TIMEOUT;
+        }
+
+        mcp356x_delay_ms(1u);
+        ++elapsed_ms;
+    }
+
+    int32_t raw_value = (int32_t)((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
+    if (raw_value & 0x800000) {
+        raw_value |= 0xFF000000;
+    }
+
+    *result = raw_value;
+    return MCP356X_OK;
 }

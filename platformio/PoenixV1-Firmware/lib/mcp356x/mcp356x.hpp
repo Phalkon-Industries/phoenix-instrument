@@ -3,6 +3,8 @@
 
 
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -129,6 +131,12 @@ int mcp356x_read_register(uint8_t register_address, uint8_t *buffer, size_t leng
  */
 int mcp356x_write_register(uint8_t register_address, const uint8_t *buffer, size_t length, uint8_t *status_byte);
 
+// ===================== Default Config Preset ==================================
+#define MCP356X_CONFIG0_DEFAULT 0b10110011  // Internal REF, continuous conversion, standby disabled
+#define MCP356X_CONFIG1_DEFAULT 0b00001100  // OSR=4096, boost off (high-resolution mode)
+#define MCP356X_CONFIG2_DEFAULT 0b10001011  // 24-bit data, gain=1, auto-zero enabled
+#define MCP356X_CONFIG3_DEFAULT 0b00000000  // No auto-sequence, default conversion delay
+
 /**
  * @brief Configure the ADC MUX for a single-ended channel relative to AGND.
  *
@@ -140,6 +148,30 @@ int mcp356x_write_register(uint8_t register_address, const uint8_t *buffer, size
  * @return MCP356X_OK if the register write succeeded, otherwise a negative error code.
  */
 int mcp356x_select_single_ended_channel(uint8_t channel_index);
+
+/**
+ * @brief Write a curated default configuration into CONFIG0-3 registers.
+ *
+ * Centralises the "golden" register image used during application bring-up so
+ * firmware and tests share a consistent baseline.
+ *
+ * @return MCP356X_OK if all four writes succeed, otherwise propagates the first error encountered.
+ */
+int mcp356x_apply_default_config(void);
+
+/**
+ * @brief Select a single-ended channel and read a conversion with timeout protection.
+ *
+ * Wrapper performing: reset DRDY state, select the MUX, trigger a conversion,
+ * poll ADCDATA until DR_STATUS indicates fresh data, sign-extend the 24-bit
+ * result, and optionally return MCP356X_ERR_TIMEOUT if @p timeout_ms elapses.
+ *
+ * @param channel_index Logical channel (0-7) to sample single-ended.
+ * @param timeout_ms    Maximum time in milliseconds to wait for DRDY (0 => immediate timeout).
+ * @param result        Pointer receiving the signed 24-bit conversion result.
+ * @return MCP356X_OK on success, MCP356X_ERR_TIMEOUT on timeout, or a negative error from underlying calls.
+ */
+int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t *result);
 
 
 
