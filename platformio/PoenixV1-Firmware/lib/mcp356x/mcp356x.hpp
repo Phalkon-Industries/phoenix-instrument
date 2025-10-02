@@ -130,8 +130,44 @@ int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size
 // ===================== Default Config Preset ==================================
 #define MCP356X_CONFIG0_DEFAULT 0b10110011  // Internal REF, continuous conversion, standby disabled
 #define MCP356X_CONFIG1_DEFAULT 0b00001100  // OSR=4096, boost off (high-resolution mode)
-#define MCP356X_CONFIG2_DEFAULT 0b10001011  // 24-bit data, gain=1, auto-zero enabled
+#define MCP356X_CONFIG2_DEFAULT 0b10001011  // BOOST=10b, gain=1 (001b), AZ_MUX/AZ_REF enabled, LSB must stay 1
 #define MCP356X_CONFIG3_DEFAULT 0b00000000  // No auto-sequence, default conversion delay
+
+// Gain control resides in CONFIG2.GAIN[2:0]. Provide a typed enum so callers cannot
+// pass arbitrary bit patterns. The hardware exposes a 1/3x mode alongside the usual
+// 1x..64x ladder.
+enum class mcp356x_gain : uint8_t {
+  gain_div3 = 0b000,  // 1/3× (digital attenuation)
+  gain_x1   = 0b001,  // 1× (POR default)
+  gain_x2   = 0b010,
+  gain_x4   = 0b011,
+  gain_x8   = 0b100,
+  gain_x16  = 0b101,
+  gain_x32  = 0b110,
+  gain_x64  = 0b111,
+};
+
+/**
+ * @brief Update CONFIG2.GAIN[2:0] while keeping other CONFIG2 fields intact.
+ *
+ * The helper performs a read-modify-write on CONFIG2, ensuring BOOST[1:0],
+ * AZ_MUX, AZ_REF, and the mandatory bit0=1 remain untouched. The device must be
+ * initialised before use.
+ *
+ * @param gain           Desired hardware gain (1/3× through 64×).
+ * @return MCP356X_OK on success, or a negative error propagated from register
+ *         read/write helpers.
+ */
+int mcp356x_set_gain(mcp356x_gain gain);
+
+/**
+ * @brief Read CONFIG2.GAIN[2:0] and convert it to the strongly typed enum.
+ *
+ * @param out_gain Pointer receiving the decoded gain enum.
+ * @return MCP356X_OK on success, MCP356X_ERR_INVALID_ARG when @p out_gain is
+ *         NULL, or a propagated error from the register read helper.
+ */
+int mcp356x_get_gain(mcp356x_gain* out_gain);
 
 /**
  * @brief Configure the ADC MUX for a single-ended channel relative to AGND.
@@ -149,11 +185,32 @@ int mcp356x_select_single_ended_channel(uint8_t channel_index);
  * @brief Write a curated default configuration into CONFIG0-3 registers.
  *
  * Centralises the "golden" register image used during application bring-up so
- * firmware and tests share a consistent baseline.
+ * firmware and tests share a consistent baseline. This helper preserves the
+ * legacy behaviour of programming CONFIG2 with gain=1×.
  *
  * @return MCP356X_OK if all four writes succeed, otherwise propagates the first error encountered.
  */
 int mcp356x_apply_default_config(void);
+
+/**
+ * @brief Apply the default configuration while overriding CONFIG2.GAIN[2:0].
+ *
+ * Allows firmware to bootstrap the ADC into the standard Phoenix baseline but
+ * with a caller-specified PGA gain. BOOST, AZ_MUX, AZ_REF, and the reserved LSB
+ * remain fixed to their datasheet defaults.
+ *
+ * @param gain Desired hardware gain (1/3× through 64×).
+ * @return MCP356X_OK if all four writes succeed, otherwise propagates the first error encountered.
+ */
+int mcp356x_apply_default_config_with_gain(mcp356x_gain gain);
+
+/**
+ * @brief Test-only hook to clear the driver's initialisation flag.
+ *
+ * Exposed under UNIT_TEST so negative-path Unity tests can verify public APIs
+ * reject calls issued before `mcp356x_initialize()`.
+ */
+void mcp356x_force_uninitialized_for_test(void);
 
 /**
  * @brief Issue the FASTCMD_START opcode to begin continuous conversions.

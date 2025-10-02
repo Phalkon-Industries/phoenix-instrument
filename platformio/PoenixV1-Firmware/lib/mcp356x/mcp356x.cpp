@@ -27,6 +27,16 @@ static inline uint8_t mcp356x_command_byte(uint8_t register_or_command, uint8_t 
                     ((register_or_command & 0x0Fu) << 2) | (command_type & 0x03u));
 }
 
+static inline uint8_t mcp356x_config2_with_gain_bits(mcp356x_gain gain) {
+  uint8_t config2 = (uint8_t) (MCP356X_CONFIG2_DEFAULT & 0xC7u);
+  config2 |= (uint8_t) ((static_cast<uint8_t>(gain) & 0x07u) << 3);
+  config2 |= 0x01u;  // Datasheet mandates CONFIG2 bit0 remains set.
+  return config2;
+}
+void mcp356x_force_uninitialized_for_test(void) {
+  g_initialized = false;
+}
+
 int mcp356x_initialize(int chip_select_pin, uint32_t spi_clock_hz) {
   // Guardrail checks: CS must be valid, SPI clock must be non-zero.
   if (chip_select_pin < 0 || spi_clock_hz == 0) {
@@ -148,31 +158,73 @@ int mcp356x_select_single_ended_channel(uint8_t channel_index) {
   return mcp356x_write_register(MCP356X_REG_MUX, &mux_value, 1u, NULL);
 }
 
-int mcp356x_apply_default_config(void) {
+int mcp356x_set_gain(mcp356x_gain gain) {
   if (!g_initialized) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
 
-  const uint8_t config_defaults[] = {
-      MCP356X_CONFIG0_DEFAULT,
-      MCP356X_CONFIG1_DEFAULT,
-      MCP356X_CONFIG2_DEFAULT,
-      MCP356X_CONFIG3_DEFAULT,
-  };
+  uint8_t config2_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
 
-  int return_code = mcp356x_write_register(MCP356X_REG_CONFIG0, &config_defaults[0], 1u, NULL);
+  const uint8_t preserved_bits = (uint8_t) (config2_value & 0xC7u);  // Clear GAIN[5:3].
+  const uint8_t gain_bits      = (uint8_t) (static_cast<uint8_t>(gain) & 0x07u);
+
+  config2_value = (uint8_t) (preserved_bits | (uint8_t) (gain_bits << 3));
+  config2_value |= 0x01u;  // Datasheet mandates CONFIG2 bit0 remains 1.
+
+  return mcp356x_write_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
+}
+
+int mcp356x_get_gain(mcp356x_gain* out_gain) {
+  if (out_gain == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t config2_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
-  return_code = mcp356x_write_register(MCP356X_REG_CONFIG1, &config_defaults[1], 1u, NULL);
+
+  uint8_t gain_bits = (uint8_t) ((config2_value >> 3) & 0x07u);
+  *out_gain         = static_cast<mcp356x_gain>(gain_bits);
+
+  return MCP356X_OK;
+}
+
+int mcp356x_apply_default_config(void) {
+  return mcp356x_apply_default_config_with_gain(mcp356x_gain::gain_x1);
+}
+
+int mcp356x_apply_default_config_with_gain(mcp356x_gain gain) {
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  const uint8_t config0_value = MCP356X_CONFIG0_DEFAULT;
+  const uint8_t config1_value = MCP356X_CONFIG1_DEFAULT;
+  const uint8_t config2_value = mcp356x_config2_with_gain_bits(gain);
+  const uint8_t config3_value = MCP356X_CONFIG3_DEFAULT;
+
+  int return_code = mcp356x_write_register(MCP356X_REG_CONFIG0, &config0_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
-  return_code = mcp356x_write_register(MCP356X_REG_CONFIG2, &config_defaults[2], 1u, NULL);
+  return_code = mcp356x_write_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
-  return mcp356x_write_register(MCP356X_REG_CONFIG3, &config_defaults[3], 1u, NULL);
+  return_code = mcp356x_write_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+  return mcp356x_write_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
 }
 
 int mcp356x_start_conversion(uint8_t* status_byte) {
