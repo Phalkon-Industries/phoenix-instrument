@@ -156,6 +156,16 @@ int mcp356x_select_single_ended_channel(uint8_t channel_index);
 int mcp356x_apply_default_config(void);
 
 /**
+ * @brief Issue the FASTCMD_START opcode to begin continuous conversions.
+ *
+ * @param status_byte Optional pointer that receives the STATUS response. May
+ *                    be NULL when callers are uninterested in the value.
+ * @return MCP356X_OK on success or a propagated error from
+ *         mcp356x_send_fast_command.
+ */
+int mcp356x_start_conversion(uint8_t* status_byte);
+
+/**
  * @brief Place the ADC into standby mode using the FASTCMD_STANDBY opcode.
  *
  * Convenience wrapper that keeps application code away from raw fast-command
@@ -168,6 +178,33 @@ int mcp356x_apply_default_config(void);
  *         mcp356x_send_fast_command.
  */
 int mcp356x_enter_standby(uint8_t* status_byte);
+
+/**
+ * @brief Assert the FASTCMD_ADCSHUTDN opcode to stop conversions and power down the ADC core.
+ *
+ * @param status_byte Optional pointer that receives the STATUS response. May
+ *                    be NULL when callers are uninterested in the value.
+ * @return MCP356X_OK on success or a propagated error from the fast-command helper.
+ */
+int mcp356x_enter_adc_shutdown(uint8_t* status_byte);
+
+/**
+ * @brief Assert the FASTCMD_FULLSHUTDN opcode to place the device into full shutdown.
+ *
+ * @param status_byte Optional pointer that receives the STATUS response. May
+ *                    be NULL when callers are uninterested in the value.
+ * @return MCP356X_OK on success or a propagated error from the fast-command helper.
+ */
+int mcp356x_enter_full_shutdown(uint8_t* status_byte);
+
+/**
+ * @brief Issue FASTCMD_FULLRESET to restore power-on default register values.
+ *
+ * @param status_byte Optional pointer that receives the STATUS response. May
+ *                    be NULL when callers are uninterested in the value.
+ * @return MCP356X_OK on success or a propagated error from the fast-command helper.
+ */
+int mcp356x_full_reset(uint8_t* status_byte);
 
 /**
  * @brief Select a single-ended channel and read a conversion with timeout protection.

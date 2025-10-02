@@ -12,14 +12,12 @@
 static const uint32_t k_spi_clock_hz = 500000UL;
 
 static void test_fast_command_start_status(void) {
-  uint8_t status = 0xFFu;
-  // Issue a FULLRESET first so the subsequent START command produces the documented 0x17 response instead of reflecting
-  // leftover state from a prior test run or power cycle.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_FULLRESET, &status));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   delay(2);
 
-  int rc = mcp356x_send_fast_command(MCP356X_FASTCMD_START, &status);
-  TEST_ASSERT_EQUAL_MESSAGE(MCP356X_OK, rc, "Fast command send failed");
+  uint8_t status      = 0xFFu;
+  int     return_code = mcp356x_start_conversion(&status);
+  TEST_ASSERT_EQUAL_MESSAGE(MCP356X_OK, return_code, "Fast command send failed");
 
   TEST_ASSERT_EQUAL_HEX8_MESSAGE(MCP356X_EXPECTED_STATUS_START, status,
                                  "Unexpected STATUS byte from FAST START command");
@@ -55,8 +53,7 @@ static void test_single_ended_ch0_conversion(void) {
   //   4. Confirm the data register is non-zero, decode it, and ensure DR_STATUS
   //      clears after the read (meaning we consumed the sample).
   //   5. Return the device to a quiescent state (standby + reset) for the next test.
-  uint8_t status = 0xFFu;
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_FULLRESET, &status));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   delay(2);
 
   static const uint8_t config0 = 0b10110011;
@@ -71,7 +68,8 @@ static void test_single_ended_ch0_conversion(void) {
   const uint8_t mux_single_ch0 = (uint8_t) ((MCP356X_MUX_CH0 << 4) | MCP356X_MUX_AGND);
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_MUX, &mux_single_ch0, 1u, NULL));
 
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_START, &status));
+  uint8_t status = 0xFFu;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_start_conversion(&status));
 
   uint8_t adc_bytes[3]      = {0};
   bool    data_ready        = false;
@@ -103,8 +101,8 @@ static void test_single_ended_ch0_conversion(void) {
   TEST_ASSERT_TRUE_MESSAGE((status_after & MCP356X_STATUS_DR_MASK) != 0u,
                            "Expected DR_STATUS to flag 'no new data' after consuming sample");
 
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(&status));
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_FULLRESET, &status));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
 }
 
 static void test_apply_default_config_writes_expected_values(void) {
@@ -134,6 +132,21 @@ static void test_enter_standby_wrapper_matches_fast_command_status(void) {
   TEST_ASSERT_EQUAL_HEX8(direct_status, helper_status);
 }
 
+static void test_fast_command_wrappers_return_success(void) {
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_start_conversion(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_adc_shutdown(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_full_shutdown(NULL));
+
+  uint8_t status = 0xFFu;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(&status));
+  delay(2);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(NULL));
+}
+
 static void test_read_single_ended_channel_returns_sample(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
 
@@ -154,8 +167,7 @@ static void test_read_single_ended_channel_returns_sample(void) {
 
 static void test_mux_select_single_channel_writes_mux_register(void) {
   // Arrange: ensure the device starts from a known baseline before applying the helper.
-  uint8_t status = 0xFFu;
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_FULLRESET, &status));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   delay(2);
 
   uint8_t mux_before = 0u;
@@ -197,19 +209,16 @@ static void test_read_single_ended_channel_times_out_when_data_stalls(void) {
 void setUp(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
 
-  uint8_t status = 0xFFu;
   // Reset the ADC so each test begins from the datasheet power-on defaults.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_FULLRESET, &status));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   delay(2);
 }
 
 void tearDown(void) {
-  uint8_t status = 0xFFu;
   // Park the ADC so the next test does not inherit an active conversion.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(&status));
-  status = 0xFFu;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(NULL));
   // Restore POR defaults to leave hardware neutral for subsequent runs.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_FULLRESET, &status));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   delay(2);
 }
 
@@ -222,6 +231,7 @@ void setup() {
   RUN_TEST(test_mux_select_single_channel_rejects_invalid_inputs);
   RUN_TEST(test_apply_default_config_writes_expected_values);
   RUN_TEST(test_enter_standby_wrapper_matches_fast_command_status);
+  RUN_TEST(test_fast_command_wrappers_return_success);
   RUN_TEST(test_read_single_ended_channel_returns_sample);
   RUN_TEST(test_read_single_ended_channel_times_out_when_data_stalls);
   UNITY_END();

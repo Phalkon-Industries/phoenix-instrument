@@ -67,6 +67,15 @@ int mcp356x_send_fast_command(uint8_t command_code, uint8_t* status_byte) {
   return MCP356X_OK;
 }
 
+static int mcp356x_issue_fast_command(uint8_t command_code, uint8_t* status_byte) {
+  uint8_t scratch_status = 0xFFu;
+  if (status_byte == NULL) {
+    status_byte = &scratch_status;
+  }
+
+  return mcp356x_send_fast_command(command_code, status_byte);
+}
+
 int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t length, uint8_t* status_byte) {
   // Static read operation (single header followed by 1-4 data bytes clocked out).
   // Validate runtime state and caller parameters before touching the bus.
@@ -151,28 +160,39 @@ int mcp356x_apply_default_config(void) {
       MCP356X_CONFIG3_DEFAULT,
   };
 
-  int rc = mcp356x_write_register(MCP356X_REG_CONFIG0, &config_defaults[0], 1u, NULL);
-  if (rc != MCP356X_OK) {
-    return rc;
+  int return_code = mcp356x_write_register(MCP356X_REG_CONFIG0, &config_defaults[0], 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
   }
-  rc = mcp356x_write_register(MCP356X_REG_CONFIG1, &config_defaults[1], 1u, NULL);
-  if (rc != MCP356X_OK) {
-    return rc;
+  return_code = mcp356x_write_register(MCP356X_REG_CONFIG1, &config_defaults[1], 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
   }
-  rc = mcp356x_write_register(MCP356X_REG_CONFIG2, &config_defaults[2], 1u, NULL);
-  if (rc != MCP356X_OK) {
-    return rc;
+  return_code = mcp356x_write_register(MCP356X_REG_CONFIG2, &config_defaults[2], 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
   }
   return mcp356x_write_register(MCP356X_REG_CONFIG3, &config_defaults[3], 1u, NULL);
 }
 
-int mcp356x_enter_standby(uint8_t* status_byte) {
-  uint8_t scratch_status = 0xFFu;
-  if (status_byte == NULL) {
-    status_byte = &scratch_status;
-  }
+int mcp356x_start_conversion(uint8_t* status_byte) {
+  return mcp356x_issue_fast_command(MCP356X_FASTCMD_START, status_byte);
+}
 
-  return mcp356x_send_fast_command(MCP356X_FASTCMD_STANDBY, status_byte);
+int mcp356x_enter_standby(uint8_t* status_byte) {
+  return mcp356x_issue_fast_command(MCP356X_FASTCMD_STANDBY, status_byte);
+}
+
+int mcp356x_enter_adc_shutdown(uint8_t* status_byte) {
+  return mcp356x_issue_fast_command(MCP356X_FASTCMD_ADCSHUTDN, status_byte);
+}
+
+int mcp356x_enter_full_shutdown(uint8_t* status_byte) {
+  return mcp356x_issue_fast_command(MCP356X_FASTCMD_FULLSHUTDN, status_byte);
+}
+
+int mcp356x_full_reset(uint8_t* status_byte) {
+  return mcp356x_issue_fast_command(MCP356X_FASTCMD_FULLRESET, status_byte);
 }
 
 int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result) {
@@ -183,15 +203,14 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
     return MCP356X_ERR_NOT_INITIALIZED;
   }
 
-  int rc = mcp356x_select_single_ended_channel(channel_index);
-  if (rc != MCP356X_OK) {
-    return rc;
+  int return_code = mcp356x_select_single_ended_channel(channel_index);
+  if (return_code != MCP356X_OK) {
+    return return_code;
   }
 
-  uint8_t status = 0xFFu;
-  rc             = mcp356x_send_fast_command(MCP356X_FASTCMD_START, &status);
-  if (rc != MCP356X_OK) {
-    return rc;
+  return_code = mcp356x_start_conversion(NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
   }
 
   uint8_t  adc_bytes[3] = {0};
@@ -200,9 +219,9 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
 
   while (!data_ready) {
     uint8_t read_status = 0xFFu;
-    rc                  = mcp356x_read_register(MCP356X_REG_ADCDATA, adc_bytes, sizeof adc_bytes, &read_status);
-    if (rc != MCP356X_OK) {
-      return rc;
+    return_code         = mcp356x_read_register(MCP356X_REG_ADCDATA, adc_bytes, sizeof adc_bytes, &read_status);
+    if (return_code != MCP356X_OK) {
+      return return_code;
     }
 
     data_ready = ((read_status & MCP356X_STATUS_DR_MASK) == 0u);
