@@ -6,7 +6,8 @@ This guide covers conventions **not** enforced automatically by `clang-format`. 
 - **Files:** Use lower_snake_case (e.g. `mcp356x.cpp`, `unity_config.cpp`).
 - **Namespaces:** Avoid unless interacting with Arduino libraries; prefer `static` linkage instead.
 - **Types / structs / enums / classes:** `CamelCase` (upper camel). Example: `struct AdcSampleBuffer`.
-- **Functions and free helpers:** `switchCase` (lower camel). New helpers should follow patterns like `readConfigValue()` while existing legacy names may be cleaned up over time. Unity lifecycle hooks remain `setUp`/`tearDown`.
+- **Functions and free helpers:** `lower_snake_case`. Example: `read_config_value()`.
+- **Unity test names:** Use clear test identifiers in lower_snake_case following Unity conventions—prefer `test_action` or `test_unit_action` so the name describes the behavior and expected result (e.g., `test_adc_read_returns_error_on_null_buffer` or `test_config_load_sets_defaults`).
 - **Static globals:** Prefix with `g_` (e.g. `g_initialized`). Prefer file-local `static` over `extern`.
 - **Local variables:** `lower_snake_case` (e.g. `config0_before`, `status_after`).
 - **Constants:**
@@ -16,6 +17,7 @@ This guide covers conventions **not** enforced automatically by `clang-format`. 
 ## 2. General C++ Practices
 - Prefer explicit types over `auto` unless the type is enforced by the API (e.g. iterator loops).
 - Keep each function narrowly scoped; document any required side effects or shared state.
+- Run `clang-format` on every file you touch before committing so the codebase stays consistent with `.clang-format`. Recommend turning on "format on save" in IDE settings.
 
 ## 3. Header Layout and Includes
 - Include the module's public header first (e.g. `#include "mcp356x.hpp"`), then a blank line, then Arduino/standard-library headers.

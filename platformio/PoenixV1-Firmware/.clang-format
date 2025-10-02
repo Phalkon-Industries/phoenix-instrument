@@ -1,5 +1,6 @@
 # clang-format config from Jonathan Pfeifer
 BasedOnStyle: google
+ColumnLimit: 120
 AllowShortBlocksOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: false
