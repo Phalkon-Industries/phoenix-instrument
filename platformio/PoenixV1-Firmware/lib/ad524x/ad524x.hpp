@@ -31,4 +31,13 @@ class TwoWire;
  */
 int ad524x_initialize(uint8_t i2c_address, TwoWire* wire_bus);
 
+/**
+ * @brief Report whether the driver has been initialised successfully.
+ *
+ * Returns true only after `ad524x_initialize()` accepts valid arguments. Callers
+ * should gate all other driver APIs on this helper so we avoid issuing bus
+ * transactions before the hardware address and Wire handle are configured.
+ */
+bool ad524x_is_initialized(void);
+
 #endif  // AD524X_HPP

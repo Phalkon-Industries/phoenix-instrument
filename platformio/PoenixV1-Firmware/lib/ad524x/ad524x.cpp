@@ -16,9 +16,13 @@
 //   leaves them unconnected, so the driver will document the omission and skip
 //   any control hooks for those pins.
 
-static uint8_t  g_i2c_address = 0u;
-static TwoWire* g_wire_bus    = NULL;
-static bool     g_initialized = false;
+struct Ad524xDriverState {
+  uint8_t  i2c_address;
+  TwoWire* wire_bus;
+  bool     initialized;
+};
+
+static Ad524xDriverState g_driver_state = {0u, NULL, false};
 
 int ad524x_initialize(uint8_t i2c_address, TwoWire* wire_bus) {
   if (wire_bus == NULL) {
@@ -31,8 +35,12 @@ int ad524x_initialize(uint8_t i2c_address, TwoWire* wire_bus) {
     return AD524X_ERR_INVALID_ARG;
   }
 
-  g_i2c_address = i2c_address;
-  g_wire_bus    = wire_bus;
-  g_initialized = true;
+  g_driver_state.i2c_address = i2c_address;
+  g_driver_state.wire_bus    = wire_bus;
+  g_driver_state.initialized = true;
   return AD524X_OK;
+}
+
+bool ad524x_is_initialized(void) {
+  return g_driver_state.initialized;
 }

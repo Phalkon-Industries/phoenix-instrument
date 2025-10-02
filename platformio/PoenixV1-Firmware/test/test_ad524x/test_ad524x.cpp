@@ -24,14 +24,20 @@ static void test_ad524x_initialize_rejects_out_of_range_address(void) {
   TEST_ASSERT_EQUAL_INT(AD524X_ERR_INVALID_ARG, result);
 }
 
+static void test_ad524x_is_initialized_reports_false_before_init(void) {
+  TEST_ASSERT_FALSE(ad524x_is_initialized());
+}
+
 static void test_ad524x_initialize_accepts_valid_inputs(void) {
   int result = ad524x_initialize(AD5242_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(AD524X_OK, result);
+  TEST_ASSERT_TRUE(ad524x_is_initialized());
 }
 
 void setup() {
   UNITY_SETUP_SERIAL_DEFAULT();
   UNITY_BEGIN();
+  RUN_TEST(test_ad524x_is_initialized_reports_false_before_init);
   RUN_TEST(test_ad524x_initialize_rejects_null_wire_handle);
   RUN_TEST(test_ad524x_initialize_rejects_out_of_range_address);
   RUN_TEST(test_ad524x_initialize_accepts_valid_inputs);
