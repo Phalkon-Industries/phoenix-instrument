@@ -23,8 +23,8 @@ static inline bool mcp356x_is_valid_register(uint8_t reg) {
 //   [7:6] = device address, [5:2] = register or fast command code, [1:0] = type
 // where type corresponds to the "static" command encoding from Table 6-3.
 static inline uint8_t mcp356x_command_byte(uint8_t register_or_command, uint8_t command_type) {
-  return (uint8_t)(((MCP356X_DEVICE_ADDRESS & MCP356X_DEVICE_ADDRESS_MASK) << 6) |
-                   ((register_or_command & 0x0Fu) << 2) | (command_type & 0x03u));
+  return (uint8_t) (((MCP356X_DEVICE_ADDRESS & MCP356X_DEVICE_ADDRESS_MASK) << 6) |
+                    ((register_or_command & 0x0Fu) << 2) | (command_type & 0x03u));
 }
 
 int mcp356x_initialize(int chip_select_pin, uint32_t spi_clock_hz) {
@@ -55,7 +55,7 @@ int mcp356x_send_fast_command(uint8_t command_code, uint8_t* status_byte) {
 
   // Build command byte: [7:6]=device address, [5:2]=command, [1:0]=type (00 for fast command)
   uint8_t command =
-      (uint8_t)(((MCP356X_DEVICE_ADDRESS & MCP356X_DEVICE_ADDRESS_MASK) << 6) | ((command_code & 0x0Fu) << 2));
+      (uint8_t) (((MCP356X_DEVICE_ADDRESS & MCP356X_DEVICE_ADDRESS_MASK) << 6) | ((command_code & 0x0Fu) << 2));
 
   SPI.beginTransaction(g_spi_settings);
   digitalWrite(g_chip_select_pin, LOW);
@@ -135,7 +135,7 @@ int mcp356x_select_single_ended_channel(uint8_t channel_index) {
     return MCP356X_ERR_INVALID_ARG;
   }
 
-  uint8_t mux_value = (uint8_t)((channel_index << 4) | MCP356X_MUX_AGND);
+  uint8_t mux_value = (uint8_t) ((channel_index << 4) | MCP356X_MUX_AGND);
   return mcp356x_write_register(MCP356X_REG_MUX, &mux_value, 1u, NULL);
 }
 
@@ -164,6 +164,15 @@ int mcp356x_apply_default_config(void) {
     return rc;
   }
   return mcp356x_write_register(MCP356X_REG_CONFIG3, &config_defaults[3], 1u, NULL);
+}
+
+int mcp356x_enter_standby(uint8_t* status_byte) {
+  uint8_t scratch_status = 0xFFu;
+  if (status_byte == NULL) {
+    status_byte = &scratch_status;
+  }
+
+  return mcp356x_send_fast_command(MCP356X_FASTCMD_STANDBY, status_byte);
 }
 
 int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result) {
@@ -209,7 +218,7 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
     ++elapsed_ms;
   }
 
-  int32_t raw_value = (int32_t)((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
+  int32_t raw_value = (int32_t) ((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
   if (raw_value & 0x800000) {
     raw_value |= 0xFF000000;
   }

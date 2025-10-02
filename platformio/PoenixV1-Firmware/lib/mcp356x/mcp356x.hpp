@@ -95,7 +95,7 @@ int mcp356x_initialize(int chip_select_pin, uint32_t spi_clock_hz);
  * @param status_byte  Pointer that receives the STATUS response (must not be NULL).
  * @return MCP356X_OK when the transfer succeeded, else a negative error code.
  */
-int mcp356x_send_fast_command(uint8_t command_code, uint8_t *status_byte);
+int mcp356x_send_fast_command(uint8_t command_code, uint8_t* status_byte);
 
 /**
  * @brief Read one or more bytes from a static register.
@@ -110,7 +110,7 @@ int mcp356x_send_fast_command(uint8_t command_code, uint8_t *status_byte);
  * @param status_byte      Optional pointer to receive STATUS (may be NULL).
  * @return MCP356X_OK on success or a negative error code.
  */
-int mcp356x_read_register(uint8_t register_address, uint8_t *buffer, size_t length, uint8_t *status_byte);
+int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t length, uint8_t* status_byte);
 
 /**
  * @brief Write one or more bytes to a static register.
@@ -125,7 +125,7 @@ int mcp356x_read_register(uint8_t register_address, uint8_t *buffer, size_t leng
  * @param status_byte      Optional pointer to receive STATUS (may be NULL).
  * @return MCP356X_OK on success or a negative error code.
  */
-int mcp356x_write_register(uint8_t register_address, const uint8_t *buffer, size_t length, uint8_t *status_byte);
+int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size_t length, uint8_t* status_byte);
 
 // ===================== Default Config Preset ==================================
 #define MCP356X_CONFIG0_DEFAULT 0b10110011  // Internal REF, continuous conversion, standby disabled
@@ -156,6 +156,20 @@ int mcp356x_select_single_ended_channel(uint8_t channel_index);
 int mcp356x_apply_default_config(void);
 
 /**
+ * @brief Place the ADC into standby mode using the FASTCMD_STANDBY opcode.
+ *
+ * Convenience wrapper that keeps application code away from raw fast-command
+ * constants while still exposing the returned STATUS byte when desired. The
+ * helper accepts a null pointer, in which case the STATUS value is discarded.
+ *
+ * @param status_byte Optional pointer that receives the STATUS response. May
+ *                    be NULL when callers are uninterested in the value.
+ * @return MCP356X_OK on success or a negative error propagated from
+ *         mcp356x_send_fast_command.
+ */
+int mcp356x_enter_standby(uint8_t* status_byte);
+
+/**
  * @brief Select a single-ended channel and read a conversion with timeout protection.
  *
  * Wrapper performing: reset DRDY state, select the MUX, trigger a conversion,
@@ -167,5 +181,5 @@ int mcp356x_apply_default_config(void);
  * @param result        Pointer receiving the signed 24-bit conversion result.
  * @return MCP356X_OK on success, MCP356X_ERR_TIMEOUT on timeout, or a negative error from underlying calls.
  */
-int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t *result);
+int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result);
 #endif  // MCP356X_HPP

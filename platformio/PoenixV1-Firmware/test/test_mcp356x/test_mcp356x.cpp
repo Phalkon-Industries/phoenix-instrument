@@ -32,7 +32,7 @@ static void test_config0_register_roundtrip(void) {
 
   // Act: flip a safe OSR bit (bit 2) so the value definitely changes.
   const uint8_t config0_flip_mask = 0x04u;
-  uint8_t       config0_modified  = (uint8_t)(config0_before ^ config0_flip_mask);
+  uint8_t       config0_modified  = (uint8_t) (config0_before ^ config0_flip_mask);
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG0, &config0_modified, 1u, NULL));
 
   // Assert: the new value is observable via another read.
@@ -68,7 +68,7 @@ static void test_single_ended_ch0_conversion(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG2, &config2, 1u, NULL));
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG3, &config3, 1u, NULL));
 
-  const uint8_t mux_single_ch0 = (uint8_t)((MCP356X_MUX_CH0 << 4) | MCP356X_MUX_AGND);
+  const uint8_t mux_single_ch0 = (uint8_t) ((MCP356X_MUX_CH0 << 4) | MCP356X_MUX_AGND);
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_MUX, &mux_single_ch0, 1u, NULL));
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_START, &status));
@@ -88,7 +88,7 @@ static void test_single_ended_ch0_conversion(void) {
   TEST_ASSERT_TRUE_MESSAGE(data_ready, "ADC did not present fresh data within timeout");
   TEST_ASSERT_TRUE_MESSAGE(read_back_nonzero, "ADC data register remained zero; conversion likely failed");
 
-  int32_t raw_value = (int32_t)((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
+  int32_t raw_value = (int32_t) ((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
   if (raw_value & 0x800000) {
     raw_value |= 0xFF000000;
   }
@@ -103,7 +103,7 @@ static void test_single_ended_ch0_conversion(void) {
   TEST_ASSERT_TRUE_MESSAGE((status_after & MCP356X_STATUS_DR_MASK) != 0u,
                            "Expected DR_STATUS to flag 'no new data' after consuming sample");
 
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_STANDBY, &status));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(&status));
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_FULLRESET, &status));
 }
 
@@ -122,6 +122,16 @@ static void test_apply_default_config_writes_expected_values(void) {
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config_value, 1u, NULL));
   TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_DEFAULT, config_value);
+}
+
+static void test_enter_standby_wrapper_matches_fast_command_status(void) {
+  uint8_t helper_status = 0xFFu;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(&helper_status));
+
+  uint8_t direct_status = 0xFFu;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_STANDBY, &direct_status));
+
+  TEST_ASSERT_EQUAL_HEX8(direct_status, helper_status);
 }
 
 static void test_read_single_ended_channel_returns_sample(void) {
@@ -157,7 +167,7 @@ static void test_mux_select_single_channel_writes_mux_register(void) {
   uint8_t mux_after = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_MUX, &mux_after, 1u, NULL));
 
-  const uint8_t expected_mux = (uint8_t)((MCP356X_MUX_CH3 << 4) | MCP356X_MUX_AGND);
+  const uint8_t expected_mux = (uint8_t) ((MCP356X_MUX_CH3 << 4) | MCP356X_MUX_AGND);
   TEST_ASSERT_EQUAL_HEX8(expected_mux, mux_after);
 
   // Cleanup: restore the register to its original state so subsequent tests are unaffected.
@@ -196,7 +206,7 @@ void setUp(void) {
 void tearDown(void) {
   uint8_t status = 0xFFu;
   // Park the ADC so the next test does not inherit an active conversion.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_STANDBY, &status));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(&status));
   status = 0xFFu;
   // Restore POR defaults to leave hardware neutral for subsequent runs.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_send_fast_command(MCP356X_FASTCMD_FULLRESET, &status));
@@ -211,6 +221,7 @@ void setup() {
   RUN_TEST(test_mux_select_single_channel_writes_mux_register);
   RUN_TEST(test_mux_select_single_channel_rejects_invalid_inputs);
   RUN_TEST(test_apply_default_config_writes_expected_values);
+  RUN_TEST(test_enter_standby_wrapper_matches_fast_command_status);
   RUN_TEST(test_read_single_ended_channel_returns_sample);
   RUN_TEST(test_read_single_ended_channel_times_out_when_data_stalls);
   UNITY_END();
