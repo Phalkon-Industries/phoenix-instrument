@@ -1,1 +1,1 @@
-2025-09-26: OPA2380 pinout is incorrect, TBD
+2025-09-26: OPA2380 pinout is incorrect, fixed
