@@ -41,6 +41,14 @@ int ad524x_initialize(uint8_t i2c_address, TwoWire* wire_bus);
 bool ad524x_is_initialized(void);
 
 /**
+ * @brief Deinitialise the driver, clearing cached address and bus handle.
+ *
+ * This helper is primarily intended for tests or shutdown flows that need to
+ * reset the driver to an uninitialised state without touching the I²C bus.
+ */
+void ad524x_deinitialize(void);
+
+/**
  * @brief Build an instruction byte for the AD524x command set.
  *
  * @param channel    RDAC channel to address (0 or 1).
@@ -74,5 +82,46 @@ int ad524x_write_frame(uint8_t instruction, uint8_t data);
  *         error code representing bus failures/timeouts.
  */
 int ad524x_read_frame(uint8_t instruction, uint8_t* data_out);
+
+/**
+ * @brief Write a new wiper code to the selected RDAC channel.
+ *
+ * @param channel Target RDAC channel (0 or 1).
+ * @param value   8-bit wiper code to program.
+ * @return AD524X_OK on success or a negative error code on validation or bus
+ *         failures.
+ */
+int ad524x_set_wiper(uint8_t channel, uint8_t value);
+
+/**
+ * @brief Read the current wiper code from the selected channel.
+ *
+ * @param channel   Target RDAC channel (0 or 1).
+ * @param value_out Destination pointer that receives the wiper code.
+ * @return AD524X_OK on success or a negative error code on validation or bus
+ *         failures.
+ */
+int ad524x_get_wiper(uint8_t channel, uint8_t* value_out);
+
+/**
+ * @brief Command the device to jump the specified channel to midscale (0x80).
+ *
+ * @param channel Target RDAC channel (0 or 1).
+ * @return AD524X_OK on success or a negative error code.
+ */
+int ad524x_set_midscale(uint8_t channel);
+
+/**
+ * @brief Toggle the shutdown bit for the selected channel while preserving the
+ *        current wiper code.
+ *
+ * When @p enable is true the channel enters shutdown; when false it resumes
+ * normal operation.
+ *
+ * @param channel Target RDAC channel (0 or 1).
+ * @param enable  true to assert shutdown, false to clear it.
+ * @return AD524X_OK on success or a negative error code.
+ */
+int ad524x_shutdown(uint8_t channel, bool enable);
 
 #endif  // AD524X_HPP

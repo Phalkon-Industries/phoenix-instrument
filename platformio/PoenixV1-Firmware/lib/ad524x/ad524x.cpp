@@ -49,6 +49,12 @@ bool ad524x_is_initialized(void) {
   return g_driver_state.initialized;
 }
 
+void ad524x_deinitialize(void) {
+  g_driver_state.i2c_address = 0u;
+  g_driver_state.wire_bus    = NULL;
+  g_driver_state.initialized = false;
+}
+
 int ad524x_build_instruction(uint8_t channel, bool midscale, bool shutdown, uint8_t* instruction_out) {
   if (instruction_out == NULL) {
     return AD524X_ERR_INVALID_ARG;
@@ -136,4 +142,70 @@ int ad524x_read_frame(uint8_t instruction, uint8_t* data_out) {
 
   *data_out = static_cast<uint8_t>(value);
   return AD524X_OK;
+}
+
+int ad524x_set_wiper(uint8_t channel, uint8_t value) {
+  if (!g_driver_state.initialized) {
+    return AD524X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t instruction = 0u;
+  int     status      = ad524x_build_instruction(channel, false, false, &instruction);
+  if (status != AD524X_OK) {
+    return status;
+  }
+
+  return ad524x_write_frame(instruction, value);
+}
+
+int ad524x_get_wiper(uint8_t channel, uint8_t* value_out) {
+  if (value_out == NULL) {
+    return AD524X_ERR_INVALID_ARG;
+  }
+
+  if (!g_driver_state.initialized) {
+    return AD524X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t instruction = 0u;
+  int     status      = ad524x_build_instruction(channel, false, false, &instruction);
+  if (status != AD524X_OK) {
+    return status;
+  }
+
+  return ad524x_read_frame(instruction, value_out);
+}
+
+int ad524x_set_midscale(uint8_t channel) {
+  if (!g_driver_state.initialized) {
+    return AD524X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t instruction = 0u;
+  int     status      = ad524x_build_instruction(channel, true, false, &instruction);
+  if (status != AD524X_OK) {
+    return status;
+  }
+
+  return ad524x_write_frame(instruction, 0x00u);
+}
+
+int ad524x_shutdown(uint8_t channel, bool enable) {
+  if (!g_driver_state.initialized) {
+    return AD524X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t wiper  = 0u;
+  int     status = ad524x_get_wiper(channel, &wiper);
+  if (status != AD524X_OK) {
+    return status;
+  }
+
+  uint8_t instruction = 0u;
+  status              = ad524x_build_instruction(channel, false, enable, &instruction);
+  if (status != AD524X_OK) {
+    return status;
+  }
+
+  return ad524x_write_frame(instruction, wiper);
 }

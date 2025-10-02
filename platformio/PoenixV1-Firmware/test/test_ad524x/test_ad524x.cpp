@@ -6,9 +6,17 @@
 #include <unity.h>
 
 void setUp(void) {
+  ad524x_deinitialize();
 }
 
 void tearDown(void) {
+  if (ad524x_is_initialized()) {
+    (void) ad524x_set_midscale(0u);
+    (void) ad524x_shutdown(0u, false);
+    (void) ad524x_set_midscale(1u);
+    (void) ad524x_shutdown(1u, false);
+    ad524x_deinitialize();
+  }
 }
 
 // The application is expected to call Wire.begin() once during bring-up. Tests
@@ -84,6 +92,60 @@ static void test_ad524x_write_and_read_roundtrip_wiper_codes(void) {
   }
 }
 
+static void test_ad524x_set_wiper_rejects_when_not_initialized(void) {
+  TEST_ASSERT_EQUAL_INT(AD524X_ERR_NOT_INITIALIZED, ad524x_set_wiper(0u, 0x10u));
+}
+
+static void test_ad524x_set_wiper_rejects_invalid_channel(void) {
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
+  TEST_ASSERT_EQUAL_INT(AD524X_ERR_INVALID_ARG, ad524x_set_wiper(2u, 0x10u));
+}
+
+static void test_ad524x_set_and_get_wiper_roundtrip(void) {
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
+
+  const uint8_t channel_values[2] = {0x12u, 0xABu};
+  for (uint8_t channel = 0u; channel < 2u; ++channel) {
+    TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_set_wiper(channel, channel_values[channel]));
+  }
+
+  for (uint8_t channel = 0u; channel < 2u; ++channel) {
+    uint8_t readback = 0u;
+    TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(channel, &readback));
+    TEST_ASSERT_EQUAL_UINT8(channel_values[channel], readback);
+  }
+}
+
+static void test_ad524x_get_wiper_rejects_null_pointer(void) {
+  TEST_ASSERT_EQUAL_INT(AD524X_ERR_INVALID_ARG, ad524x_get_wiper(0u, NULL));
+}
+
+static void test_ad524x_set_midscale_positions_wiper(void) {
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_set_wiper(0u, 0x01u));
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_set_midscale(0u));
+
+  uint8_t readback = 0u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &readback));
+  TEST_ASSERT_EQUAL_UINT8(0x80u, readback);
+}
+
+static void test_ad524x_shutdown_preserves_wiper_code(void) {
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
+  const uint8_t target = 0x55u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_set_wiper(1u, target));
+
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_shutdown(1u, true));
+
+  uint8_t readback = 0u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(1u, &readback));
+  TEST_ASSERT_EQUAL_UINT8(target, readback);
+
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_shutdown(1u, false));
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(1u, &readback));
+  TEST_ASSERT_EQUAL_UINT8(target, readback);
+}
+
 void setup() {
   UNITY_SETUP_SERIAL_DEFAULT();
   Wire.begin();
@@ -97,6 +159,12 @@ void setup() {
   RUN_TEST(test_ad524x_initialize_accepts_valid_inputs);
   RUN_TEST(test_ad524x_build_instruction_sets_expected_bits);
   RUN_TEST(test_ad524x_write_and_read_roundtrip_wiper_codes);
+  RUN_TEST(test_ad524x_set_wiper_rejects_when_not_initialized);
+  RUN_TEST(test_ad524x_set_wiper_rejects_invalid_channel);
+  RUN_TEST(test_ad524x_set_and_get_wiper_roundtrip);
+  RUN_TEST(test_ad524x_get_wiper_rejects_null_pointer);
+  RUN_TEST(test_ad524x_set_midscale_positions_wiper);
+  RUN_TEST(test_ad524x_shutdown_preserves_wiper_code);
   UNITY_END();
 }
 
