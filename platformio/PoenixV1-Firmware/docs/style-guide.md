@@ -6,7 +6,7 @@ This guide covers conventions **not** enforced automatically by `clang-format`. 
 - **Files:** Use lower_snake_case (e.g. `mcp356x.cpp`, `unity_config.cpp`).
 - **Namespaces:** Avoid unless interacting with Arduino libraries; prefer `static` linkage instead.
 - **Types / structs / enums / classes:** `CamelCase` (upper camel). Example: `struct AdcSampleBuffer`.
-- **Functions and free helpers:** `lower_snake_case`. Example: `read_config_value()`.
+- **Functions and free helpers:** `lower_snake_case`. Ex: `read_config_value()` 
 - **Unity test names:** Use clear test identifiers in lower_snake_case following Unity conventions—prefer `test_action` or `test_unit_action` so the name describes the behavior and expected result (e.g., `test_adc_read_returns_error_on_null_buffer` or `test_config_load_sets_defaults`).
 - **Static globals:** Prefix with `g_` (e.g. `g_initialized`). Prefer file-local `static` over `extern`.
 - **Local variables:** `lower_snake_case` (e.g. `config0_before`, `status_after`).
