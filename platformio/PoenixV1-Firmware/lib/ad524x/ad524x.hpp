@@ -40,4 +40,39 @@ int ad524x_initialize(uint8_t i2c_address, TwoWire* wire_bus);
  */
 bool ad524x_is_initialized(void);
 
+/**
+ * @brief Build an instruction byte for the AD524x command set.
+ *
+ * @param channel    RDAC channel to address (0 or 1).
+ * @param midscale   When true, set the midscale reset bit (RS) in the
+ *                   instruction.
+ * @param shutdown   When true, assert the shutdown bit (SD) in the instruction.
+ * @param instruction_out Destination pointer that receives the assembled
+ *                         instruction byte.
+ * @return AD524X_OK on success, AD524X_ERR_INVALID_ARG on invalid inputs.
+ */
+int ad524x_build_instruction(uint8_t channel, bool midscale, bool shutdown, uint8_t* instruction_out);
+
+/**
+ * @brief Write an instruction/data frame to the device.
+ *
+ * @param instruction Instruction byte assembled via `ad524x_build_instruction`.
+ * @param data        Data byte to write (wiper code on standard operations).
+ * @return AD524X_OK on success, or a negative error code when the driver is not
+ *         initialised or the I²C transaction fails.
+ */
+int ad524x_write_frame(uint8_t instruction, uint8_t data);
+
+/**
+ * @brief Read a single data byte from the device using a repeated-start
+ *        transaction.
+ *
+ * @param instruction Instruction byte to send before the read phase.
+ * @param data_out    Destination pointer that receives the read byte.
+ * @return AD524X_OK on success, AD524X_ERR_INVALID_ARG for null buffers,
+ *         AD524X_ERR_NOT_INITIALIZED if the driver is not ready, or a negative
+ *         error code representing bus failures/timeouts.
+ */
+int ad524x_read_frame(uint8_t instruction, uint8_t* data_out);
+
 #endif  // AD524X_HPP
