@@ -1,3 +1,4 @@
+#include "led_router.hpp"
 #include "main.hpp"
 
 struct PhotodiodeSample {
@@ -7,7 +8,7 @@ struct PhotodiodeSample {
 };
 
 static const uint32_t k_spi_clock_hz          = 500000UL;
-static const uint32_t k_settle_delay_ms       = 100UL;
+static const uint32_t k_settle_delay_ms       = 1UL;
 static const uint8_t  k_digipot_channels[]    = {0u, 1u};
 static const size_t   k_digipot_channel_count = sizeof(k_digipot_channels) / sizeof(k_digipot_channels[0]);
 static const uint8_t  k_wiper_codes[]         = {0x00, 0x10, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0, 0xFF};
@@ -15,22 +16,15 @@ static const size_t   k_sample_count          = sizeof(k_wiper_codes) / sizeof(k
 
 static PhotodiodeSample g_samples[k_sample_count];
 
-enum class LedSwitchState : uint8_t {
-  kOff,
-  kLed1,
-  kLed2,
-  kDrain,
-};
-
 struct LedSweepRequest {
   const char*    label;
-  LedSwitchState state;
+  LedRouterState state;
 };
 
 static const LedSweepRequest k_led_sweep_sequence[] = {
-    {"Drain", LedSwitchState::kDrain},
-    {"LED1", LedSwitchState::kLed1},
-    {"LED2", LedSwitchState::kLed2},
+    {"Drain", LedRouterState::LED_ROUTER_STATE_DRAIN},
+    {"LED1", LedRouterState::LED_ROUTER_STATE_LED1},
+    {"LED2", LedRouterState::LED_ROUTER_STATE_LED2},
 };
 static const size_t k_led_sweep_count = sizeof(k_led_sweep_sequence) / sizeof(k_led_sweep_sequence[0]);
 
@@ -42,36 +36,37 @@ static void wait_for_serial(void) {
 }
 
 static void configure_led_paths_off(void) {
-  pinMode(TS5A3359_IN1, OUTPUT);
-  pinMode(TS5A3359_IN2, OUTPUT);
-  digitalWrite(TS5A3359_IN1, LOW);
-  digitalWrite(TS5A3359_IN2, LOW);
-
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
   digitalWrite(LED_RED, LOW);
   digitalWrite(LED_BLUE, LOW);
 }
 
-static void select_led_switch_state(LedSwitchState state) {
-  switch (state) {
-    case LedSwitchState::kOff:
-      digitalWrite(TS5A3359_IN1, LOW);
-      digitalWrite(TS5A3359_IN2, LOW);
-      break;
-    case LedSwitchState::kLed1:
-      digitalWrite(TS5A3359_IN1, HIGH);
-      digitalWrite(TS5A3359_IN2, LOW);
-      break;
-    case LedSwitchState::kLed2:
-      digitalWrite(TS5A3359_IN1, LOW);
-      digitalWrite(TS5A3359_IN2, HIGH);
-      break;
-    case LedSwitchState::kDrain:
-      digitalWrite(TS5A3359_IN1, HIGH);
-      digitalWrite(TS5A3359_IN2, HIGH);
-      break;
+static bool configure_led_router(void) {
+  const LedRouterConfig config = {
+      TS5A3359_IN1,
+      TS5A3359_IN2,
+  };
+
+  const int return_code = led_router_initialize(&config);
+  if (return_code != LED_ROUTER_OK) {
+    Serial.print(F("led_router_initialize failed: "));
+    Serial.println(return_code);
+    return false;
   }
+
+  return true;
+}
+
+static bool select_led_switch_state(LedRouterState state) {
+  const int return_code = led_router_set_state(state);
+  if (return_code != LED_ROUTER_OK) {
+    Serial.print(F("led_router_set_state failed: "));
+    Serial.println(return_code);
+    return false;
+  }
+
+  return true;
 }
 
 static void enable_power_domains(void) {
@@ -212,6 +207,12 @@ static void park_hardware(void) {
     Serial.print(F("mcp356x_enter_standby failed: "));
     Serial.println(standby_return_code);
   }
+
+  const int shutdown_return_code = led_router_shutdown();
+  if (shutdown_return_code != LED_ROUTER_OK) {
+    Serial.print(F("led_router_shutdown failed: "));
+    Serial.println(shutdown_return_code);
+  }
 }
 
 void setup() {
@@ -227,8 +228,12 @@ void setup() {
   if (!initialise_mcp356x()) {
     return;
   }
-
-  select_led_switch_state(LedSwitchState::kDrain);
+  if (!configure_led_router()) {
+    return;
+  }
+  if (!select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN)) {
+    return;
+  }
   Serial.println(F("# Sweep format per line: state\t(wiper_hex,ch4_code,ch5_code)*"));
 }
 
@@ -236,7 +241,10 @@ void loop() {
   bool sweep_failed = false;
   for (size_t i = 0; i < k_led_sweep_count; ++i) {
     const LedSweepRequest& request = k_led_sweep_sequence[i];
-    select_led_switch_state(request.state);
+    if (!select_led_switch_state(request.state)) {
+      sweep_failed = true;
+      break;
+    }
 
     if (collect_samples()) {
       print_samples_inline(request.label);
@@ -253,6 +261,8 @@ void loop() {
   }
 
   park_hardware();
-  select_led_switch_state(LedSwitchState::kDrain);
+  if (configure_led_router()) {
+    (void) select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
+  }
   delay(1000);
 }

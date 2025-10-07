@@ -21,9 +21,15 @@ bool is_valid_state(LedRouterState state) {
 }
 
 void apply_state_to_pins(LedRouterState state) {
+  // Avoid redundant writes that would repeatedly toggle the TS5A3359 control pins.
+  if (g_current_state == state) {
+    return;
+  }
+
   int pin_in1_level = LOW;
   int pin_in2_level = LOW;
 
+  // TS5A3359 truth table: IN1/IN2 -> OFF (0/0), LED1 (1/0), LED2 (0/1), DRAIN (1/1).
   switch (state) {
     case LedRouterState::LED_ROUTER_STATE_OFF:
       pin_in1_level = LOW;
