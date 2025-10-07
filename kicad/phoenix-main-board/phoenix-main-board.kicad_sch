@@ -8780,16 +8780,6 @@
 		)
 		(uuid "dce1d245-965b-44b0-bc64-1ec5098a1e74")
 	)
-	(label "EnablePower"
-		(at 25.4 130.81 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "dfe83100-75ac-4cfb-9733-1a0cbd74757e")
-	)
 	(label "SCL"
 		(at 82.55 78.74 180)
 		(effects
@@ -16881,6 +16871,71 @@
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
 					(reference "R9")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 25.4 130.81 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "e5c132c2-4423-4c45-bf1d-de2d39fdb04e")
+		(property "Reference" "#PWR05"
+			(at 25.4 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 25.4 134.874 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 25.4 130.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 25.4 130.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 25.4 130.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "6a2d597d-b374-413a-9a0a-e070051f851c")
+		)
+		(instances
+			(project "phoenix-main-board"
+				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
+					(reference "#PWR05")
 					(unit 1)
 				)
 			)
