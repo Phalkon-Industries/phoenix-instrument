@@ -1,3 +1,4 @@
+#include "adc_hal.hpp"
 #include "led_router.hpp"
 #include "main.hpp"
 
@@ -96,25 +97,23 @@ static bool initialise_ad524x(void) {
   return true;
 }
 
-static bool initialise_mcp356x(void) {
-  int return_code = mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz);
-  if (return_code != MCP356X_OK) {
-    Serial.print(F("mcp356x_initialize failed: "));
+static bool initialise_adc_hal(void) {
+  const AdcHalConfig config = {
+      .chip_select_pin = PIN_ADC_CS,
+      .spi_clock_hz    = k_spi_clock_hz,
+      .default_gain    = AdcHalGain::ADC_HAL_GAIN_1,
+  };
+
+  int return_code = adc_hal_initialize(&config);
+  if (return_code != ADC_HAL_OK) {
+    Serial.print(F("adc_hal_initialize failed: "));
     Serial.println(return_code);
     return false;
   }
 
-  return_code = mcp356x_full_reset(NULL);
-  if (return_code != MCP356X_OK) {
-    Serial.print(F("mcp356x_full_reset failed: "));
-    Serial.println(return_code);
-    return false;
-  }
-  delay(2);  // Allow registers to settle after the reset command.
-
-  return_code = mcp356x_apply_default_config();
-  if (return_code != MCP356X_OK) {
-    Serial.print(F("mcp356x_apply_default_config failed: "));
+  return_code = adc_hal_apply_default_configuration();
+  if (return_code != ADC_HAL_OK) {
+    Serial.print(F("adc_hal_apply_default_configuration failed: "));
     Serial.println(return_code);
     return false;
   }
@@ -146,15 +145,15 @@ static bool capture_sample(size_t index, uint8_t wiper_code) {
   PhotodiodeSample sample = {};
   sample.wiper_code       = wiper_code;
 
-  int return_code = mcp356x_read_single_ended_channel(4u, 200u, &sample.channel4_code);
-  if (return_code != MCP356X_OK) {
+  int return_code = adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_4, 1000000u, &sample.channel4_code);
+  if (return_code != ADC_HAL_OK) {
     Serial.print(F("read channel 4 failed: "));
     Serial.println(return_code);
     return false;
   }
 
-  return_code = mcp356x_read_single_ended_channel(5u, 200u, &sample.channel5_code);
-  if (return_code != MCP356X_OK) {
+  return_code = adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_5, 1000000u, &sample.channel5_code);
+  if (return_code != ADC_HAL_OK) {
     Serial.print(F("read channel 5 failed: "));
     Serial.println(return_code);
     return false;
@@ -202,16 +201,16 @@ static void park_hardware(void) {
     (void) ad524x_set_midscale(k_digipot_channels[i]);
   }
 
-  int standby_return_code = mcp356x_enter_standby(NULL);
-  if (standby_return_code != MCP356X_OK) {
-    Serial.print(F("mcp356x_enter_standby failed: "));
+  int standby_return_code = adc_hal_enter_standby();
+  if (standby_return_code != ADC_HAL_OK) {
+    Serial.print(F("adc_hal_enter_standby failed: "));
     Serial.println(standby_return_code);
   }
 
-  const int shutdown_return_code = led_router_shutdown();
-  if (shutdown_return_code != LED_ROUTER_OK) {
+  const int router_shutdown_return_code = led_router_shutdown();
+  if (router_shutdown_return_code != LED_ROUTER_OK) {
     Serial.print(F("led_router_shutdown failed: "));
-    Serial.println(shutdown_return_code);
+    Serial.println(router_shutdown_return_code);
   }
 }
 
@@ -225,7 +224,7 @@ void setup() {
   if (!initialise_ad524x()) {
     return;
   }
-  if (!initialise_mcp356x()) {
+  if (!initialise_adc_hal()) {
     return;
   }
   if (!configure_led_router()) {
