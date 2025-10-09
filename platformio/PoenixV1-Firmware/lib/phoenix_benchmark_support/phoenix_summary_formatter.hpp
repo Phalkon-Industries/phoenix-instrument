@@ -15,20 +15,26 @@ static constexpr std::size_t k_summary_label_width        = 8u;
 static constexpr std::size_t k_summary_samples_width      = 9u;
 static constexpr std::size_t k_summary_channel_width      = 12u;
 static constexpr std::size_t k_summary_duration_width     = 15u;
-static constexpr std::size_t k_summary_column_count       = 9u;
-static constexpr std::size_t k_summary_table_buffer_bytes = 160u;
+static constexpr std::size_t k_summary_map_width          = 12u;
+static constexpr std::size_t k_summary_column_count       = 13u;
+static constexpr std::size_t k_summary_table_buffer_bytes = 256u;
 
 /// @brief Captures the values required to populate one summary table row.
 struct SummaryRowValues {
-  const char* label;                ///< Human-readable identifier for the row, e.g. state name or "Cycle".
-  uint32_t    sample_count;         ///< Number of captured samples represented by the row.
-  double      mean_channel_a;       ///< Mean ADC code for channel A; ignored when has_channel_metrics is false.
-  double      std_channel_a;        ///< Sample standard deviation for channel A.
-  double      mean_channel_b;       ///< Mean ADC code for channel B.
-  double      std_channel_b;        ///< Sample standard deviation for channel B.
-  double      step_mean_us;         ///< Mean state dwell measured in microseconds.
-  double      step_std_us;          ///< Standard deviation for state dwell in microseconds.
-  double      step_range_us;        ///< Observed microsecond range for state dwell (max - min).
+  const char* label;              ///< Human-readable identifier for the row, e.g. state name or "Cycle".
+  uint32_t    sample_count;       ///< Number of captured samples represented by the row.
+  double      mean_channel_a;     ///< Mean ADC code for channel A; ignored when has_channel_metrics is false.
+  double      std_channel_a;      ///< Sample standard deviation for channel A.
+  double      min_channel_a;      ///< Minimum observed ADC code for channel A.
+  double      max_channel_a;      ///< Maximum observed ADC code for channel A.
+  double      mean_channel_b;     ///< Mean ADC code for channel B.
+  double      std_channel_b;      ///< Sample standard deviation for channel B.
+  double      min_channel_b;      ///< Minimum observed ADC code for channel B.
+  double      max_channel_b;      ///< Maximum observed ADC code for channel B.
+  double      step_mean_us;       ///< Mean state dwell measured in microseconds.
+  double      step_std_us;        ///< Standard deviation for state dwell in microseconds.
+  double      step_range_us;      ///< Observed microsecond range for state dwell (max - min).
+  const char* channel_alignment;  ///< String describing channel dominance vs expectation (nullptr renders placeholder).
   bool        has_channel_metrics;  ///< When false, channel metrics print "--" placeholders for clarity.
 };
 
@@ -153,10 +159,22 @@ inline bool format_summary_header(char* buffer, std::size_t buffer_length) {
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Std_A", k_summary_channel_width)) {
     return false;
   }
+  if (!detail::append_column_right(buffer, buffer_length, &offset, "Min_A", k_summary_channel_width)) {
+    return false;
+  }
+  if (!detail::append_column_right(buffer, buffer_length, &offset, "Max_A", k_summary_channel_width)) {
+    return false;
+  }
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Mean_B", k_summary_channel_width)) {
     return false;
   }
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Std_B", k_summary_channel_width)) {
+    return false;
+  }
+  if (!detail::append_column_right(buffer, buffer_length, &offset, "Min_B", k_summary_channel_width)) {
+    return false;
+  }
+  if (!detail::append_column_right(buffer, buffer_length, &offset, "Max_B", k_summary_channel_width)) {
     return false;
   }
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Step_us_mean", k_summary_duration_width)) {
@@ -166,6 +184,9 @@ inline bool format_summary_header(char* buffer, std::size_t buffer_length) {
     return false;
   }
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Step_us_range", k_summary_duration_width)) {
+    return false;
+  }
+  if (!detail::append_column_right(buffer, buffer_length, &offset, "Channel_Map", k_summary_map_width)) {
     return false;
   }
   detail::trim_trailing_space(buffer, &offset);
@@ -204,6 +225,18 @@ inline bool format_summary_row(const SummaryRowValues& values, char* buffer, std
     if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
       return false;
     }
+    if (!detail::format_double(temp, sizeof(temp), values.min_channel_a, k_summary_channel_width, 3u)) {
+      return false;
+    }
+    if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
+      return false;
+    }
+    if (!detail::format_double(temp, sizeof(temp), values.max_channel_a, k_summary_channel_width, 3u)) {
+      return false;
+    }
+    if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
+      return false;
+    }
     if (!detail::format_double(temp, sizeof(temp), values.mean_channel_b, k_summary_channel_width, 3u)) {
       return false;
     }
@@ -216,8 +249,32 @@ inline bool format_summary_row(const SummaryRowValues& values, char* buffer, std
     if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
       return false;
     }
+    if (!detail::format_double(temp, sizeof(temp), values.min_channel_b, k_summary_channel_width, 3u)) {
+      return false;
+    }
+    if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
+      return false;
+    }
+    if (!detail::format_double(temp, sizeof(temp), values.max_channel_b, k_summary_channel_width, 3u)) {
+      return false;
+    }
+    if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
+      return false;
+    }
   }
   else {
+    if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
+      return false;
+    }
+    if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
+      return false;
+    }
+    if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
+      return false;
+    }
+    if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
+      return false;
+    }
     if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
       return false;
     }
@@ -250,6 +307,14 @@ inline bool format_summary_row(const SummaryRowValues& values, char* buffer, std
     return false;
   }
   if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_duration_width)) {
+    return false;
+  }
+
+  const char* alignment_text = values.channel_alignment;
+  if (alignment_text == nullptr) {
+    alignment_text = "--";
+  }
+  if (!detail::append_column_left(buffer, buffer_length, &offset, alignment_text, k_summary_map_width)) {
     return false;
   }
 

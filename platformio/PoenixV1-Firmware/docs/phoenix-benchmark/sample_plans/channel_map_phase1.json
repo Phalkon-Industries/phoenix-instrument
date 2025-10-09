@@ -1,0 +1,11 @@
+{
+    "commands": [
+        {
+            "command": "channel_map",
+            "parameters": {
+                "sweeps": 100,
+                "dwell_us": 100
+            }
+        }
+    ]
+}

@@ -4,3 +4,9 @@
 .vscode/launch.json
 .vscode/ipch
 .github
+__pycache__/
+*.py[cod]
+python/**/__pycache__/
+python/**/*.py[cod]
+.pytest_cache/
+.mypy_cache/
