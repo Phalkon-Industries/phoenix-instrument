@@ -17,10 +17,9 @@ constexpr AdcHalChannel k_channel_a = AdcHalChannel::ADC_HAL_CHANNEL_4;
 constexpr AdcHalChannel k_channel_b = AdcHalChannel::ADC_HAL_CHANNEL_5;
 
 const PhoenixBenchmarkChannelMapDefaults k_channel_map_defaults = {
-    .sweep_count         = 100u,
-    .dwell_us            = 100u,
-    .wiper_code          = 0x00u,
-    .include_drain_state = true,
+    .sweep_count = 100u,
+    .dwell_us    = 100u,
+    .wiper_code  = 0x00u,
 };
 
 PhoenixBenchmarkStateAccumulator g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
@@ -90,10 +89,6 @@ void print_summary_table(void) {
     if (!descriptor.include_in_summary) {
       continue;
     }
-    if (!k_channel_map_defaults.include_drain_state && descriptor.is_reference_state) {
-      continue;
-    }
-
     const PhoenixBenchmarkStateAccumulator& accumulator = g_state_accumulators[index];
     const bool                              has_samples = accumulator.channel_a_codes.has_samples();
     const bool                              channel_a_saturated =

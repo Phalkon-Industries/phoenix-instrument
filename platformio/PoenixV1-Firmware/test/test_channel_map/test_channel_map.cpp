@@ -10,10 +10,9 @@
 namespace {
 
 const PhoenixBenchmarkChannelMapDefaults k_defaults = {
-    .sweep_count         = 100u,
-    .dwell_us            = 100u,
-    .wiper_code          = 0x10u,
-    .include_drain_state = true,
+    .sweep_count = 100u,
+    .dwell_us    = 100u,
+    .wiper_code  = 0x10u,
 };
 
 void reset_defaults(void) {
