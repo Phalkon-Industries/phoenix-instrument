@@ -28,7 +28,7 @@ constexpr AdcHalChannel k_channel_a = AdcHalChannel::ADC_HAL_CHANNEL_4;
 constexpr AdcHalChannel k_channel_b = AdcHalChannel::ADC_HAL_CHANNEL_5;
 
 const ChannelMapDefaults k_channel_map_defaults = {
-    .sweep_count         = 3000u,
+    .sweep_count         = 100u,
     .dwell_us            = 100u,
     .wiper_code          = 0x00u,
     .include_drain_state = true,

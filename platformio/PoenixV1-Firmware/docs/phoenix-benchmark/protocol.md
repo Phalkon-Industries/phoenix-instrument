@@ -23,7 +23,7 @@ Requests a single sweep that identifies which ADC channel responds to each LED s
 **Example**
 
 ```json
-{"command": "channel_map", "parameters": {"sweeps": 3000, "dwell_us": 100}}
+{"command": "channel_map", "parameters": {"sweeps": 100, "dwell_us": 100}}
 ```
 
 Additional commands (gain matrix, dwell sensitivity, etc.) will be added in later phases. Unknown command identifiers return a `# error,unsupported_command` line until the corresponding firmware feature ships.
