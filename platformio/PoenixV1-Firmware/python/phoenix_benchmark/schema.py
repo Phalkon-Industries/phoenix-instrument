@@ -14,11 +14,14 @@ class ChannelMapCommand:
 
     sweeps: int
     dwell_us: int | None = None
+    wiper_code: int | None = None
 
     def to_payload(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"sweeps": self.sweeps}
         if self.dwell_us is not None:
             payload["dwell_us"] = self.dwell_us
+        if self.wiper_code is not None:
+            payload["wiper_code"] = self.wiper_code
         return payload
 
 
@@ -53,7 +56,13 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
             raise ValueError(
                 "channel_map.dwell_us must be a non-negative integer when provided"
             )
-        command = ChannelMapCommand(sweeps=sweeps, dwell_us=dwell)
+        wiper = parameters.get("wiper_code")
+        if wiper is not None:
+            if not isinstance(wiper, int) or not (0 <= wiper <= 0xFF):
+                raise ValueError(
+                    "channel_map.wiper_code must be an integer between 0 and 255"
+                )
+        command = ChannelMapCommand(sweeps=sweeps, dwell_us=dwell, wiper_code=wiper)
         return BenchmarkCommand(name=name, parameters=command.to_payload())
 
     # Unknown commands pass-through for future phases

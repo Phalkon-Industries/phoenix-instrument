@@ -72,58 +72,65 @@ struct RunningStats {
 
 /// @brief Aggregates per-state statistics captured during the benchmark run.
 struct StateAccumulator {
-  RunningStats<int32_t>  channel_a_codes;
-  RunningStats<int32_t>  channel_b_codes;
-  RunningStats<uint32_t> state_duration_us;
+  RunningStats<int32_t> channel_a_codes;
+  RunningStats<int32_t> channel_b_codes;
 };
 
 /// @brief Captures a single benchmark sample for CSV emission.
 struct SampleResult {
-  int32_t  channel_a_code;
-  int32_t  channel_b_code;
-  uint32_t elapsed_us;
-  uint32_t timestamp_us;
+  int32_t channel_a_code;
+  int32_t channel_b_code;
 };
 
 struct ChannelMapRequest {
   uint32_t sweep_count        = 0u;
   uint32_t dwell_us           = 0u;
   bool     has_dwell_override = false;
+  uint8_t  wiper_code         = 0u;
+  bool     has_wiper_override = false;
 };
 
-BenchmarkChannel determine_dominant_channel(const StateAccumulator& accumulator, double dominance_ratio,
-                                            double minimum_range);
+BenchmarkChannel determine_dominant_channel(const StateAccumulator& drain_accumulator,
+                                            const StateAccumulator& state_accumulator, double minimum_difference);
 
 bool format_channel_alignment_label(BenchmarkChannel expected, BenchmarkChannel observed, char* buffer,
                                     std::size_t buffer_length);
 
 bool parse_channel_map_command(const char* json_line, ChannelMapRequest* out_request);
 
-inline BenchmarkChannel determine_dominant_channel(const StateAccumulator& accumulator, double dominance_ratio,
-                                                   double minimum_range) {
-  if (!accumulator.channel_a_codes.has_samples() || !accumulator.channel_b_codes.has_samples()) {
+constexpr int32_t k_adc_positive_full_scale_code = 8388607;
+constexpr int32_t k_adc_negative_full_scale_code = -8388608;
+
+bool        is_adc_code_saturated(int32_t code);
+inline bool is_adc_code_saturated(int32_t code) {
+  return (code >= k_adc_positive_full_scale_code) || (code <= k_adc_negative_full_scale_code);
+}
+
+inline BenchmarkChannel determine_dominant_channel(const StateAccumulator& drain_accumulator,
+                                                   const StateAccumulator& state_accumulator,
+                                                   double                  minimum_difference) {
+  if (!drain_accumulator.channel_a_codes.has_samples() || !drain_accumulator.channel_b_codes.has_samples() ||
+      !state_accumulator.channel_a_codes.has_samples() || !state_accumulator.channel_b_codes.has_samples()) {
     return BenchmarkChannel::kUnknown;
   }
 
-  const double range_a = accumulator.channel_a_codes.range();
-  const double range_b = accumulator.channel_b_codes.range();
+  const double drain_mean_a = drain_accumulator.channel_a_codes.mean;
+  const double drain_mean_b = drain_accumulator.channel_b_codes.mean;
+  const double state_mean_a = state_accumulator.channel_a_codes.mean;
+  const double state_mean_b = state_accumulator.channel_b_codes.mean;
 
-  if (range_a < minimum_range && range_b < minimum_range) {
+  const double delta_a = std::fabs(state_mean_a - drain_mean_a);
+  const double delta_b = std::fabs(state_mean_b - drain_mean_b);
+
+  if (delta_a < minimum_difference && delta_b < minimum_difference) {
     return BenchmarkChannel::kUnknown;
   }
 
-  const double range_difference = std::fabs(range_a - range_b);
-  if (range_difference <= minimum_range) {
-    return BenchmarkChannel::kUnknown;
-  }
-
-  const double dominance_threshold_a = dominance_ratio * range_b;
-  if (range_a >= minimum_range && range_a >= dominance_threshold_a) {
+  if (delta_a > delta_b && delta_a >= minimum_difference) {
     return BenchmarkChannel::kChannelA;
   }
 
-  const double dominance_threshold_b = dominance_ratio * range_a;
-  if (range_b >= minimum_range && range_b >= dominance_threshold_b) {
+  if (delta_b > delta_a && delta_b >= minimum_difference) {
     return BenchmarkChannel::kChannelB;
   }
 
@@ -241,6 +248,24 @@ inline bool parse_channel_map_command(const char* json_line, ChannelMapRequest* 
 
     request.dwell_us           = static_cast<uint32_t>(dwell_long);
     request.has_dwell_override = true;
+  }
+
+  const char* wiper_token = std::strstr(json_line, "\"wiper_code\"");
+  if (wiper_token != nullptr) {
+    const char* wiper_value = std::strchr(wiper_token, ':');
+    if (wiper_value == nullptr) {
+      return false;
+    }
+    ++wiper_value;
+
+    char*      wiper_end  = nullptr;
+    const long wiper_long = std::strtol(wiper_value, &wiper_end, 0);
+    if (wiper_end == wiper_value || wiper_long < 0L || wiper_long > 0xFFL) {
+      return false;
+    }
+
+    request.wiper_code         = static_cast<uint8_t>(wiper_long & 0xFFL);
+    request.has_wiper_override = true;
   }
 
   *out_request = request;

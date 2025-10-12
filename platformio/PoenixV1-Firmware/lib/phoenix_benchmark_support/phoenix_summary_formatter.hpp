@@ -14,9 +14,8 @@ namespace phoenix_benchmark_support {
 static constexpr std::size_t k_summary_label_width        = 8u;
 static constexpr std::size_t k_summary_samples_width      = 9u;
 static constexpr std::size_t k_summary_channel_width      = 12u;
-static constexpr std::size_t k_summary_duration_width     = 15u;
 static constexpr std::size_t k_summary_map_width          = 12u;
-static constexpr std::size_t k_summary_column_count       = 13u;
+static constexpr std::size_t k_summary_column_count       = 11u;
 static constexpr std::size_t k_summary_table_buffer_bytes = 256u;
 
 /// @brief Captures the values required to populate one summary table row.
@@ -31,9 +30,6 @@ struct SummaryRowValues {
   double      std_channel_b;      ///< Sample standard deviation for channel B.
   double      min_channel_b;      ///< Minimum observed ADC code for channel B.
   double      max_channel_b;      ///< Maximum observed ADC code for channel B.
-  double      step_mean_us;       ///< Mean state dwell measured in microseconds.
-  double      step_std_us;        ///< Standard deviation for state dwell in microseconds.
-  double      step_range_us;      ///< Observed microsecond range for state dwell (max - min).
   const char* channel_alignment;  ///< String describing channel dominance vs expectation (nullptr renders placeholder).
   bool        has_channel_metrics;  ///< When false, channel metrics print "--" placeholders for clarity.
 };
@@ -177,15 +173,6 @@ inline bool format_summary_header(char* buffer, std::size_t buffer_length) {
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Max_B", k_summary_channel_width)) {
     return false;
   }
-  if (!detail::append_column_right(buffer, buffer_length, &offset, "Step_us_mean", k_summary_duration_width)) {
-    return false;
-  }
-  if (!detail::append_column_right(buffer, buffer_length, &offset, "Step_us_std", k_summary_duration_width)) {
-    return false;
-  }
-  if (!detail::append_column_right(buffer, buffer_length, &offset, "Step_us_range", k_summary_duration_width)) {
-    return false;
-  }
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Channel_Map", k_summary_map_width)) {
     return false;
   }
@@ -287,27 +274,6 @@ inline bool format_summary_row(const SummaryRowValues& values, char* buffer, std
     if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
       return false;
     }
-  }
-
-  if (!detail::format_double(temp, sizeof(temp), values.step_mean_us, k_summary_duration_width, 1u)) {
-    return false;
-  }
-  if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_duration_width)) {
-    return false;
-  }
-
-  if (!detail::format_double(temp, sizeof(temp), values.step_std_us, k_summary_duration_width, 1u)) {
-    return false;
-  }
-  if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_duration_width)) {
-    return false;
-  }
-
-  if (!detail::format_double(temp, sizeof(temp), values.step_range_us, k_summary_duration_width, 1u)) {
-    return false;
-  }
-  if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_duration_width)) {
-    return false;
   }
 
   const char* alignment_text = values.channel_alignment;

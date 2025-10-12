@@ -20,8 +20,8 @@ class DummySerial:
         self._line_queue: List[bytes] = [
             b"# phoenix benchmark ready\n",
             b"# summary_table\n",
-            b"State      Samples      Mean_A      Std_A      Min_A      Max_A      Mean_B      Std_B      Min_B      Max_B   Step_us_mean    Step_us_std  Step_us_range  Channel_Map\n",
-            b"LED1          10      123.000        2.000      120.000      130.000      321.000        3.000      310.000      330.000            5.0            0.5            1.0 A=OK        \n",
+            b"State      Samples      Mean_A      Std_A      Min_A      Max_A      Mean_B      Std_B      Min_B      Max_B   Channel_Map\n",
+            b"LED1          10      123.000        2.000      120.000      130.000      321.000        3.000      310.000      330.000   A=OK        \n",
             b"\n",
             b"# benchmark_complete\n",
             b"# ready\n",
@@ -91,7 +91,11 @@ def test_cli_streams_plan_to_serial_port(
                 "commands": [
                     {
                         "command": "channel_map",
-                        "parameters": {"sweeps": 5, "dwell_us": 10},
+                        "parameters": {
+                            "sweeps": 5,
+                            "dwell_us": 10,
+                            "wiper_code": 170,
+                        },
                     }
                 ]
             }
@@ -136,6 +140,7 @@ def test_cli_streams_plan_to_serial_port(
     assert len(instance.written) >= 2
     assert instance.written[0] == b"\n"
     assert b'"sweeps":5' in instance.written[1]
+    assert b'"wiper_code":170' in instance.written[1]
 
     assert captured["plan"] == plan
     assert captured["output"] == output_dir

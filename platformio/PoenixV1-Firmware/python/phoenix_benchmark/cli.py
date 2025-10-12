@@ -9,10 +9,17 @@ import time
 from pathlib import Path
 from typing import Iterable, List
 
+if (
+    __package__ is None or __package__ == ""
+):  # pragma: no cover - executed in script mode
+    package_root = Path(__file__).resolve().parents[1]
+    if str(package_root) not in sys.path:
+        sys.path.insert(0, str(package_root))
+
 import serial
 
-from .report import create_report
-from .schema import BenchmarkCommand, load_command_plan
+from phoenix_benchmark.report import create_report
+from phoenix_benchmark.schema import BenchmarkCommand, load_command_plan
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -43,6 +50,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory for generated reports. Defaults to ~/Downloads/phoenix-benchmark/<timestamp>.",
     )
+    parser.add_argument(
+        "--ready-timeout",
+        type=float,
+        default=DEFAULT_READY_TIMEOUT_SECONDS,
+        help=(
+            "Seconds to wait for the firmware '# ready' banner before aborting. "
+            "Use 0 for an immediate failure if no data is received."
+        ),
+    )
+    parser.add_argument(
+        "--command-timeout",
+        type=float,
+        default=DEFAULT_COMMAND_TIMEOUT_SECONDS,
+        help=(
+            "Seconds to wait for benchmark output between serial lines before aborting. "
+            "Applies separately to each command in the plan."
+        ),
+    )
     return parser
 
 
@@ -54,8 +79,8 @@ def _render_preview(commands: Iterable[BenchmarkCommand]) -> str:
     return "\n".join(lines)
 
 
-SERIAL_IDLE_TIMEOUT_SECONDS = 30.0
-BENCHMARK_IDLE_TIMEOUT_SECONDS = 180.0
+DEFAULT_READY_TIMEOUT_SECONDS = 30.0
+DEFAULT_COMMAND_TIMEOUT_SECONDS = 180.0
 
 
 def main(argv: Iterable[str] | None = None) -> int:
@@ -74,17 +99,23 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.port is None:
         parser.error("--port is required unless --dry-run is supplied")
 
+    ready_timeout = max(0.0, float(args.ready_timeout))
+    command_timeout = max(0.0, float(args.command_timeout))
+
     output_dir = _resolve_output_dir(args.output)
     transcript: List[str] = []
 
     try:
         with serial.Serial(args.port, 115200, timeout=1.0) as connection:
             _request_ready_prompt(connection)
-            _await_ready_prompt(connection, transcript)
-            _execute_plan(connection, commands, transcript)
+            _await_ready_prompt(connection, transcript, ready_timeout)
+            _execute_plan(connection, commands, transcript, command_timeout)
     except serial.SerialException as exc:  # pragma: no cover - sanity guard
         sys.stderr.write(f"# ERROR: {exc}\n")
         return 1
+    except KeyboardInterrupt:  # pragma: no cover - user initiated
+        sys.stderr.write("# aborted_by_user\n")
+        return 130
 
     artifacts = create_report(transcript, args.plan, output_dir)
     sys.stdout.write(f"# report_written,{artifacts.report_markdown_path}\n")
@@ -92,12 +123,18 @@ def main(argv: Iterable[str] | None = None) -> int:
     return 0
 
 
-def _await_ready_prompt(connection: serial.Serial, transcript: List[str]) -> None:
-    deadline = time.monotonic() + SERIAL_IDLE_TIMEOUT_SECONDS
+def _await_ready_prompt(
+    connection: serial.Serial, transcript: List[str], ready_timeout: float
+) -> None:
+    deadline = (
+        time.monotonic() + ready_timeout if ready_timeout > 0 else time.monotonic()
+    )
     while True:
         line = connection.readline()
         if not line:
-            if time.monotonic() > deadline:
+            if ready_timeout == 0 or (
+                ready_timeout > 0 and time.monotonic() > deadline
+            ):
                 raise serial.SerialException(
                     "Timed out waiting for ready prompt from device"
                 )
@@ -107,27 +144,36 @@ def _await_ready_prompt(connection: serial.Serial, transcript: List[str]) -> Non
         transcript.append(decoded)
         if decoded.endswith("ready"):
             break
-        deadline = time.monotonic() + SERIAL_IDLE_TIMEOUT_SECONDS
+    deadline = (
+        time.monotonic() + ready_timeout if ready_timeout > 0 else time.monotonic()
+    )
 
 
 def _execute_plan(
     connection: serial.Serial,
     commands: Iterable[BenchmarkCommand],
     transcript: List[str],
+    command_timeout: float,
 ) -> None:
     for command in commands:
         payload = command.to_serial_line().encode("utf-8")
         connection.write(payload)
         connection.flush()
-        _stream_until_complete(connection, transcript)
+        _stream_until_complete(connection, transcript, command_timeout)
 
 
-def _stream_until_complete(connection: serial.Serial, transcript: List[str]) -> None:
-    deadline = time.monotonic() + BENCHMARK_IDLE_TIMEOUT_SECONDS
+def _stream_until_complete(
+    connection: serial.Serial, transcript: List[str], command_timeout: float
+) -> None:
+    deadline = (
+        time.monotonic() + command_timeout if command_timeout > 0 else time.monotonic()
+    )
     while True:
         line = connection.readline()
         if not line:
-            if time.monotonic() > deadline:
+            if command_timeout == 0 or (
+                command_timeout > 0 and time.monotonic() > deadline
+            ):
                 raise serial.SerialException(
                     "Timed out waiting for benchmark completion"
                 )
@@ -137,7 +183,9 @@ def _stream_until_complete(connection: serial.Serial, transcript: List[str]) -> 
         transcript.append(decoded)
         if decoded.endswith("benchmark_complete"):
             break
-        deadline = time.monotonic() + BENCHMARK_IDLE_TIMEOUT_SECONDS
+    deadline = (
+        time.monotonic() + command_timeout if command_timeout > 0 else time.monotonic()
+    )
 
 
 def _request_ready_prompt(connection: serial.Serial) -> None:

@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 LABEL_WIDTH = 8
 SAMPLES_WIDTH = 9
 CHANNEL_WIDTH = 12
-DURATION_WIDTH = 15
 MAP_WIDTH = 12
 
 __all__ = [
@@ -38,9 +37,6 @@ class SummaryRow:
     std_channel_b: float | None
     min_channel_b: float | None
     max_channel_b: float | None
-    step_mean_us: float | None
-    step_std_us: float | None
-    step_range_us: float | None
     channel_alignment: str | None
     has_channel_metrics: bool
 
@@ -56,9 +52,6 @@ class SummaryRow:
             "std_channel_b": self.std_channel_b,
             "min_channel_b": self.min_channel_b,
             "max_channel_b": self.max_channel_b,
-            "step_mean_us": self.step_mean_us,
-            "step_std_us": self.step_std_us,
-            "step_range_us": self.step_range_us,
             "channel_alignment": self.channel_alignment,
             "has_channel_metrics": self.has_channel_metrics,
         }
@@ -142,18 +135,13 @@ def _extract_summary_lines(lines: Iterable[str]) -> List[str]:
 
 
 def _validate_header(header: str) -> None:
-    expected = (
-        "State      Samples      Mean_A      Std_A      Min_A      Max_A      Mean_B      Std_B      Min_B      Max_B"
-        "   Step_us_mean    Step_us_std  Step_us_range  Channel_Map"
-    )
+    expected = "State      Samples      Mean_A      Std_A      Min_A      Max_A      Mean_B      Std_B      Min_B      Max_B   Channel_Map"
     if header.strip() != expected.strip():
         return
 
 
 def _parse_summary_row(line: str) -> SummaryRow:
-    padded = line.ljust(
-        LABEL_WIDTH + SAMPLES_WIDTH + 8 * CHANNEL_WIDTH + 3 * DURATION_WIDTH + MAP_WIDTH
-    )
+    padded = line.ljust(LABEL_WIDTH + SAMPLES_WIDTH + 8 * CHANNEL_WIDTH + MAP_WIDTH)
     cursor = 0
 
     def slice_field(width: int) -> str:
@@ -167,13 +155,10 @@ def _parse_summary_row(line: str) -> SummaryRow:
     sample_count = _parse_int(slice_field(SAMPLES_WIDTH))
 
     channel_values = [slice_field(CHANNEL_WIDTH) for _ in range(8)]
-    duration_values = [slice_field(DURATION_WIDTH) for _ in range(3)]
     alignment = slice_field(MAP_WIDTH)
 
     floats = [_parse_float(value) for value in channel_values]
     mean_a, std_a, min_a, max_a, mean_b, std_b, min_b, max_b = floats
-
-    step_mean, step_std, step_range = (_parse_float(value) for value in duration_values)
 
     has_channel_metrics = mean_a is not None and mean_b is not None
 
@@ -188,9 +173,6 @@ def _parse_summary_row(line: str) -> SummaryRow:
         std_channel_b=std_b,
         min_channel_b=min_b,
         max_channel_b=max_b,
-        step_mean_us=step_mean,
-        step_std_us=step_std,
-        step_range_us=step_range,
         channel_alignment=alignment if alignment else None,
         has_channel_metrics=has_channel_metrics,
     )
@@ -227,24 +209,23 @@ def _render_channel_plot(rows: List[SummaryRow], output_path: Path) -> None:
     labels = [row.label for row in metric_rows]
     indices = range(len(labels))
 
-    channel_a_min = [row.min_channel_a or 0.0 for row in metric_rows]
-    channel_a_max = [row.max_channel_a or 0.0 for row in metric_rows]
-    channel_b_min = [row.min_channel_b or 0.0 for row in metric_rows]
-    channel_b_max = [row.max_channel_b or 0.0 for row in metric_rows]
+    channel_a_mean = [row.mean_channel_a or 0.0 for row in metric_rows]
+    channel_b_mean = [row.mean_channel_b or 0.0 for row in metric_rows]
 
-    width = 0.2
-    offsets = [-1.5 * width, -0.5 * width, 0.5 * width, 1.5 * width]
+    width = 0.35
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar([i + offsets[0] for i in indices], channel_a_min, width=width, label="A min")
-    ax.bar([i + offsets[1] for i in indices], channel_a_max, width=width, label="A max")
-    ax.bar([i + offsets[2] for i in indices], channel_b_min, width=width, label="B min")
-    ax.bar([i + offsets[3] for i in indices], channel_b_max, width=width, label="B max")
+    ax.bar(
+        [i - width / 2 for i in indices], channel_a_mean, width=width, label="A mean"
+    )
+    ax.bar(
+        [i + width / 2 for i in indices], channel_b_mean, width=width, label="B mean"
+    )
 
     ax.set_xticks(list(indices))
     ax.set_xticklabels(labels)
     ax.set_ylabel("ADC code")
-    ax.set_title("Channel dominance summary")
+    ax.set_title("Channel mean comparison")
     ax.legend()
     ax.grid(axis="y", linestyle="--", alpha=0.4)
     fig.tight_layout()
