@@ -2,6 +2,10 @@
 #include "channel_map/channel_map.hpp"
 #include <Arduino.h>
 
+// This sketch forwards all benchmark orchestration to the phoenix benchmark
+// library in lib/phoenix_benchmark/channel_map so other firmware
+// modules can reuse the same C-style API.
+
 namespace {
 
 constexpr double        k_channel_min_drain_delta = 5.0;

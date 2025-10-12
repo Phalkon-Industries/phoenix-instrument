@@ -5,10 +5,22 @@ This document captures the *currently implemented* capabilities of the Phoenix b
 ## Current Capabilities
 
 - Firmware idles after boot, waits for a `channel_map` command, performs the sweep, and then returns to a fresh `# ready` prompt.
+- The command parser is dual-mode: it prefers JSON payloads that match the host tooling schema and automatically falls back to key-value arguments such as `channel_map dwell_us=50 sweeps=10`. Both forms converge to the same option structure and apply firmware defaults when fields are omitted.
 - The summary table includes a `Channel_Map` column that compares each LED's observed dominant channel against the expected routing (`A=OK`, `B!=A`, etc.).
 - Run headers print the dominance thresholds (`channel_map_config`) used for the pairing heuristic so lab notes can show the exact detection parameters.
 - The `phoenix_benchmark` example sketch delegates execution to the shared C-style channel-map library (`lib/phoenix_benchmark/channel_map/`) and consumes the exported state descriptors for summary formatting.
 - The Python CLI runs the plan, captures the serial transcript, and produces a Markdown report that bundles the raw summary table, a JSON export, and a bar chart of channel min/max values.
+
+### Library Surface
+
+The reusable library lives in `lib/phoenix_benchmark/channel_map/` and exposes C-style entry points for firmware modules:
+
+- `phoenix_benchmark_channel_map_initialise(const PhoenixBenchmarkChannelMapDefaults& defaults)` primes the internal state machine and records the default sweep configuration shared by the parser and runner.
+- `phoenix_benchmark_channel_map_parse_command(const char* line)` normalises JSON or key-value input into a `PhoenixBenchmarkChannelMapOptions` struct. Errors return descriptive strings that the sketch can forward over Serial.
+- `phoenix_benchmark_channel_map_run(const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators, const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks)` executes the full sweep using the provided hardware drivers.
+- Formatter helpers such as `phoenix_benchmark_channel_map_format_summary_header` and `phoenix_benchmark_channel_map_format_summary_row` produce fixed-width table output without duplicating formatting logic in callers.
+
+Consumers outside the example sketch can include `channel_map/channel_map.hpp` and reuse the same API without copying orchestration code.
 
 ## Host Workflow
 1. **Configuration** – Build the firmware (`pio run -e phoenix_benchmark_example`) with any desired compile-time overrides.
@@ -23,6 +35,7 @@ This document captures the *currently implemented* capabilities of the Phoenix b
    conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/channel_map_phase1.json --port COM6 --ready-timeout 10 --command-timeout 120
    ```
    The CLI waits for the firmware `# ready` banner, streams each command, prints device output to stdout, and stores every line in a transcript buffer.
+   The firmware also accepts manual overrides directly from a serial terminal using the key-value syntax: `channel_map sweeps=25 dwell_us=50 wiper_code=128`.
 4. **Automated Report** – After the firmware signals `# benchmark_complete`, the CLI writes a report bundle (`transcript.txt`, `summary.json`, `report.md`, `channel_map.png`) to the chosen output folder (default: `~/Downloads/phoenix-benchmark/<timestamp>`). The Markdown file embeds the raw table and generated plot for easy sharing.
 5. **Extended Analysis** – Use the JSON or transcript artifacts in separate notebooks or scripts as needed; this repository remains focused on the source code and first-line automation flow.
 
@@ -33,5 +46,6 @@ This document captures the *currently implemented* capabilities of the Phoenix b
 ## Revision History
 | Date       | Notes                                                                                                            |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| 2025-10-12 | Documented the dual-mode parser, reusable library API, and manual key-value workflow for the channel-map module. |
 | 2025-10-11 | Example sketch now calls the shared channel-map library; documented the new reuse surface.                       |
 | 2025-10-08 | Updated to document the command-driven Phase 1 workflow, automated reporting, and CLI-to-firmware JSON contract. |
