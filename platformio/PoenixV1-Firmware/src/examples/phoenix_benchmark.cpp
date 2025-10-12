@@ -1,24 +1,8 @@
 #include "adc_hal.hpp"
-#include "channel_map.hpp"
-#include "phoenix_benchmark_support.hpp"
-#include "phoenix_summary_formatter.hpp"
+#include "channel_map/channel_map.hpp"
 #include <Arduino.h>
 
 namespace {
-
-using phoenix_benchmark::ChannelMapDefaults;
-using phoenix_benchmark::ChannelMapOptions;
-using phoenix_benchmark::ChannelMapStateDescriptor;
-using phoenix_benchmark::ExecutionStatus;
-using phoenix_benchmark::OutputCallbacks;
-namespace channel_map = phoenix_benchmark::channel_map;
-
-using phoenix_benchmark_support::BenchmarkChannel;
-using phoenix_benchmark_support::determine_dominant_channel;
-using phoenix_benchmark_support::format_channel_alignment_label;
-using phoenix_benchmark_support::format_summary_header;
-using phoenix_benchmark_support::format_summary_row;
-using phoenix_benchmark_support::StateAccumulator;
 
 constexpr double        k_channel_min_drain_delta = 5.0;
 constexpr unsigned long k_serial_baud_rate        = 115200UL;
@@ -27,18 +11,18 @@ constexpr size_t        k_command_buffer_bytes    = 160u;
 constexpr AdcHalChannel k_channel_a = AdcHalChannel::ADC_HAL_CHANNEL_4;
 constexpr AdcHalChannel k_channel_b = AdcHalChannel::ADC_HAL_CHANNEL_5;
 
-const ChannelMapDefaults k_channel_map_defaults = {
+const PhoenixBenchmarkChannelMapDefaults k_channel_map_defaults = {
     .sweep_count         = 100u,
     .dwell_us            = 100u,
     .wiper_code          = 0x00u,
     .include_drain_state = true,
 };
 
-StateAccumulator g_state_accumulators[channel_map::k_state_descriptor_count];
+PhoenixBenchmarkStateAccumulator g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
 
 void reset_accumulators(void) {
-  for (size_t index = 0; index < channel_map::k_state_descriptor_count; ++index) {
-    g_state_accumulators[index] = StateAccumulator{};
+  for (size_t index = 0; index < k_phoenix_benchmark_channel_map_state_descriptor_count; ++index) {
+    g_state_accumulators[index] = PhoenixBenchmarkStateAccumulator{};
   }
 }
 
@@ -59,7 +43,7 @@ void wait_for_serial(void) {
   }
 }
 
-void print_run_header(const ChannelMapOptions& options) {
+void print_run_header(const PhoenixBenchmarkChannelMapOptions& options) {
   Serial.println(F("# phoenix benchmark starting"));
   Serial.print(F("# config,sweep_count="));
   Serial.print(options.sweep_count);
@@ -83,20 +67,21 @@ void print_summary_table(void) {
   Serial.println();
   Serial.println(F("# summary_table"));
 
-  char line_buffer[phoenix_benchmark_support::k_summary_table_buffer_bytes] = {};
-  if (!format_summary_header(line_buffer, sizeof(line_buffer))) {
+  char line_buffer[k_phoenix_benchmark_channel_map_summary_table_buffer_bytes] = {};
+  if (!phoenix_benchmark_channel_map_format_summary_header(line_buffer, sizeof(line_buffer))) {
     Serial.println(F("# summary_table_format_failed"));
     return;
   }
   Serial.println(line_buffer);
 
-  const ChannelMapStateDescriptor* descriptors       = channel_map::state_descriptors();
-  const size_t                     descriptor_count  = channel_map::k_state_descriptor_count;
-  const StateAccumulator&          drain_accumulator = g_state_accumulators[channel_map::k_drain_state_index];
+  const PhoenixBenchmarkChannelMapStateDescriptor* descriptors = phoenix_benchmark_channel_map_state_descriptors();
+  const size_t                            descriptor_count     = k_phoenix_benchmark_channel_map_state_descriptor_count;
+  const PhoenixBenchmarkStateAccumulator& drain_accumulator =
+      g_state_accumulators[k_phoenix_benchmark_channel_map_drain_state_index];
 
   bool printed_state_row = false;
   for (size_t index = 0; index < descriptor_count; ++index) {
-    const ChannelMapStateDescriptor& descriptor = descriptors[index];
+    const PhoenixBenchmarkChannelMapStateDescriptor& descriptor = descriptors[index];
     if (!descriptor.include_in_summary) {
       continue;
     }
@@ -104,18 +89,18 @@ void print_summary_table(void) {
       continue;
     }
 
-    const StateAccumulator& accumulator = g_state_accumulators[index];
+    const PhoenixBenchmarkStateAccumulator& accumulator = g_state_accumulators[index];
     if (!accumulator.channel_a_codes.has_samples()) {
       continue;
     }
 
-    char                   alignment_label[phoenix_benchmark_support::k_summary_map_width + 1u] = {};
-    const BenchmarkChannel observed_channel =
-        determine_dominant_channel(drain_accumulator, accumulator, k_channel_min_drain_delta);
-    const bool aligned = format_channel_alignment_label(descriptor.expected_channel, observed_channel, alignment_label,
-                                                        sizeof(alignment_label));
+    char                          alignment_label[k_phoenix_benchmark_channel_map_summary_map_width + 1u] = {};
+    const PhoenixBenchmarkChannel observed_channel = phoenix_benchmark_channel_map_determine_dominant_channel(
+        drain_accumulator, accumulator, k_channel_min_drain_delta);
+    const bool aligned = phoenix_benchmark_channel_map_format_alignment_label(
+        descriptor.expected_channel, observed_channel, alignment_label, sizeof(alignment_label));
 
-    const phoenix_benchmark_support::SummaryRowValues row_values = {
+    const PhoenixBenchmarkChannelMapSummaryRowValues row_values = {
         .label               = descriptor.label,
         .sample_count        = accumulator.channel_a_codes.count,
         .mean_channel_a      = accumulator.channel_a_codes.mean,
@@ -130,7 +115,7 @@ void print_summary_table(void) {
         .has_channel_metrics = true,
     };
 
-    if (!format_summary_row(row_values, line_buffer, sizeof(line_buffer))) {
+    if (!phoenix_benchmark_channel_map_format_summary_row(row_values, line_buffer, sizeof(line_buffer))) {
       Serial.println(F("# summary_table_row_format_failed"));
       continue;
     }
@@ -146,7 +131,7 @@ void print_summary_table(void) {
   Serial.println();
 }
 
-bool execute_channel_map_command(const ChannelMapOptions& options) {
+bool execute_channel_map_command(const PhoenixBenchmarkChannelMapOptions& options) {
   Serial.print(F("# running,scenario=channel_map,sweeps="));
   Serial.print(options.sweep_count);
   Serial.print(F(",dwell_us="));
@@ -160,8 +145,9 @@ bool execute_channel_map_command(const ChannelMapOptions& options) {
   reset_accumulators();
   print_run_header(options);
 
-  const OutputCallbacks callbacks = {serial_print_line, nullptr};
-  const ExecutionStatus status    = channel_map::run(options, g_state_accumulators, callbacks);
+  const PhoenixBenchmarkChannelMapOutputCallbacks callbacks = {serial_print_line, nullptr};
+  const PhoenixBenchmarkChannelMapExecutionStatus status =
+      phoenix_benchmark_channel_map_run(options, g_state_accumulators, callbacks);
 
   if (!status.success) {
     Serial.print(F("# error,channel_map_failed"));
@@ -190,7 +176,7 @@ void handle_command_line(const char* line) {
     return;
   }
 
-  const phoenix_benchmark::ParseResult parse_result = channel_map::parse_command(line);
+  const PhoenixBenchmarkChannelMapParseResult parse_result = phoenix_benchmark_channel_map_parse_command(line);
   if (!parse_result.success) {
     Serial.print(F("# error,channel_map_parse_failed"));
     if (parse_result.error_message != nullptr) {
@@ -216,8 +202,8 @@ void setup() {
   Serial.begin(k_serial_baud_rate);
   wait_for_serial();
 
-  channel_map::reset_state();
-  channel_map::initialise(k_channel_map_defaults);
+  phoenix_benchmark_channel_map_reset_state();
+  phoenix_benchmark_channel_map_initialise(k_channel_map_defaults);
 
   reset_accumulators();
   print_ready_banner();

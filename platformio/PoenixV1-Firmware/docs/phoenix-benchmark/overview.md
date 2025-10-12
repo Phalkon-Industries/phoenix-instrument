@@ -7,7 +7,7 @@ This document captures the *currently implemented* capabilities of the Phoenix b
 - Firmware idles after boot, waits for a `channel_map` command, performs the sweep, and then returns to a fresh `# ready` prompt.
 - The summary table includes a `Channel_Map` column that compares each LED's observed dominant channel against the expected routing (`A=OK`, `B!=A`, etc.).
 - Run headers print the dominance thresholds (`channel_map_config`) used for the pairing heuristic so lab notes can show the exact detection parameters.
-- The `phoenix_benchmark` example sketch delegates execution to the shared `phoenix_benchmark::channel_map` library and consumes the exported state descriptors for summary formatting.
+- The `phoenix_benchmark` example sketch delegates execution to the shared C-style channel-map library (`lib/phoenix_benchmark/channel_map/`) and consumes the exported state descriptors for summary formatting.
 - The Python CLI runs the plan, captures the serial transcript, and produces a Markdown report that bundles the raw summary table, a JSON export, and a bar chart of channel min/max values.
 
 ## Host Workflow
