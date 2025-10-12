@@ -8,6 +8,7 @@
 #include <Wire.h>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 static constexpr uint32_t k_adc_timeout_us     = 1000000u;
@@ -69,10 +70,13 @@ static constexpr const char* k_error_invalid_options  = "invalid options";
 static constexpr const char* k_error_hardware_failure = "hardware failure";
 static constexpr const char* k_error_adc_saturation   = "adc saturation";
 
-static PhoenixBenchmarkChannelMapDefaults g_defaults          = {};
-static bool                               g_power_enabled     = false;
-static const char*                        g_last_sample_error = nullptr;
-static const AdcHalConfig                 k_adc_config        = {
+static PhoenixBenchmarkChannelMapDefaults g_defaults                  = {};
+static bool                               g_power_enabled             = false;
+static const char*                        g_last_sample_error         = nullptr;
+static bool                               g_force_saturation_for_test = false;
+static constexpr int32_t  k_positive_full_scale_test_code = k_phoenix_benchmark_adc_positive_full_scale_code;
+static constexpr int32_t  k_negative_full_scale_test_code = k_phoenix_benchmark_adc_negative_full_scale_code;
+static const AdcHalConfig k_adc_config                    = {
     .chip_select_pin = k_pin_adc_cs,
     .spi_clock_hz    = k_spi_clock_hz,
     .default_gain    = AdcHalGain::ADC_HAL_GAIN_1,
@@ -160,6 +164,23 @@ static void emit_line(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks
   }
 }
 
+static void emit_saturation_warning(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks,
+                                    const PhoenixBenchmarkChannelMapStateDescriptor& descriptor, uint32_t sweep_index,
+                                    uint32_t channel_a_events, uint32_t channel_b_events) {
+  if (callbacks.print_line == nullptr) {
+    return;
+  }
+
+  char      buffer[128];
+  const int written = std::snprintf(
+      buffer, sizeof(buffer), "# channel_map,warning=adc_saturation,state=%s,sweep=%lu,channel_a=%lu,channel_b=%lu",
+      descriptor.label != nullptr ? descriptor.label : "?", static_cast<unsigned long>(sweep_index),
+      static_cast<unsigned long>(channel_a_events), static_cast<unsigned long>(channel_b_events));
+  if ((written > 0) && (static_cast<std::size_t>(written) < sizeof(buffer))) {
+    callbacks.print_line(buffer);
+  }
+}
+
 static bool apply_wiper_code(uint8_t wiper_code) {
   for (std::size_t index = 0; index < k_digipot_channel_count; ++index) {
     const int return_code = ad524x_set_wiper(k_digipot_channels[index], wiper_code);
@@ -181,8 +202,16 @@ static bool read_adc_channel(AdcHalChannel channel, int32_t* out_code) {
 }
 
 static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, uint32_t dwell_us,
-                         PhoenixBenchmarkStateAccumulator* accumulators) {
+                         PhoenixBenchmarkStateAccumulator* accumulators, bool* out_saturation_detected,
+                         bool* out_sample_captured) {
   g_last_sample_error = nullptr;
+
+  if (out_saturation_detected != nullptr) {
+    *out_saturation_detected = false;
+  }
+  if (out_sample_captured != nullptr) {
+    *out_sample_captured = false;
+  }
 
   if (!select_led_state(request.router_state)) {
     g_last_sample_error = "led router state change failed";
@@ -192,6 +221,9 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
   if (dwell_us > 0u) {
     delayMicroseconds(dwell_us);
   }
+
+  PhoenixBenchmarkStateAccumulator& accumulator    = accumulators[request.accumulator_index];
+  bool                              saw_saturation = false;
 
   for (std::size_t attempt = 0u; attempt < k_max_sample_attempts; ++attempt) {
     int32_t channel_a_code = 0;
@@ -206,23 +238,50 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
       return false;
     }
 
+    if (g_force_saturation_for_test) {
+      channel_a_code = k_positive_full_scale_test_code;
+      channel_b_code = k_negative_full_scale_test_code;
+    }
+
     const bool a_saturated = phoenix_benchmark_is_adc_code_saturated(channel_a_code);
     const bool b_saturated = phoenix_benchmark_is_adc_code_saturated(channel_b_code);
+    if (a_saturated) {
+      ++accumulator.channel_a_saturation_count;
+      saw_saturation = true;
+    }
+    if (b_saturated) {
+      ++accumulator.channel_b_saturation_count;
+      saw_saturation = true;
+    }
+
     if (a_saturated || b_saturated) {
       g_last_sample_error = k_error_adc_saturation;
       if ((attempt + 1u) < k_max_sample_attempts) {
         delayMicroseconds(50u);
         continue;
       }
+
+      if (out_saturation_detected != nullptr) {
+        *out_saturation_detected = true;
+      }
+      return true;
     }
 
-    PhoenixBenchmarkStateAccumulator& accumulator = accumulators[request.accumulator_index];
     accumulator.channel_a_codes.update(channel_a_code);
     accumulator.channel_b_codes.update(channel_b_code);
+    if (out_sample_captured != nullptr) {
+      *out_sample_captured = true;
+    }
+    if (saw_saturation && (out_saturation_detected != nullptr)) {
+      *out_saturation_detected = true;
+    }
     return true;
   }
 
-  return false;
+  if (saw_saturation && (out_saturation_detected != nullptr)) {
+    *out_saturation_detected = true;
+  }
+  return true;
 }
 
 static void reset_accumulators(PhoenixBenchmarkStateAccumulator* accumulators) {
@@ -272,14 +331,14 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
     const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks) {
   if (accumulators == nullptr) {
     emit_line(callbacks, "# channel_map,error=null_accumulator");
-    return {false, PHOENIX_BENCHMARK_ERR_INVALID_ARGUMENT, k_error_invalid_options};
+    return {false, PHOENIX_BENCHMARK_ERR_INVALID_ARGUMENT, k_error_invalid_options, false};
   }
 
   PhoenixBenchmarkChannelMapOptions options                = input_options;
   char                              validation_message[64] = {};
   if (!options.validate(validation_message, sizeof(validation_message))) {
     emit_line(callbacks, "# channel_map,error=invalid_options");
-    return {false, PHOENIX_BENCHMARK_ERR_INVALID_ARGUMENT, k_error_invalid_options};
+    return {false, PHOENIX_BENCHMARK_ERR_INVALID_ARGUMENT, k_error_invalid_options, false};
   }
 
   enable_power_domains();
@@ -287,7 +346,7 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
 
   if (!ensure_digipot_initialised() || !ensure_adc_initialised() || !ensure_led_router_initialised()) {
     emit_line(callbacks, "# channel_map,error=hardware_initialisation_failed");
-    return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, k_error_hardware_failure};
+    return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, k_error_hardware_failure, false};
   }
 
   (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
@@ -296,10 +355,11 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
 
   if (!apply_wiper_code(options.wiper_code)) {
     emit_line(callbacks, "# channel_map,error=ad524x_failure");
-    return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, k_error_hardware_failure};
+    return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, k_error_hardware_failure, false};
   }
 
   const bool include_drain_state = g_defaults.include_drain_state;
+  bool       run_has_warnings    = false;
 
   for (uint32_t sweep_index = 0u; sweep_index < options.sweep_count; ++sweep_index) {
     for (std::size_t state_index = 0u; state_index < (sizeof(k_state_sequence) / sizeof(k_state_sequence[0]));
@@ -309,17 +369,30 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
         continue;
       }
 
-      if (!sample_state(request, options.dwell_us, accumulators)) {
+      PhoenixBenchmarkStateAccumulator& accumulator                 = accumulators[request.accumulator_index];
+      const uint32_t                    previous_a_saturation_count = accumulator.channel_a_saturation_count;
+      const uint32_t                    previous_b_saturation_count = accumulator.channel_b_saturation_count;
+
+      bool saw_saturation = false;
+      if (!sample_state(request, options.dwell_us, accumulators, &saw_saturation, nullptr)) {
         emit_line(callbacks, "# channel_map,error=sampling_failed");
         (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
-        const char* message = (g_last_sample_error != nullptr) ? g_last_sample_error : k_error_adc_saturation;
-        return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, message};
+        const char* message = (g_last_sample_error != nullptr) ? g_last_sample_error : k_error_hardware_failure;
+        return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, message, run_has_warnings};
+      }
+
+      if (saw_saturation) {
+        run_has_warnings       = true;
+        const uint32_t delta_a = accumulator.channel_a_saturation_count - previous_a_saturation_count;
+        const uint32_t delta_b = accumulator.channel_b_saturation_count - previous_b_saturation_count;
+        emit_saturation_warning(callbacks, k_state_descriptors[request.accumulator_index], sweep_index, delta_a,
+                                delta_b);
       }
     }
   }
 
   (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
-  return {true, PHOENIX_BENCHMARK_OK, nullptr};
+  return {true, PHOENIX_BENCHMARK_OK, nullptr, run_has_warnings};
 }
 
 PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_command(const char* line) {
@@ -350,7 +423,12 @@ PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_comman
 }
 
 void phoenix_benchmark_channel_map_reset_state(void) {
-  g_defaults          = PhoenixBenchmarkChannelMapDefaults{};
-  g_power_enabled     = false;
-  g_last_sample_error = nullptr;
+  g_defaults                  = PhoenixBenchmarkChannelMapDefaults{};
+  g_power_enabled             = false;
+  g_last_sample_error         = nullptr;
+  g_force_saturation_for_test = false;
+}
+
+void phoenix_benchmark_channel_map_set_force_saturation_for_test(bool enabled) {
+  g_force_saturation_for_test = enabled;
 }

@@ -1,6 +1,7 @@
 #include "adc_hal.hpp"
 #include "channel_map/channel_map.hpp"
 #include <Arduino.h>
+#include <cstdio>
 
 // This sketch forwards all benchmark orchestration to the phoenix benchmark
 // library in lib/phoenix_benchmark/channel_map so other firmware
@@ -94,7 +95,10 @@ void print_summary_table(void) {
     }
 
     const PhoenixBenchmarkStateAccumulator& accumulator = g_state_accumulators[index];
-    if (!accumulator.channel_a_codes.has_samples()) {
+    const bool                              has_samples = accumulator.channel_a_codes.has_samples();
+    const bool                              has_saturation =
+        (accumulator.channel_a_saturation_count > 0u) || (accumulator.channel_b_saturation_count > 0u);
+    if (!has_samples && !has_saturation) {
       continue;
     }
 
@@ -103,6 +107,21 @@ void print_summary_table(void) {
         drain_accumulator, accumulator, k_channel_min_drain_delta);
     const bool aligned = phoenix_benchmark_channel_map_format_alignment_label(
         descriptor.expected_channel, observed_channel, alignment_label, sizeof(alignment_label));
+
+    char        warning_label[k_phoenix_benchmark_channel_map_summary_warning_width + 1u] = {};
+    const char* warning_text                                                              = nullptr;
+    if (has_saturation) {
+      if (accumulator.channel_b_saturation_count > 0u) {
+        std::snprintf(warning_label, sizeof(warning_label), "SAT A=%lu,B=%lu",
+                      static_cast<unsigned long>(accumulator.channel_a_saturation_count),
+                      static_cast<unsigned long>(accumulator.channel_b_saturation_count));
+      }
+      else {
+        std::snprintf(warning_label, sizeof(warning_label), "SAT A=%lu",
+                      static_cast<unsigned long>(accumulator.channel_a_saturation_count));
+      }
+      warning_text = warning_label;
+    }
 
     const PhoenixBenchmarkChannelMapSummaryRowValues row_values = {
         .label               = descriptor.label,
@@ -116,7 +135,8 @@ void print_summary_table(void) {
         .min_channel_b       = static_cast<double>(accumulator.channel_b_codes.min_value),
         .max_channel_b       = static_cast<double>(accumulator.channel_b_codes.max_value),
         .channel_alignment   = aligned ? alignment_label : nullptr,
-        .has_channel_metrics = true,
+        .warning_label       = warning_text,
+        .has_channel_metrics = has_samples,
     };
 
     if (!phoenix_benchmark_channel_map_format_summary_row(row_values, line_buffer, sizeof(line_buffer))) {
@@ -164,6 +184,9 @@ bool execute_channel_map_command(const PhoenixBenchmarkChannelMapOptions& option
   }
 
   print_summary_table();
+  if (status.has_warnings) {
+    Serial.println(F("# channel_map_warnings,reason=adc_saturation"));
+  }
   Serial.println(F("# benchmark_complete"));
   return true;
 }

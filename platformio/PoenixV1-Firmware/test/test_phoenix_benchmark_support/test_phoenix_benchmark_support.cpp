@@ -54,6 +54,9 @@ static void test_state_accumulator_tracks_channel_metrics(void) {
   TEST_ASSERT_EQUAL_INT32(-30, accumulator.channel_b_codes.max_value);
   TEST_ASSERT_FLOAT_WITHIN(0.0001, -40.0, accumulator.channel_b_codes.mean);
   TEST_ASSERT_FLOAT_WITHIN(0.0001, 14.1421356237, accumulator.channel_b_codes.standard_deviation());
+
+  TEST_ASSERT_EQUAL_UINT32(0u, accumulator.channel_a_saturation_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, accumulator.channel_b_saturation_count);
 }
 
 static void test_determine_dominant_channel_prefers_channel_a_when_delta_exceeds_drain(void) {

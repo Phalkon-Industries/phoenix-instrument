@@ -34,6 +34,7 @@ struct PhoenixBenchmarkChannelMapExecutionStatus {
   bool        success;
   int         return_code;
   const char* message;
+  bool        has_warnings;
 };
 
 struct PhoenixBenchmarkChannelMapParseResult {
@@ -68,5 +69,7 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
 PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_command(const char* line);
 
 void phoenix_benchmark_channel_map_reset_state(void);
+
+void phoenix_benchmark_channel_map_set_force_saturation_for_test(bool enabled);
 
 #endif  // PHOENIX_BENCHMARK_CHANNEL_MAP_HPP

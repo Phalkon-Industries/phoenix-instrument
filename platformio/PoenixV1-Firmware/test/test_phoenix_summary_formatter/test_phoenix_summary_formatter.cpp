@@ -12,6 +12,7 @@ static void test_summary_header_formats_aligned_columns(void) {
   const size_t samples_width = k_phoenix_benchmark_channel_map_summary_samples_width;
   const size_t channel_width = k_phoenix_benchmark_channel_map_summary_channel_width;
   const size_t map_width     = k_phoenix_benchmark_channel_map_summary_map_width;
+  const size_t warning_width = k_phoenix_benchmark_channel_map_summary_warning_width;
 
   TEST_ASSERT_EQUAL_CHAR('S', buffer[0u]);
 
@@ -45,6 +46,10 @@ static void test_summary_header_formats_aligned_columns(void) {
   const size_t map_start = label_width + samples_width + (8u * channel_width) + (map_width - strlen("Channel_Map"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[map_start], "Channel_Map", strlen("Channel_Map")));
 
+  const size_t warning_start =
+      label_width + samples_width + (8u * channel_width) + map_width + (warning_width - strlen("Warnings"));
+  TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[warning_start], "Warnings", strlen("Warnings")));
+
   const size_t buffer_length = strlen(buffer);
   TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, buffer_length, "Header should not be empty");
   TEST_ASSERT_NOT_EQUAL(' ', buffer[buffer_length - 1u]);
@@ -63,6 +68,7 @@ static void test_summary_row_formats_state_metrics(void) {
       .min_channel_b       = -90.0,
       .max_channel_b       = -60.0,
       .channel_alignment   = "A=OK",
+      .warning_label       = "SAT A=1",
       .has_channel_metrics = true,
   };
 
@@ -73,6 +79,7 @@ static void test_summary_row_formats_state_metrics(void) {
   const size_t label_width   = k_phoenix_benchmark_channel_map_summary_label_width;
   const size_t samples_width = k_phoenix_benchmark_channel_map_summary_samples_width;
   const size_t channel_width = k_phoenix_benchmark_channel_map_summary_channel_width;
+  const size_t map_width     = k_phoenix_benchmark_channel_map_summary_map_width;
 
   const size_t samples_start = label_width + (samples_width - strlen("42"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[samples_start], "42", strlen("42")));
@@ -104,6 +111,9 @@ static void test_summary_row_formats_state_metrics(void) {
   const size_t map_start = label_width + samples_width + (8u * channel_width);
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[map_start], "A=OK", strlen("A=OK")));
 
+  const size_t warning_start = label_width + samples_width + (8u * channel_width) + map_width;
+  TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[warning_start], "SAT A=1", strlen("SAT A=1")));
+
   const size_t buffer_length = strlen(buffer);
   TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, buffer_length, "Row should not be empty");
   TEST_ASSERT_NOT_EQUAL(' ', buffer[buffer_length - 1u]);
@@ -122,6 +132,7 @@ static void test_summary_row_inserts_placeholders_without_channel_metrics(void) 
       .min_channel_b       = 0.0,
       .max_channel_b       = 0.0,
       .channel_alignment   = nullptr,
+      .warning_label       = nullptr,
       .has_channel_metrics = false,
   };
 
@@ -131,6 +142,7 @@ static void test_summary_row_inserts_placeholders_without_channel_metrics(void) 
   const size_t label_width   = k_phoenix_benchmark_channel_map_summary_label_width;
   const size_t samples_width = k_phoenix_benchmark_channel_map_summary_samples_width;
   const size_t channel_width = k_phoenix_benchmark_channel_map_summary_channel_width;
+  const size_t map_width     = k_phoenix_benchmark_channel_map_summary_map_width;
 
   const size_t first_placeholder = label_width + samples_width;
   TEST_ASSERT_EQUAL_CHAR('-', buffer[first_placeholder]);
@@ -143,6 +155,10 @@ static void test_summary_row_inserts_placeholders_without_channel_metrics(void) 
   const size_t map_placeholder = label_width + samples_width + (8u * channel_width);
   TEST_ASSERT_EQUAL_CHAR('-', buffer[map_placeholder]);
   TEST_ASSERT_EQUAL_CHAR('-', buffer[map_placeholder + 1u]);
+
+  const size_t warning_placeholder = label_width + samples_width + (8u * channel_width) + map_width;
+  TEST_ASSERT_EQUAL_CHAR('-', buffer[warning_placeholder]);
+  TEST_ASSERT_EQUAL_CHAR('-', buffer[warning_placeholder + 1u]);
 }
 
 void setup() {

@@ -143,6 +143,10 @@ bool phoenix_benchmark_channel_map_format_summary_header(char* buffer, std::size
                            k_phoenix_benchmark_channel_map_summary_map_width)) {
     return false;
   }
+  if (!append_column_right(buffer, buffer_length, &offset, "Warnings",
+                           k_phoenix_benchmark_channel_map_summary_warning_width)) {
+    return false;
+  }
 
   trim_trailing_space(buffer, &offset);
   return true;
@@ -262,12 +266,15 @@ bool phoenix_benchmark_channel_map_format_summary_row(const PhoenixBenchmarkChan
     }
   }
 
-  const char* alignment_text = values.channel_alignment;
-  if (alignment_text == nullptr) {
-    alignment_text = "--";
-  }
+  const char* alignment_text = (values.channel_alignment != nullptr) ? values.channel_alignment : "--";
   if (!append_column_left(buffer, buffer_length, &offset, alignment_text,
                           k_phoenix_benchmark_channel_map_summary_map_width)) {
+    return false;
+  }
+
+  const char* warning_text = (values.warning_label != nullptr) ? values.warning_label : "--";
+  if (!append_column_left(buffer, buffer_length, &offset, warning_text,
+                          k_phoenix_benchmark_channel_map_summary_warning_width)) {
     return false;
   }
 

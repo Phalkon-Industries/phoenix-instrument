@@ -5,7 +5,7 @@
             "parameters": {
                 "sweeps": 100,
                 "dwell_us": 100,
-                "wiper_code": 255
+                "wiper_code": 0
             }
         }
     ]
