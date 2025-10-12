@@ -77,9 +77,9 @@ static bool                               g_force_saturation_for_test = false;
 static constexpr int32_t  k_positive_full_scale_test_code = k_phoenix_benchmark_adc_positive_full_scale_code;
 static constexpr int32_t  k_negative_full_scale_test_code = k_phoenix_benchmark_adc_negative_full_scale_code;
 static const AdcHalConfig k_adc_config                    = {
-    .chip_select_pin = k_pin_adc_cs,
-    .spi_clock_hz    = k_spi_clock_hz,
-    .default_gain    = AdcHalGain::ADC_HAL_GAIN_1,
+                       .chip_select_pin = k_pin_adc_cs,
+                       .spi_clock_hz    = k_spi_clock_hz,
+                       .default_gain    = AdcHalGain::ADC_HAL_GAIN_1,
 };
 
 static void enable_power_domains(void) {
@@ -164,23 +164,6 @@ static void emit_line(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks
   }
 }
 
-static void emit_saturation_warning(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks,
-                                    const PhoenixBenchmarkChannelMapStateDescriptor& descriptor, uint32_t sweep_index,
-                                    uint32_t channel_a_events, uint32_t channel_b_events) {
-  if (callbacks.print_line == nullptr) {
-    return;
-  }
-
-  char      buffer[128];
-  const int written = std::snprintf(
-      buffer, sizeof(buffer), "# channel_map,warning=adc_saturation,state=%s,sweep=%lu,channel_a=%lu,channel_b=%lu",
-      descriptor.label != nullptr ? descriptor.label : "?", static_cast<unsigned long>(sweep_index),
-      static_cast<unsigned long>(channel_a_events), static_cast<unsigned long>(channel_b_events));
-  if ((written > 0) && (static_cast<std::size_t>(written) < sizeof(buffer))) {
-    callbacks.print_line(buffer);
-  }
-}
-
 static bool apply_wiper_code(uint8_t wiper_code) {
   for (std::size_t index = 0; index < k_digipot_channel_count; ++index) {
     const int return_code = ad524x_set_wiper(k_digipot_channels[index], wiper_code);
@@ -222,8 +205,7 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
     delayMicroseconds(dwell_us);
   }
 
-  PhoenixBenchmarkStateAccumulator& accumulator    = accumulators[request.accumulator_index];
-  bool                              saw_saturation = false;
+  PhoenixBenchmarkStateAccumulator& accumulator = accumulators[request.accumulator_index];
 
   for (std::size_t attempt = 0u; attempt < k_max_sample_attempts; ++attempt) {
     int32_t channel_a_code = 0;
@@ -245,15 +227,6 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
 
     const bool a_saturated = phoenix_benchmark_is_adc_code_saturated(channel_a_code);
     const bool b_saturated = phoenix_benchmark_is_adc_code_saturated(channel_b_code);
-    if (a_saturated) {
-      ++accumulator.channel_a_saturation_count;
-      saw_saturation = true;
-    }
-    if (b_saturated) {
-      ++accumulator.channel_b_saturation_count;
-      saw_saturation = true;
-    }
-
     if (a_saturated || b_saturated) {
       g_last_sample_error = k_error_adc_saturation;
       if ((attempt + 1u) < k_max_sample_attempts) {
@@ -261,6 +234,17 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
         continue;
       }
 
+      accumulator.channel_a_codes.update(channel_a_code);
+      accumulator.channel_b_codes.update(channel_b_code);
+      if (out_sample_captured != nullptr) {
+        *out_sample_captured = true;
+      }
+      if (a_saturated) {
+        ++accumulator.channel_a_saturation_count;
+      }
+      if (b_saturated) {
+        ++accumulator.channel_b_saturation_count;
+      }
       if (out_saturation_detected != nullptr) {
         *out_saturation_detected = true;
       }
@@ -272,14 +256,14 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
     if (out_sample_captured != nullptr) {
       *out_sample_captured = true;
     }
-    if (saw_saturation && (out_saturation_detected != nullptr)) {
-      *out_saturation_detected = true;
+    if (out_saturation_detected != nullptr) {
+      *out_saturation_detected = false;
     }
     return true;
   }
 
-  if (saw_saturation && (out_saturation_detected != nullptr)) {
-    *out_saturation_detected = true;
+  if (out_saturation_detected != nullptr) {
+    *out_saturation_detected = false;
   }
   return true;
 }
@@ -369,10 +353,6 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
         continue;
       }
 
-      PhoenixBenchmarkStateAccumulator& accumulator                 = accumulators[request.accumulator_index];
-      const uint32_t                    previous_a_saturation_count = accumulator.channel_a_saturation_count;
-      const uint32_t                    previous_b_saturation_count = accumulator.channel_b_saturation_count;
-
       bool saw_saturation = false;
       if (!sample_state(request, options.dwell_us, accumulators, &saw_saturation, nullptr)) {
         emit_line(callbacks, "# channel_map,error=sampling_failed");
@@ -382,11 +362,7 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
       }
 
       if (saw_saturation) {
-        run_has_warnings       = true;
-        const uint32_t delta_a = accumulator.channel_a_saturation_count - previous_a_saturation_count;
-        const uint32_t delta_b = accumulator.channel_b_saturation_count - previous_b_saturation_count;
-        emit_saturation_warning(callbacks, k_state_descriptors[request.accumulator_index], sweep_index, delta_a,
-                                delta_b);
+        run_has_warnings = true;
       }
     }
   }

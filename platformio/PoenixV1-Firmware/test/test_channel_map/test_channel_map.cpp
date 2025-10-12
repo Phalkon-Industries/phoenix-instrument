@@ -1,3 +1,4 @@
+#include "ad524x.hpp"
 #include "channel_map/channel_map.hpp"
 #include "channel_map/command_parser.hpp"
 #include "main.hpp"
@@ -168,8 +169,8 @@ static void test_channel_map_run_executes_full_sequence(void) {
 
   PhoenixBenchmarkStateAccumulator                accumulators[3] = {};
   const PhoenixBenchmarkChannelMapOutputCallbacks callbacks       = {
-      .print_line  = nullptr,
-      .print_ready = nullptr,
+            .print_line  = nullptr,
+            .print_ready = nullptr,
   };
 
   const PhoenixBenchmarkChannelMapExecutionStatus status =
@@ -198,8 +199,8 @@ static void test_channel_map_run_reports_errors(void) {
 
   PhoenixBenchmarkStateAccumulator                accumulators[3] = {};
   const PhoenixBenchmarkChannelMapOutputCallbacks callbacks       = {
-      .print_line  = nullptr,
-      .print_ready = nullptr,
+            .print_line  = nullptr,
+            .print_ready = nullptr,
   };
 
   const PhoenixBenchmarkChannelMapExecutionStatus status =
@@ -210,28 +211,6 @@ static void test_channel_map_run_reports_errors(void) {
   TEST_ASSERT_NOT_NULL(status.message);
   TEST_ASSERT_FALSE(status.has_warnings);
 }
-
-namespace {
-
-char g_last_warning_line[128];
-
-void reset_warning_capture(void) {
-  g_last_warning_line[0u] = '\0';
-}
-
-void capture_warning_line(const char* line) {
-  if ((line == nullptr) || (line[0u] == '\0')) {
-    return;
-  }
-  constexpr const char* k_warning_prefix = "# channel_map,warning=adc_saturation";
-  if (std::strncmp(line, k_warning_prefix, std::strlen(k_warning_prefix)) != 0) {
-    return;
-  }
-  std::strncpy(g_last_warning_line, line, sizeof(g_last_warning_line) - 1u);
-  g_last_warning_line[sizeof(g_last_warning_line) - 1u] = '\0';
-}
-
-}  // namespace
 
 static void test_channel_map_run_records_saturation_warning(void) {
   phoenix_benchmark_channel_map_set_force_saturation_for_test(true);
@@ -248,11 +227,10 @@ static void test_channel_map_run_records_saturation_warning(void) {
   options.sweep_count        = 1u;
   options.has_sweep_override = true;
 
-  PhoenixBenchmarkStateAccumulator accumulators[3] = {};
-  reset_warning_capture();
-  const PhoenixBenchmarkChannelMapOutputCallbacks callbacks = {
-      .print_line  = capture_warning_line,
-      .print_ready = nullptr,
+  PhoenixBenchmarkStateAccumulator                accumulators[3] = {};
+  const PhoenixBenchmarkChannelMapOutputCallbacks callbacks       = {
+            .print_line  = nullptr,
+            .print_ready = nullptr,
   };
 
   const PhoenixBenchmarkChannelMapExecutionStatus status =
@@ -268,10 +246,42 @@ static void test_channel_map_run_records_saturation_warning(void) {
   TEST_ASSERT_GREATER_THAN_UINT32(0u, accumulators[2].channel_a_saturation_count);
   TEST_ASSERT_GREATER_THAN_UINT32(0u, accumulators[2].channel_b_saturation_count);
 
-  TEST_ASSERT_NOT_EQUAL('\0', g_last_warning_line[0u]);
-  TEST_ASSERT_NOT_NULL(std::strstr(g_last_warning_line, ",state=LED"));
-
   phoenix_benchmark_channel_map_set_force_saturation_for_test(false);
+}
+
+static void test_channel_map_run_applies_wiper_code(void) {
+  PhoenixBenchmarkChannelMapOptions options = {
+      .sweep_count        = 0u,
+      .has_sweep_override = false,
+      .dwell_us           = 0u,
+      .has_dwell_override = false,
+      .wiper_code         = 0u,
+      .has_wiper_override = false,
+  };
+  options.apply_defaults(k_defaults);
+  options.wiper_code         = 0x37u;
+  options.has_wiper_override = true;
+
+  PhoenixBenchmarkStateAccumulator                accumulators[3] = {};
+  const PhoenixBenchmarkChannelMapOutputCallbacks callbacks       = {
+            .print_line  = nullptr,
+            .print_ready = nullptr,
+  };
+
+  const PhoenixBenchmarkChannelMapExecutionStatus status =
+      phoenix_benchmark_channel_map_run(options, accumulators, callbacks);
+
+  if (!status.success && status.message != nullptr) {
+    TEST_MESSAGE(status.message);
+  }
+  TEST_ASSERT_TRUE(status.success);
+
+  uint8_t wiper_a = 0u;
+  uint8_t wiper_b = 0u;
+  TEST_ASSERT_EQUAL(AD524X_OK, ad524x_get_wiper(0u, &wiper_a));
+  TEST_ASSERT_EQUAL(AD524X_OK, ad524x_get_wiper(1u, &wiper_b));
+  TEST_ASSERT_EQUAL_UINT8(options.wiper_code, wiper_a);
+  TEST_ASSERT_EQUAL_UINT8(options.wiper_code, wiper_b);
 }
 
 void setup() {
@@ -292,6 +302,7 @@ void setup() {
   RUN_TEST(test_channel_map_run_executes_full_sequence);
   RUN_TEST(test_channel_map_run_reports_errors);
   RUN_TEST(test_channel_map_run_records_saturation_warning);
+  RUN_TEST(test_channel_map_run_applies_wiper_code);
 
   UNITY_END();
 }

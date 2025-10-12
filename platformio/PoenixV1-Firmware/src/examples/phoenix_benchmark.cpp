@@ -96,8 +96,15 @@ void print_summary_table(void) {
 
     const PhoenixBenchmarkStateAccumulator& accumulator = g_state_accumulators[index];
     const bool                              has_samples = accumulator.channel_a_codes.has_samples();
-    const bool                              has_saturation =
-        (accumulator.channel_a_saturation_count > 0u) || (accumulator.channel_b_saturation_count > 0u);
+    const bool                              channel_a_saturated =
+        (accumulator.channel_a_saturation_count > 0u) ||
+        (has_samples && (phoenix_benchmark_is_adc_code_saturated(accumulator.channel_a_codes.max_value) ||
+                         phoenix_benchmark_is_adc_code_saturated(accumulator.channel_a_codes.min_value)));
+    const bool channel_b_saturated =
+        (accumulator.channel_b_saturation_count > 0u) ||
+        (has_samples && (phoenix_benchmark_is_adc_code_saturated(accumulator.channel_b_codes.max_value) ||
+                         phoenix_benchmark_is_adc_code_saturated(accumulator.channel_b_codes.min_value)));
+    const bool has_saturation = channel_a_saturated || channel_b_saturated;
     if (!has_samples && !has_saturation) {
       continue;
     }
@@ -111,14 +118,18 @@ void print_summary_table(void) {
     char        warning_label[k_phoenix_benchmark_channel_map_summary_warning_width + 1u] = {};
     const char* warning_text                                                              = nullptr;
     if (has_saturation) {
-      if (accumulator.channel_b_saturation_count > 0u) {
+      if (channel_a_saturated && channel_b_saturated) {
         std::snprintf(warning_label, sizeof(warning_label), "SAT A=%lu,B=%lu",
                       static_cast<unsigned long>(accumulator.channel_a_saturation_count),
                       static_cast<unsigned long>(accumulator.channel_b_saturation_count));
       }
-      else {
+      else if (channel_a_saturated) {
         std::snprintf(warning_label, sizeof(warning_label), "SAT A=%lu",
                       static_cast<unsigned long>(accumulator.channel_a_saturation_count));
+      }
+      else {
+        std::snprintf(warning_label, sizeof(warning_label), "SAT B=%lu",
+                      static_cast<unsigned long>(accumulator.channel_b_saturation_count));
       }
       warning_text = warning_label;
     }
