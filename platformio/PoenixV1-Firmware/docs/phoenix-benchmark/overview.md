@@ -12,15 +12,15 @@ This document captures the *currently implemented* capabilities of the Phoenix b
 
 ## Host Workflow
 1. **Configuration** – Build the firmware (`pio run -e phoenix_benchmark_example`) with any desired compile-time overrides.
-2. **Dry-run Plans** – Use the Python CLI to validate command plans without touching hardware:
+2. **Dry-run Plans** – Use the Python CLI (within the shared conda environment) to validate command plans without touching hardware. The sample plan lives at `docs/phoenix-benchmark/sample_plans/channel_map_phase1.json`:
    ```powershell
-   python -m phoenix_benchmark.cli --dry-run path\to\plan.json
+   conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/channel_map_phase1.json --dry-run
    ```
    The tool echoes the serial payloads it will transmit during execution.
        A ready-to-use template lives at `docs/phoenix-benchmark/sample_plans/channel_map_phase1.json`.
 3. **Execution** – Connect hardware, then run the CLI against a plan and serial port:
    ```powershell
-   python -m phoenix_benchmark.cli path\to\plan.json --port COM9
+   conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/channel_map_phase1.json --port COM6 --ready-timeout 10 --command-timeout 120
    ```
    The CLI waits for the firmware `# ready` banner, streams each command, prints device output to stdout, and stores every line in a transcript buffer.
 4. **Automated Report** – After the firmware signals `# benchmark_complete`, the CLI writes a report bundle (`transcript.txt`, `summary.json`, `report.md`, `channel_map.png`) to the chosen output folder (default: `~/Downloads/phoenix-benchmark/<timestamp>`). The Markdown file embeds the raw table and generated plot for easy sharing.
