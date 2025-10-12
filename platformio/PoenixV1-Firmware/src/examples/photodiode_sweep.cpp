@@ -30,25 +30,31 @@ static const LedSweepRequest k_led_sweep_sequence[] = {
 static const size_t k_led_sweep_count = sizeof(k_led_sweep_sequence) / sizeof(k_led_sweep_sequence[0]);
 
 static void wait_for_serial(void) {
+  // Step 1: Remember the start time so we can time out the wait loop.
   unsigned long start_ms = millis();
+  // Step 2: Poll for the serial interface while respecting the timeout window.
   while (!Serial && (millis() - start_ms) < 2000UL) {
     delay(50);
   }
 }
 
 static void configure_led_paths_off(void) {
+  // Step 1: Configure the indicator LEDs as outputs.
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
+  // Step 2: Force both LEDs low so the board starts in a dark state.
   digitalWrite(LED_RED, LOW);
   digitalWrite(LED_BLUE, LOW);
 }
 
 static bool configure_led_router(void) {
+  // Step 1: Populate the router configuration with the board-specific pins.
   const LedRouterConfig config = {
       TS5A3359_IN1,
       TS5A3359_IN2,
   };
 
+  // Step 2: Initialize the router and report failures to the console.
   const int return_code = led_router_initialize(&config);
   if (return_code != LED_ROUTER_OK) {
     Serial.print(F("led_router_initialize failed: "));
@@ -60,6 +66,7 @@ static bool configure_led_router(void) {
 }
 
 static bool select_led_switch_state(LedRouterState state) {
+  // Step 1: Command the router to the requested state and log any errors.
   const int return_code = led_router_set_state(state);
   if (return_code != LED_ROUTER_OK) {
     Serial.print(F("led_router_set_state failed: "));
@@ -71,11 +78,13 @@ static bool select_led_switch_state(LedRouterState state) {
 }
 
 static void enable_power_domains(void) {
+  // Step 1: Enable the shared power rail so downstream circuitry is energized.
   pinMode(PIN_ENABLE_POWER, OUTPUT);
   digitalWrite(PIN_ENABLE_POWER, HIGH);
 }
 
 static bool initialise_ad524x(void) {
+  // Step 1: Start the I2C bus and bring the digi-pot into a known state.
   Wire.begin();
   int return_code = ad524x_initialize(AD5242_I2C_ADDRESS, &Wire);
   if (return_code != AD524X_OK) {
@@ -84,6 +93,7 @@ static bool initialise_ad524x(void) {
     return false;
   }
 
+  // Step 2: Program all channels to midscale to ensure a predictable baseline.
   for (size_t i = 0; i < k_digipot_channel_count; ++i) {
     return_code = ad524x_set_midscale(k_digipot_channels[i]);
     if (return_code != AD524X_OK) {
@@ -98,12 +108,14 @@ static bool initialise_ad524x(void) {
 }
 
 static bool initialise_adc_hal(void) {
+  // Step 1: Configure the ADC HAL with board-specific SPI and gain parameters.
   const AdcHalConfig config = {
       .chip_select_pin = PIN_ADC_CS,
       .spi_clock_hz    = k_spi_clock_hz,
       .default_gain    = AdcHalGain::ADC_HAL_GAIN_1,
   };
 
+  // Step 2: Initialize the ADC and log configuration failures.
   int return_code = adc_hal_initialize(&config);
   if (return_code != ADC_HAL_OK) {
     Serial.print(F("adc_hal_initialize failed: "));
@@ -111,6 +123,7 @@ static bool initialise_adc_hal(void) {
     return false;
   }
 
+  // Step 3: Apply default register settings expected by the sweep logic.
   return_code = adc_hal_apply_default_configuration();
   if (return_code != ADC_HAL_OK) {
     Serial.print(F("adc_hal_apply_default_configuration failed: "));
@@ -122,6 +135,7 @@ static bool initialise_adc_hal(void) {
 }
 
 static bool program_wipers(uint8_t wiper_code) {
+  // Step 1: Iterate across each digi-pot channel and update its wiper position.
   for (size_t i = 0; i < k_digipot_channel_count; ++i) {
     int return_code = ad524x_set_wiper(k_digipot_channels[i], wiper_code);
     if (return_code != AD524X_OK) {
@@ -136,15 +150,19 @@ static bool program_wipers(uint8_t wiper_code) {
 }
 
 static bool capture_sample(size_t index, uint8_t wiper_code) {
+  // Step 1: Program the wiper code before sampling.
   if (!program_wipers(wiper_code)) {
     return false;
   }
 
+  // Step 2: Allow the analog front-end time to settle after the resistance change.
   delay(k_settle_delay_ms);  // Allow the transimpedance amplifiers to settle after the resistance step.
 
+  // Step 3: Initialize the sample record with the applied wiper code.
   PhotodiodeSample sample = {};
   sample.wiper_code       = wiper_code;
 
+  // Step 4: Read both ADC channels and record failures for debugging.
   int return_code = adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_4, 1000000u, &sample.channel4_code);
   if (return_code != ADC_HAL_OK) {
     Serial.print(F("read channel 4 failed: "));
@@ -159,11 +177,13 @@ static bool capture_sample(size_t index, uint8_t wiper_code) {
     return false;
   }
 
+  // Step 5: Store the captured sample in the global collection.
   g_samples[index] = sample;
   return true;
 }
 
 static bool collect_samples(void) {
+  // Step 1: Iterate across the wiper sweep table and capture each sample in sequence.
   for (size_t i = 0; i < k_sample_count; ++i) {
     if (!capture_sample(i, k_wiper_codes[i])) {
       return false;
@@ -173,9 +193,11 @@ static bool collect_samples(void) {
 }
 
 static void print_samples_inline(const char* label) {
+  // Step 1: Emit the state label as the row prefix.
   Serial.print(label);
   Serial.print('\t');
 
+  // Step 2: Print each recorded sample as a tab-separated tuple.
   for (size_t i = 0; i < k_sample_count; ++i) {
     const PhotodiodeSample& sample = g_samples[i];
 
@@ -197,16 +219,19 @@ static void print_samples_inline(const char* label) {
 }
 
 static void park_hardware(void) {
+  // Step 1: Return each digi-pot to midscale so the next sweep starts uniformly.
   for (size_t i = 0; i < k_digipot_channel_count; ++i) {
     (void) ad524x_set_midscale(k_digipot_channels[i]);
   }
 
+  // Step 2: Ask the ADC to enter standby and log any failure codes.
   int standby_return_code = adc_hal_enter_standby();
   if (standby_return_code != ADC_HAL_OK) {
     Serial.print(F("adc_hal_enter_standby failed: "));
     Serial.println(standby_return_code);
   }
 
+  // Step 3: Shut down the LED router gracefully, reporting any issues.
   const int router_shutdown_return_code = led_router_shutdown();
   if (router_shutdown_return_code != LED_ROUTER_OK) {
     Serial.print(F("led_router_shutdown failed: "));
@@ -215,12 +240,15 @@ static void park_hardware(void) {
 }
 
 void setup() {
+  // Step 1: Initialize serial logging and wait for the host connection.
   Serial.begin(115200);
   wait_for_serial();
 
+  // Step 2: Power the hardware and leave LED indicators in a known state.
   enable_power_domains();
   configure_led_paths_off();
 
+  // Step 3: Initialize each hardware subsystem, aborting on failure.
   if (!initialise_ad524x()) {
     return;
   }
@@ -233,10 +261,12 @@ void setup() {
   if (!select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN)) {
     return;
   }
+  // Step 4: Inform the operator about the sweep output format.
   Serial.println(F("# Sweep format per line: state\t(wiper_hex,ch4_code,ch5_code)*"));
 }
 
 void loop() {
+  // Step 1: Sweep through each LED routing state, capturing samples per wiper code.
   bool sweep_failed = false;
   for (size_t i = 0; i < k_led_sweep_count; ++i) {
     const LedSweepRequest& request = k_led_sweep_sequence[i];
@@ -255,13 +285,16 @@ void loop() {
     }
   }
 
+  // Step 2: Separate successful sweeps with a blank line for readability.
   if (!sweep_failed) {
     Serial.println();  // Blank line separator between sweep cycles.
   }
 
+  // Step 3: Park the hardware and reinitialize routing for the next sweep.
   park_hardware();
   if (configure_led_router()) {
     (void) select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
   }
+  // Step 4: Delay briefly before restarting the sweep cycle.
   delay(1000);
 }

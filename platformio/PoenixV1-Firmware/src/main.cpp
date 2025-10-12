@@ -5,9 +5,9 @@
 int myFunction(int, int);
 
 void setup() {
-  // put your setup code here, to run once:
+  // Step 1: Placeholder for one-time initialization; populate when main firmware logic is added.
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  // Step 1: Placeholder for recurring runtime tasks until application logic is implemented.
 }

@@ -12,26 +12,32 @@ constexpr std::size_t k_command_buffer_length = 192u;
 constexpr const char  k_whitespace_tokens[]   = " \t\r\n";
 
 const char* skip_whitespace(const char* text) {
+  // Step 1: Reject null input so later logic can assume a valid pointer.
   if (text == nullptr) {
     return nullptr;
   }
+  // Step 2: Advance past any leading whitespace emitted in the command stream.
   while ((*text != '\0') && std::isspace(static_cast<unsigned char>(*text))) {
     ++text;
   }
+  // Step 3: Return the first non-whitespace character position for further parsing.
   return text;
 }
 
 bool parse_unsigned_value(const char* cursor, int base, uint32_t* value_out, const char** end_out) {
+  // Step 1: Validate pointers so the conversion helper never dereferences null data.
   if ((cursor == nullptr) || (value_out == nullptr)) {
     return false;
   }
 
+  // Step 2: Convert the token using strtol to support decimal and hexadecimal bases.
   char*      end_ptr = nullptr;
   const long parsed  = std::strtol(cursor, &end_ptr, base);
   if ((end_ptr == cursor) || (parsed < 0L)) {
     return false;
   }
 
+  // Step 3: Surface the parsed value and the character past the parsed region to the caller.
   *value_out = static_cast<uint32_t>(parsed);
   if (end_out != nullptr) {
     *end_out = end_ptr;
@@ -41,6 +47,7 @@ bool parse_unsigned_value(const char* cursor, int base, uint32_t* value_out, con
 
 bool parse_key_value_arguments(const char* line, const char* expected_command,
                                PhoenixBenchmarkChannelMapCommandArguments* arguments, const char** error_message) {
+  // Step 1: Reject invalid inputs so the remaining parsing logic can assume valid buffers.
   if ((line == nullptr) || (expected_command == nullptr) || (arguments == nullptr)) {
     if (error_message != nullptr) {
       *error_message = k_phoenix_benchmark_channel_map_error_invalid_command;
@@ -48,6 +55,7 @@ bool parse_key_value_arguments(const char* line, const char* expected_command,
     return false;
   }
 
+  // Step 2: Copy the incoming line into a mutable buffer that strtok can tokenize safely.
   char        buffer[k_command_buffer_length] = {};
   std::size_t length                          = 0u;
   while ((length < (sizeof(buffer) - 1u)) && (line[length] != '\0')) {
@@ -64,6 +72,7 @@ bool parse_key_value_arguments(const char* line, const char* expected_command,
   std::memcpy(buffer, line, length);
   buffer[length] = '\0';
 
+  // Step 3: Validate that the first token matches the expected command word.
   char* token = std::strtok(buffer, k_whitespace_tokens);
   if ((token == nullptr) || (std::strcmp(token, expected_command) != 0)) {
     if (error_message != nullptr) {
@@ -72,6 +81,7 @@ bool parse_key_value_arguments(const char* line, const char* expected_command,
     return false;
   }
 
+  // Step 4: Parse any key=value arguments and update the caller-supplied overrides.
   bool saw_token = false;
   while (true) {
     token = std::strtok(nullptr, k_whitespace_tokens);
@@ -144,6 +154,7 @@ bool parse_key_value_arguments(const char* line, const char* expected_command,
   }
 
   if (!saw_token) {
+    // Step 5: Accept the bare command so defaults remain intact.
     // Bare command is valid; defaults remain in the caller-provided output structure.
     return true;
   }
@@ -154,6 +165,7 @@ bool parse_key_value_arguments(const char* line, const char* expected_command,
 PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, const char* expected_command,
                                                           PhoenixBenchmarkChannelMapCommandArguments* arguments,
                                                           const char**                                error_message) {
+  // Step 1: Skip leading whitespace and confirm that the payload begins with a JSON object.
   const char* cursor = skip_whitespace(line);
   if ((cursor == nullptr) || (*cursor != '{')) {
     if (error_message != nullptr) {
@@ -168,6 +180,7 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
   bool saw_wiper   = false;
 
   while (true) {
+    // Step 2: Advance to the next key or the closing brace.
     cursor = skip_whitespace(cursor);
     if (cursor == nullptr) {
       if (error_message != nullptr) {
@@ -190,6 +203,7 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
     ++cursor;
 
     const char* key_start = cursor;
+    // Step 3: Capture the key so we can compare it against known arguments.
     while ((*cursor != '\0') && (*cursor != '"')) {
       ++cursor;
     }
@@ -223,6 +237,7 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
     cursor = skip_whitespace(cursor);
 
     if (std::strcmp(key_buffer, "command") == 0) {
+      // Step 4: Validate that the JSON command name matches what the caller expects.
       if (*cursor != '"') {
         if (error_message != nullptr) {
           *error_message = k_phoenix_benchmark_channel_map_error_invalid_command;
@@ -258,6 +273,7 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
     }
 
     if ((std::strcmp(key_buffer, "parameters") == 0) || (std::strcmp(key_buffer, "arguments") == 0)) {
+      // Step 5: Walk the nested argument object to parse overrides.
       if (*cursor != '{') {
         if (error_message != nullptr) {
           *error_message = k_phoenix_benchmark_channel_map_error_invalid_command;
@@ -382,6 +398,7 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
 
     if ((std::strcmp(key_buffer, "sweeps") == 0) || (std::strcmp(key_buffer, "dwell_us") == 0) ||
         (std::strcmp(key_buffer, "wiper_code") == 0)) {
+      // Step 6: Allow top-level argument overrides outside the parameters wrapper.
       const bool is_wiper_key = (std::strcmp(key_buffer, "wiper_code") == 0);
       uint32_t   parsed_value = 0u;
       if (!parse_unsigned_value(cursor, is_wiper_key ? 0 : 10, &parsed_value, &cursor)) {
@@ -431,6 +448,7 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
     return {false, {}, k_phoenix_benchmark_channel_map_error_unknown_argument};
   }
 
+  // Step 7: Ensure all required command parameters were supplied before succeeding.
   if (!saw_command) {
     if (error_message != nullptr) {
       *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
@@ -466,30 +484,37 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
 
 PhoenixBenchmarkChannelMapParseOutcome phoenix_benchmark_channel_map_parse_command_line(const char* line,
                                                                                         const char* expected_command) {
+  // Step 1: Initialize the output structure so defaults are ready for callers.
   PhoenixBenchmarkChannelMapCommandArguments arguments     = {};
   const char*                                error_message = nullptr;
 
+  // Step 2: Reject null command lines, because parsing helpers assume valid text.
   if (line == nullptr) {
     return {false, arguments, k_phoenix_benchmark_channel_map_error_invalid_command};
   }
 
+  // Step 3: Detect whether the command uses JSON or key=value syntax.
   bool        parsing_json = false;
   const char* cursor       = skip_whitespace(line);
   if (cursor != nullptr) {
     parsing_json = (*cursor == '{');
   }
 
+  // Step 4: Forward JSON payloads to the structured parser for validation and decoding.
   if (parsing_json) {
     return parse_json_command(line, expected_command, &arguments, &error_message);
   }
 
+  // Step 5: Parse traditional key=value arguments when the payload is plain text.
   if (!parse_key_value_arguments(line, expected_command, &arguments, &error_message)) {
     return {false, arguments, error_message};
   }
 
+  // Step 6: Enforce runtime constraints on overrides such as non-zero sweep counts.
   if (arguments.has_sweep_override && (arguments.sweep_count == 0u)) {
     return {false, arguments, k_phoenix_benchmark_channel_map_error_invalid_value};
   }
 
+  // Step 7: Report success with the populated argument structure and no error message.
   return {true, arguments, nullptr};
 }

@@ -167,6 +167,7 @@ static bool ensure_adc_initialised(void) {
 }
 
 static void emit_line(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks, const char* message) {
+  // Step 1: Forward log lines to the registered callback when both pointers are valid.
   if ((callbacks.print_line != nullptr) && (message != nullptr)) {
     callbacks.print_line(message);
   }
@@ -190,7 +191,9 @@ static bool select_led_state(LedRouterState state) {
 }
 
 static bool read_adc_channel(AdcHalChannel channel, int32_t* out_code) {
+  // Step 1: Request a single-ended conversion and capture the resulting code.
   const int return_code = adc_hal_read_single_ended(channel, k_adc_timeout_us, out_code);
+  // Step 2: Report success only when the HAL confirms the read completed.
   return return_code == ADC_HAL_OK;
 }
 
@@ -298,18 +301,22 @@ static void reset_accumulators(PhoenixBenchmarkStateAccumulator* accumulators) {
 }
 
 void PhoenixBenchmarkChannelMapOptions::apply_defaults(const PhoenixBenchmarkChannelMapDefaults& defaults) {
+  // Step 1: Copy the default sweep count when no override was provided.
   if (!has_sweep_override) {
     sweep_count = defaults.sweep_count;
   }
+  // Step 2: Copy the default dwell time when no override was provided.
   if (!has_dwell_override) {
     dwell_us = defaults.dwell_us;
   }
+  // Step 3: Copy the default wiper code when no override was provided.
   if (!has_wiper_override) {
     wiper_code = defaults.wiper_code;
   }
 }
 
 bool PhoenixBenchmarkChannelMapOptions::validate(char* error_buffer, std::size_t buffer_length) const {
+  // Step 1: Detect invalid sweep counts or excessive dwell times.
   const char* message = nullptr;
   if (sweep_count == 0u) {
     message = "sweep_count must be greater than zero";
@@ -318,10 +325,12 @@ bool PhoenixBenchmarkChannelMapOptions::validate(char* error_buffer, std::size_t
     message = "dwell_us exceeds limit";
   }
 
+  // Step 2: Copy the diagnostic message into the caller-provided buffer when requested.
   if ((message != nullptr) && (error_buffer != nullptr) && (buffer_length > 0u)) {
     std::strncpy(error_buffer, message, buffer_length - 1u);
     error_buffer[buffer_length - 1u] = '\0';
   }
+  // Step 3: Return true only when no validation errors were discovered.
   return message == nullptr;
 }
 
@@ -403,15 +412,18 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
 }
 
 PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_command(const char* line) {
+  // Step 1: Seed options with defaults so unspecified values inherit the baseline configuration.
   PhoenixBenchmarkChannelMapOptions options = {};
   options.apply_defaults(g_defaults);
 
+  // Step 2: Parse the incoming command using the shared command-line handler.
   const PhoenixBenchmarkChannelMapParseOutcome outcome =
       phoenix_benchmark_channel_map_parse_command_line(line, "channel_map");
   if (!outcome.success) {
     return {false, options, outcome.error_message};
   }
 
+  // Step 3: Apply overrides reported by the parser outcome structure.
   if (outcome.arguments.has_sweep_override) {
     options.sweep_count        = outcome.arguments.sweep_count;
     options.has_sweep_override = true;
@@ -425,11 +437,13 @@ PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_comman
     options.has_wiper_override = true;
   }
 
+  // Step 4: Reapply defaults for any fields still unset before returning success.
   options.apply_defaults(g_defaults);
   return {true, options, nullptr};
 }
 
 void phoenix_benchmark_channel_map_reset_state(void) {
+  // Step 1: Clear persistent defaults and cached hardware status.
   g_defaults                  = PhoenixBenchmarkChannelMapDefaults{};
   g_power_enabled             = false;
   g_last_sample_error         = nullptr;
@@ -437,5 +451,6 @@ void phoenix_benchmark_channel_map_reset_state(void) {
 }
 
 void phoenix_benchmark_channel_map_set_force_saturation_for_test(bool enabled) {
+  // Step 1: Toggle the synthetic saturation flag so tests can manipulate ADC codes.
   g_force_saturation_for_test = enabled;
 }

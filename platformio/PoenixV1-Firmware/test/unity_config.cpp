@@ -1,4 +1,5 @@
 #include "unity_config.h"
+
 #include <unity.h>
 
 #if !defined(UNITY_WEAK_ATTRIBUTE) && !defined(UNITY_WEAK_PRAGMA)
@@ -10,32 +11,32 @@
 #endif
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
 #ifdef UNITY_WEAK_ATTRIBUTE
-    UNITY_WEAK_ATTRIBUTE void setUp(void)
-    {
-    }
-    UNITY_WEAK_ATTRIBUTE void tearDown(void) {}
-    UNITY_WEAK_ATTRIBUTE void suiteSetUp(void) {}
-    UNITY_WEAK_ATTRIBUTE int suiteTearDown(int num_failures) { return num_failures; }
+UNITY_WEAK_ATTRIBUTE void setUp(void) {
+}
+UNITY_WEAK_ATTRIBUTE void tearDown(void) {
+}
+UNITY_WEAK_ATTRIBUTE void suiteSetUp(void) {
+}
+UNITY_WEAK_ATTRIBUTE int suiteTearDown(int num_failures) {
+  return num_failures;
+}
 #elif defined(UNITY_WEAK_PRAGMA)
 #pragma weak setUp
-void setUp(void) {}
+void setUp(void) {
+}
 #pragma weak tearDown
-void tearDown(void)
-{
+void tearDown(void) {
 }
 #pragma weak suiteSetUp
-void suiteSetUp(void)
-{
+void suiteSetUp(void) {
 }
 #pragma weak suiteTearDown
-int suiteTearDown(int num_failures)
-{
-    return num_failures;
+int suiteTearDown(int num_failures) {
+  return num_failures;
 }
 #endif
 
@@ -44,22 +45,32 @@ int suiteTearDown(int num_failures)
 #endif /* extern "C" */
 
 #include <Arduino.h>
-void unityOutputStart(unsigned long baudrate)
-{
-    Serial.begin(baudrate);
-    while (!Serial)
-        ;
+void unityOutputStart(unsigned long baudrate) {
+  // Step 1: Initialize the serial port so Unity test logs can stream to the host.
+  Serial.begin(baudrate);
+  // Step 2: Wait for the USB serial link to enumerate before proceeding.
+  while (!Serial)
+    ;
 }
-void unityOutputChar(unsigned int character) { Serial.write(character); }
-void unityOutputFlush(void) { Serial.flush(); }
-void unityOutputComplete(void) {}
+void unityOutputChar(unsigned int character) {
+  // Step 1: Forward each character emitted by Unity to the serial port.
+  Serial.write(character);
+}
+void unityOutputFlush(void) {
+  // Step 1: Ensure buffered serial data is delivered to the host immediately.
+  Serial.flush();
+}
+void unityOutputComplete(void) {
+}
 
-void unity_platform_setup_serial(unsigned long baudrate, unsigned long service_delay_ms)
-{
-    Serial.begin(baudrate);
-    Serial.flush();
-    while (!Serial)
-        ;
-    UNITY_BEGIN();
-    delay(service_delay_ms);
+void unity_platform_setup_serial(unsigned long baudrate, unsigned long service_delay_ms) {
+  // Step 1: Set up the serial port and clear any stale data.
+  Serial.begin(baudrate);
+  Serial.flush();
+  // Step 2: Wait for the host connection before starting the Unity session.
+  while (!Serial)
+    ;
+  // Step 3: Begin the Unity test harness and allow the host to prepare.
+  UNITY_BEGIN();
+  delay(service_delay_ms);
 }

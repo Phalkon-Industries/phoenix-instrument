@@ -5,6 +5,7 @@
 #include <unity.h>
 
 static void test_summary_header_formats_aligned_columns(void) {
+  // Step 1. Generate the header string using the formatter helper.
   char buffer[k_phoenix_benchmark_channel_map_summary_table_buffer_bytes];
   TEST_ASSERT_TRUE(phoenix_benchmark_channel_map_format_summary_header(buffer, sizeof(buffer)));
 
@@ -16,6 +17,7 @@ static void test_summary_header_formats_aligned_columns(void) {
 
   TEST_ASSERT_EQUAL_CHAR('S', buffer[0u]);
 
+  // Step 2. Verify each column label appears at the expected offset.
   const size_t samples_start = label_width + (samples_width - strlen("Samples"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[samples_start], "Samples", strlen("Samples")));
 
@@ -50,12 +52,14 @@ static void test_summary_header_formats_aligned_columns(void) {
       label_width + samples_width + (8u * channel_width) + map_width + (warning_width - strlen("Warnings"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[warning_start], "Warnings", strlen("Warnings")));
 
+  // Step 3. Ensure the header is non-empty and trimmed at the end.
   const size_t buffer_length = strlen(buffer);
   TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, buffer_length, "Header should not be empty");
   TEST_ASSERT_NOT_EQUAL(' ', buffer[buffer_length - 1u]);
 }
 
 static void test_summary_row_formats_state_metrics(void) {
+  // Step 1. Populate the formatter inputs with representative metric values.
   PhoenixBenchmarkChannelMapSummaryRowValues values = {
       .label               = "LED1",
       .sample_count        = 42u,
@@ -72,6 +76,7 @@ static void test_summary_row_formats_state_metrics(void) {
       .has_channel_metrics = true,
   };
 
+  // Step 2. Format the row and confirm the label anchors the output.
   char buffer[k_phoenix_benchmark_channel_map_summary_table_buffer_bytes];
   TEST_ASSERT_TRUE(phoenix_benchmark_channel_map_format_summary_row(values, buffer, sizeof(buffer)));
   TEST_ASSERT_EQUAL_CHAR('L', buffer[0u]);
@@ -81,6 +86,7 @@ static void test_summary_row_formats_state_metrics(void) {
   const size_t channel_width = k_phoenix_benchmark_channel_map_summary_channel_width;
   const size_t map_width     = k_phoenix_benchmark_channel_map_summary_map_width;
 
+  // Step 3. Verify numerical columns align as expected for channel A.
   const size_t samples_start = label_width + (samples_width - strlen("42"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[samples_start], "42", strlen("42")));
 
@@ -96,6 +102,7 @@ static void test_summary_row_formats_state_metrics(void) {
   const size_t max_a_start = label_width + samples_width + (3u * channel_width) + (channel_width - strlen("13000.000"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[max_a_start], "13000.000", strlen("13000.000")));
 
+  // Step 4. Verify numerical columns align as expected for channel B.
   const size_t mean_b_start = label_width + samples_width + (4u * channel_width) + (channel_width - strlen("-75.125"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[mean_b_start], "-75.125", strlen("-75.125")));
 
@@ -108,18 +115,21 @@ static void test_summary_row_formats_state_metrics(void) {
   const size_t max_b_start = label_width + samples_width + (7u * channel_width) + (channel_width - strlen("-60.000"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[max_b_start], "-60.000", strlen("-60.000")));
 
+  // Step 5. Confirm alignment and warning labels appear at the trailing columns.
   const size_t map_start = label_width + samples_width + (8u * channel_width);
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[map_start], "A=OK", strlen("A=OK")));
 
   const size_t warning_start = label_width + samples_width + (8u * channel_width) + map_width;
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[warning_start], "SAT A=1", strlen("SAT A=1")));
 
+  // Step 6. Ensure the row output is non-empty and has no trailing space.
   const size_t buffer_length = strlen(buffer);
   TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, buffer_length, "Row should not be empty");
   TEST_ASSERT_NOT_EQUAL(' ', buffer[buffer_length - 1u]);
 }
 
 static void test_summary_row_inserts_placeholders_without_channel_metrics(void) {
+  // Step 1. Describe a summary row lacking per-channel metrics.
   PhoenixBenchmarkChannelMapSummaryRowValues values = {
       .label               = "Cycle",
       .sample_count        = 10u,
@@ -136,6 +146,7 @@ static void test_summary_row_inserts_placeholders_without_channel_metrics(void) 
       .has_channel_metrics = false,
   };
 
+  // Step 2. Format the row and inspect placeholder positions.
   char buffer[k_phoenix_benchmark_channel_map_summary_table_buffer_bytes];
   TEST_ASSERT_TRUE(phoenix_benchmark_channel_map_format_summary_row(values, buffer, sizeof(buffer)));
 
@@ -144,6 +155,7 @@ static void test_summary_row_inserts_placeholders_without_channel_metrics(void) 
   const size_t channel_width = k_phoenix_benchmark_channel_map_summary_channel_width;
   const size_t map_width     = k_phoenix_benchmark_channel_map_summary_map_width;
 
+  // Step 3. Confirm the placeholder spans replace missing metrics.
   const size_t first_placeholder = label_width + samples_width;
   TEST_ASSERT_EQUAL_CHAR('-', buffer[first_placeholder]);
   TEST_ASSERT_EQUAL_CHAR('-', buffer[first_placeholder + 1u]);
@@ -162,11 +174,14 @@ static void test_summary_row_inserts_placeholders_without_channel_metrics(void) 
 }
 
 void setup() {
+  // Step 1. Prepare Unity's serial channel for summary formatter logging.
   UNITY_SETUP_SERIAL_DEFAULT();
+  // Step 2. Run the summary formatter focused tests.
   UNITY_BEGIN();
   RUN_TEST(test_summary_header_formats_aligned_columns);
   RUN_TEST(test_summary_row_formats_state_metrics);
   RUN_TEST(test_summary_row_inserts_placeholders_without_channel_metrics);
+  // Step 3. Close out Unity before idling in loop().
   UNITY_END();
 }
 

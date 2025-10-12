@@ -39,13 +39,16 @@ void mcp356x_force_uninitialized_for_test(void) {
 
 int mcp356x_initialize(int chip_select_pin, uint32_t spi_clock_hz) {
   // Guardrail checks: CS must be valid, SPI clock must be non-zero.
+  // Step 1: Reject invalid pin assignments or zero-frequency SPI configs.
   if (chip_select_pin < 0 || spi_clock_hz == 0) {
     return MCP356X_ERR_INVALID_ARG;
   }
 
+  // Step 2: Cache the hardware configuration for downstream transactions.
   g_chip_select_pin = chip_select_pin;
   g_spi_settings    = SPISettings(spi_clock_hz, MSBFIRST, SPI_MODE0);
 
+  // Step 3: Prepare the chip-select line and bring up the SPI peripheral.
   pinMode(g_chip_select_pin, OUTPUT);
   digitalWrite(g_chip_select_pin, HIGH);
 
@@ -56,6 +59,7 @@ int mcp356x_initialize(int chip_select_pin, uint32_t spi_clock_hz) {
 
 int mcp356x_send_fast_command(uint8_t command_code, uint8_t* status_byte) {
   // Fast commands always require the driver to be initialised and STATUS storage.
+  // Step 1: Reject calls without initialisation or status storage.
   if (!g_initialized) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
@@ -64,9 +68,11 @@ int mcp356x_send_fast_command(uint8_t command_code, uint8_t* status_byte) {
   }
 
   // Build command byte: [7:6]=device address, [5:2]=command, [1:0]=type (00 for fast command)
+  // Step 2: Assemble the on-wire command header according to Table 6-3.
   uint8_t command =
       (uint8_t) (((MCP356X_DEVICE_ADDRESS & MCP356X_DEVICE_ADDRESS_MASK) << 6) | ((command_code & 0x0Fu) << 2));
 
+  // Step 3: Issue the SPI transaction and capture the returned STATUS byte.
   SPI.beginTransaction(g_spi_settings);
   digitalWrite(g_chip_select_pin, LOW);
   uint8_t status = SPI.transfer(command);
@@ -89,6 +95,7 @@ static int mcp356x_issue_fast_command(uint8_t command_code, uint8_t* status_byte
 int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t length, uint8_t* status_byte) {
   // Static read operation (single header followed by 1-4 data bytes clocked out).
   // Validate runtime state and caller parameters before touching the bus.
+  // Step 1: Enforce initialisation and parameter bounds before the SPI transfer.
   if (!g_initialized) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
@@ -99,8 +106,10 @@ int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t leng
     return MCP356X_ERR_INVALID_ARG;
   }
 
+  // Step 2: Compose the static-read command header.
   uint8_t command = mcp356x_command_byte(register_address, 0x01u);  // Static read
 
+  // Step 3: Clock out the STATUS byte and requested register payload.
   SPI.beginTransaction(g_spi_settings);
   digitalWrite(g_chip_select_pin, LOW);
   // The STATUS byte is returned alongside the first data byte; capture it.
@@ -120,6 +129,7 @@ int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t leng
 int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size_t length, uint8_t* status_byte) {
   // Static write operation (single header followed by 1-4 data bytes clocked in).
   // Validate runtime state and caller parameters before touching the bus.
+  // Step 1: Confirm initialisation and validate parameters before writing.
   if (!g_initialized) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
@@ -130,8 +140,10 @@ int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size
     return MCP356X_ERR_INVALID_ARG;
   }
 
+  // Step 2: Build the static-write command header.
   uint8_t command = mcp356x_command_byte(register_address, 0x02u);  // Static write
 
+  // Step 3: Stream the header and data bytes while capturing STATUS.
   SPI.beginTransaction(g_spi_settings);
   digitalWrite(g_chip_select_pin, LOW);
   // STATUS is sampled during the header transfer and optionally returned.
@@ -150,19 +162,23 @@ int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size
 
 int mcp356x_select_single_ended_channel(uint8_t channel_index) {
   // Only channels 0-7 map to the single-ended inputs; reject anything outside that range.
+  // Step 1: Validate the mux index before altering hardware state.
   if (channel_index > MCP356X_MUX_CH7) {
     return MCP356X_ERR_INVALID_ARG;
   }
 
+  // Step 2: Encode the single-ended selection with AGND on the negative mux.
   uint8_t mux_value = (uint8_t) ((channel_index << 4) | MCP356X_MUX_AGND);
   return mcp356x_write_register(MCP356X_REG_MUX, &mux_value, 1u, NULL);
 }
 
 int mcp356x_set_gain(mcp356x_gain gain) {
+  // Step 1: Require initialisation before touching configuration registers.
   if (!g_initialized) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
 
+  // Step 2: Read the existing CONFIG2 register so we can preserve unrelated bits.
   uint8_t config2_value = 0u;
   int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
@@ -172,6 +188,7 @@ int mcp356x_set_gain(mcp356x_gain gain) {
   const uint8_t preserved_bits = (uint8_t) (config2_value & 0xC7u);  // Clear GAIN[5:3].
   const uint8_t gain_bits      = (uint8_t) (static_cast<uint8_t>(gain) & 0x07u);
 
+  // Step 3: Merge the new gain setting and write it back to the device.
   config2_value = (uint8_t) (preserved_bits | (uint8_t) (gain_bits << 3));
   config2_value |= 0x01u;  // Datasheet mandates CONFIG2 bit0 remains 1.
 
@@ -179,6 +196,7 @@ int mcp356x_set_gain(mcp356x_gain gain) {
 }
 
 int mcp356x_get_gain(mcp356x_gain* out_gain) {
+  // Step 1: Validate output storage and ensure the driver is initialised.
   if (out_gain == NULL) {
     return MCP356X_ERR_INVALID_ARG;
   }
@@ -186,6 +204,7 @@ int mcp356x_get_gain(mcp356x_gain* out_gain) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
 
+  // Step 2: Read CONFIG2 and extract the GAIN bits as a driver enum.
   uint8_t config2_value = 0u;
   int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
@@ -203,6 +222,7 @@ int mcp356x_apply_default_config(void) {
 }
 
 int mcp356x_apply_default_config_with_gain(mcp356x_gain gain) {
+  // Step 1: Require an initialised driver before writing configuration registers.
   if (!g_initialized) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
@@ -212,6 +232,7 @@ int mcp356x_apply_default_config_with_gain(mcp356x_gain gain) {
   const uint8_t config2_value = mcp356x_config2_with_gain_bits(gain);
   const uint8_t config3_value = MCP356X_CONFIG3_DEFAULT;
 
+  // Step 2: Sequentially write the default register set, aborting on failure.
   int return_code = mcp356x_write_register(MCP356X_REG_CONFIG0, &config0_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
@@ -248,18 +269,22 @@ int mcp356x_full_reset(uint8_t* status_byte) {
 }
 
 int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result) {
+  // Step 1: Ensure we have a destination for the conversion result.
   if (result == NULL) {
     return MCP356X_ERR_INVALID_ARG;
   }
+  // Step 2: Require driver initialisation.
   if (!g_initialized) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
 
+  // Step 3: Program the mux to the requested single-ended channel.
   int return_code = mcp356x_select_single_ended_channel(channel_index);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
 
+  // Step 4: Kick off a conversion.
   return_code = mcp356x_start_conversion(NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
@@ -269,6 +294,7 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
   uint32_t elapsed_ms   = 0u;
   bool     data_ready   = false;
 
+  // Step 5: Poll the ADC result register until data is ready or the timeout expires.
   while (!data_ready) {
     uint8_t read_status = 0xFFu;
     return_code         = mcp356x_read_register(MCP356X_REG_ADCDATA, adc_bytes, sizeof adc_bytes, &read_status);
@@ -289,11 +315,13 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
     ++elapsed_ms;
   }
 
+  // Step 6: Combine the 24-bit two's complement result and sign-extend to 32 bits.
   int32_t raw_value = (int32_t) ((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
   if (raw_value & 0x800000) {
     raw_value |= 0xFF000000;
   }
 
+  // Step 7: Publish the conversion outcome to the caller.
   *result = raw_value;
   return MCP356X_OK;
 }
