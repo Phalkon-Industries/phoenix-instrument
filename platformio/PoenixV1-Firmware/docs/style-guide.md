@@ -7,6 +7,13 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 - **Namespaces:** Avoid unless interacting with Arduino libraries; prefer `static` linkage instead.
 - **Types / structs / enums / classes:** Use `CamelCase` (upper camel). Example: `struct AdcSampleBuffer`.
 - **Functions and free helpers:** Use `lower_snake_case`. Example: `read_config_value()`.
+- **Public phoenix benchmark APIs:** Export scenario entry points with the C-style prefix
+  `phoenix_benchmark_<module>_<verb>` so they link cleanly from C and C++. For example,
+  `phoenix_benchmark_channel_map_run`, `phoenix_benchmark_channel_map_format_summary_row`.
+  - Match accompanying structs/enums with the `PhoenixBenchmark<Module><Role>` pattern (e.g.
+    `PhoenixBenchmarkChannelMapDefaults`).
+  - Keep these declarations in plain headers without namespaces; reserve namespaces for Arduino/third-party
+    integration quirks only.
 - **Unity test names:** Use clear test identifiers in `lower_snake_case` following Unity conventions—prefer `test_action` or `test_unit_action` so the name describes the behavior and expected result (e.g. `test_adc_read_returns_error_on_null_buffer`, `test_config_load_sets_defaults`).
 - **Static globals:** Prefix with `g_` (e.g. `g_initialized`). Prefer file-local `static` over `extern`.
 - **Local variables:** Use `lower_snake_case` (e.g. `config0_before`, `status_after`). Favour descriptive names over terse shorthands; for function return values capture them in a variable named `return_code` instead of `rc`.
@@ -20,6 +27,8 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 - Keep each function narrowly scoped; document any required side effects or shared state.
 - Run `clang-format` on every C/C++ source or header you modify before committing so the codebase stays consistent with `.clang-format`. Non-code files are explicitly excluded from this requirement.
 - Turn on “format on save” in your IDE when possible.
+- C-style public APIs should live in headers that can be included from C or C++. If a header must be consumed by both,
+  add the usual `#ifdef __cplusplus` guard with `extern "C" { ... }`.
 
 ## 3. Header Layout and Includes
 - Include the module's public header first (e.g. `#include "mcp356x.hpp"`), then a blank line, then Arduino/standard-library headers.

@@ -47,6 +47,17 @@ class DummySerial:
         return self._line_queue.pop(0)
 
 
+class ErrorSerial(DummySerial):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._line_queue = [
+            b"# phoenix benchmark ready\n",
+            b"# running,scenario=channel_map\n",
+            b"# error,channel_map_parse_failed,reason=unknown argument\n",
+            b"# ready\n",
+        ]
+
+
 def test_cli_dry_run_emits_preview(tmp_path: Path, capsys) -> None:
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -147,3 +158,41 @@ def test_cli_streams_plan_to_serial_port(
     recorded_lines = captured["lines"]
     assert isinstance(recorded_lines, list)
     assert "# summary_table" in recorded_lines
+
+
+def test_cli_aborts_when_device_reports_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "channel_map",
+                        "parameters": {"sweeps": 5},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", ErrorSerial)
+
+    report_called = False
+
+    def fake_create_report(*args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal report_called
+        report_called = True
+        raise AssertionError("Report should not be generated when device errors")
+
+    monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
+
+    exit_code = main([str(plan), "--port", "COM6", "--ready-timeout", "2", "--command-timeout", "5"])
+    assert exit_code == 1
+    assert report_called is False
+
+    captured = capsys.readouterr()
+    assert "# error,channel_map_parse_failed" in captured.out
+    assert "Device reported error" in captured.err

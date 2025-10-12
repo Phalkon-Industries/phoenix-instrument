@@ -181,6 +181,8 @@ def _stream_until_complete(
         decoded = line.decode("utf-8", errors="replace").strip()
         sys.stdout.write(decoded + "\n")
         transcript.append(decoded)
+        if decoded.startswith("# error"):
+            raise serial.SerialException(f"Device reported error: {decoded}")
         if decoded.endswith("benchmark_complete"):
             break
     deadline = (

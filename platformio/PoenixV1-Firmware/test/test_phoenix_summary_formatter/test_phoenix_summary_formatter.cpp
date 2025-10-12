@@ -1,19 +1,17 @@
-#include "phoenix_summary_formatter.hpp"
+#include "channel_map/channel_map_formatter.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
 #include <cstring>
 #include <unity.h>
 
-using phoenix_benchmark_support::SummaryRowValues;
-
 static void test_summary_header_formats_aligned_columns(void) {
-  char buffer[phoenix_benchmark_support::k_summary_table_buffer_bytes];
-  TEST_ASSERT_TRUE(phoenix_benchmark_support::format_summary_header(buffer, sizeof(buffer)));
+  char buffer[k_phoenix_benchmark_channel_map_summary_table_buffer_bytes];
+  TEST_ASSERT_TRUE(phoenix_benchmark_channel_map_format_summary_header(buffer, sizeof(buffer)));
 
-  const size_t label_width   = phoenix_benchmark_support::k_summary_label_width;
-  const size_t samples_width = phoenix_benchmark_support::k_summary_samples_width;
-  const size_t channel_width = phoenix_benchmark_support::k_summary_channel_width;
-  const size_t map_width     = phoenix_benchmark_support::k_summary_map_width;
+  const size_t label_width   = k_phoenix_benchmark_channel_map_summary_label_width;
+  const size_t samples_width = k_phoenix_benchmark_channel_map_summary_samples_width;
+  const size_t channel_width = k_phoenix_benchmark_channel_map_summary_channel_width;
+  const size_t map_width     = k_phoenix_benchmark_channel_map_summary_map_width;
 
   TEST_ASSERT_EQUAL_CHAR('S', buffer[0u]);
 
@@ -53,7 +51,7 @@ static void test_summary_header_formats_aligned_columns(void) {
 }
 
 static void test_summary_row_formats_state_metrics(void) {
-  SummaryRowValues values = {
+  PhoenixBenchmarkChannelMapSummaryRowValues values = {
       .label               = "LED1",
       .sample_count        = 42u,
       .mean_channel_a      = 12345.678,
@@ -68,13 +66,13 @@ static void test_summary_row_formats_state_metrics(void) {
       .has_channel_metrics = true,
   };
 
-  char buffer[phoenix_benchmark_support::k_summary_table_buffer_bytes];
-  TEST_ASSERT_TRUE(phoenix_benchmark_support::format_summary_row(values, buffer, sizeof(buffer)));
+  char buffer[k_phoenix_benchmark_channel_map_summary_table_buffer_bytes];
+  TEST_ASSERT_TRUE(phoenix_benchmark_channel_map_format_summary_row(values, buffer, sizeof(buffer)));
   TEST_ASSERT_EQUAL_CHAR('L', buffer[0u]);
 
-  const size_t label_width   = phoenix_benchmark_support::k_summary_label_width;
-  const size_t samples_width = phoenix_benchmark_support::k_summary_samples_width;
-  const size_t channel_width = phoenix_benchmark_support::k_summary_channel_width;
+  const size_t label_width   = k_phoenix_benchmark_channel_map_summary_label_width;
+  const size_t samples_width = k_phoenix_benchmark_channel_map_summary_samples_width;
+  const size_t channel_width = k_phoenix_benchmark_channel_map_summary_channel_width;
 
   const size_t samples_start = label_width + (samples_width - strlen("42"));
   TEST_ASSERT_EQUAL_INT(0, strncmp(&buffer[samples_start], "42", strlen("42")));
@@ -112,7 +110,7 @@ static void test_summary_row_formats_state_metrics(void) {
 }
 
 static void test_summary_row_inserts_placeholders_without_channel_metrics(void) {
-  SummaryRowValues values = {
+  PhoenixBenchmarkChannelMapSummaryRowValues values = {
       .label               = "Cycle",
       .sample_count        = 10u,
       .mean_channel_a      = 0.0,
@@ -127,12 +125,12 @@ static void test_summary_row_inserts_placeholders_without_channel_metrics(void) 
       .has_channel_metrics = false,
   };
 
-  char buffer[phoenix_benchmark_support::k_summary_table_buffer_bytes];
-  TEST_ASSERT_TRUE(phoenix_benchmark_support::format_summary_row(values, buffer, sizeof(buffer)));
+  char buffer[k_phoenix_benchmark_channel_map_summary_table_buffer_bytes];
+  TEST_ASSERT_TRUE(phoenix_benchmark_channel_map_format_summary_row(values, buffer, sizeof(buffer)));
 
-  const size_t label_width   = phoenix_benchmark_support::k_summary_label_width;
-  const size_t samples_width = phoenix_benchmark_support::k_summary_samples_width;
-  const size_t channel_width = phoenix_benchmark_support::k_summary_channel_width;
+  const size_t label_width   = k_phoenix_benchmark_channel_map_summary_label_width;
+  const size_t samples_width = k_phoenix_benchmark_channel_map_summary_samples_width;
+  const size_t channel_width = k_phoenix_benchmark_channel_map_summary_channel_width;
 
   const size_t first_placeholder = label_width + samples_width;
   TEST_ASSERT_EQUAL_CHAR('-', buffer[first_placeholder]);
