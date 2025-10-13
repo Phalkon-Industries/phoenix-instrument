@@ -68,6 +68,7 @@ static constexpr std::size_t k_accumulator_count = k_phoenix_benchmark_channel_m
 
 static constexpr const char* k_error_invalid_options  = "invalid options";
 static constexpr const char* k_error_hardware_failure = "hardware failure";
+static constexpr const char* k_error_sampling_failure = "sampling failure";
 static constexpr const char* k_error_adc_saturation   = "adc saturation";
 
 static PhoenixBenchmarkChannelMapDefaults g_defaults                  = {};
@@ -224,7 +225,7 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
   // Step 4: Grab the accumulator for this state so we can store statistics.
   PhoenixBenchmarkStateAccumulator& accumulator = accumulators[request.accumulator_index];
 
-  // Step 5: Attempt to capture both ADC channels, retrying on saturation when needed.
+  // Step 5: Attempt to capture both ADC channels
   for (std::size_t attempt = 0u; attempt < k_max_sample_attempts; ++attempt) {
     int32_t channel_a_code = 0;
     // Step 5a: Sample channel A and bail if the ADC reports a failure.
@@ -234,7 +235,7 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
     }
 
     int32_t channel_b_code = 0;
-    // Step 5b: Sample channel B to capture the complementary diode path.
+    // Step 5b: Sample channel B and bail if failure
     if (!read_adc_channel(AdcHalChannel::ADC_HAL_CHANNEL_5, &channel_b_code)) {
       g_last_sample_error = "adc read failed (channel B)";
       return false;
@@ -248,49 +249,34 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
 
     const bool a_saturated = phoenix_benchmark_is_adc_code_saturated(channel_a_code);
     const bool b_saturated = phoenix_benchmark_is_adc_code_saturated(channel_b_code);
-    if (a_saturated || b_saturated) {
-      // Step 5d: Flag saturation, retry if attempts remain, and record the raw codes.
-      g_last_sample_error = k_error_adc_saturation;
-      if ((attempt + 1u) < k_max_sample_attempts) {
-        delayMicroseconds(50u);
-        continue;
-      }
-
-      accumulator.channel_a_codes.update(channel_a_code);
-      accumulator.channel_b_codes.update(channel_b_code);
-      // Step 5e: Mark that we captured a sample even though it saturated.
-      if (out_sample_captured != nullptr) {
-        *out_sample_captured = true;
-      }
-      if (a_saturated) {
-        ++accumulator.channel_a_saturation_count;
-      }
-      if (b_saturated) {
-        ++accumulator.channel_b_saturation_count;
-      }
-      if (out_saturation_detected != nullptr) {
-        *out_saturation_detected = true;
-      }
-      return true;
+    // Step 5f: Handle saturation detection and statistics.
+    bool saturated = false;
+    if (a_saturated) {
+      ++accumulator.channel_a_saturation_count;
+      saturated = true;
     }
-
+    if (b_saturated) {
+      ++accumulator.channel_b_saturation_count;
+      saturated = true;
+    }
+    if (out_saturation_detected != nullptr) {
+      *out_saturation_detected = saturated;
+    }
+    if (saturated) {
+      g_last_sample_error = k_error_adc_saturation;
+    }
+    // Step 5d: Update accumulators with the sampled codes.
     accumulator.channel_a_codes.update(channel_a_code);
     accumulator.channel_b_codes.update(channel_b_code);
-    // Step 5f: Record the clean sample and clear saturation flags.
+
+    // Step 5e: Mark that we captured a sample.
     if (out_sample_captured != nullptr) {
       *out_sample_captured = true;
     }
-    if (out_saturation_detected != nullptr) {
-      *out_saturation_detected = false;
-    }
+
+    // Step 5g: Return after successful sample, regardless of saturation.
     return true;
   }
-
-  if (out_saturation_detected != nullptr) {
-    *out_saturation_detected = false;
-  }
-  // Step 6: Report success even if retries exhausted, since the accumulator was updated.
-  return true;
 }
 
 static void reset_accumulators(PhoenixBenchmarkStateAccumulator* accumulators) {
@@ -341,6 +327,9 @@ const PhoenixBenchmarkChannelMapStateDescriptor* phoenix_benchmark_channel_map_s
 void phoenix_benchmark_channel_map_initialise(const PhoenixBenchmarkChannelMapDefaults& defaults) {
   g_defaults = defaults;
 }
+//
+// ============================= Main Function =============================
+//
 
 PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
     const PhoenixBenchmarkChannelMapOptions& input_options, PhoenixBenchmarkStateAccumulator* accumulators,
@@ -363,22 +352,22 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
   enable_power_domains();
   configure_led_idle();
 
-  // Step 4: Bring up every peripheral before we start the sweep.
+  // Step 4: Initialize every peripheral before we start the sweep.
   if (!ensure_digipot_initialised() || !ensure_adc_initialised() || !ensure_led_router_initialised()) {
     emit_line(callbacks, "# channel_map,error=hardware_initialisation_failed");
-    return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, k_error_hardware_failure, false};
+    return {false, PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE, k_error_hardware_failure, false};
   }
 
-  // Step 5: Default the router to drain so the array discharges between steps.
+  // Step 5: Set the LED router to drain.
   (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
 
   // Step 6: Reset the per-state statistics before recording measurements.
   reset_accumulators(accumulators);
 
-  // Step 7: Apply the requested intensity so every sweep uses the same starting point.
+  // Step 7: Apply the requested digitpot value.
   if (!apply_wiper_code(options.wiper_code)) {
     emit_line(callbacks, "# channel_map,error=ad524x_failure");
-    return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, k_error_hardware_failure, false};
+    return {false, PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE, k_error_hardware_failure, false};
   }
 
   // Step 8: Track whether any saturation occurs so the caller can surface warnings.
@@ -389,14 +378,15 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
     // Step 9a: Walk the ordered state sequence for this sweep.
     for (std::size_t state_index = 0u; state_index < (sizeof(k_state_sequence) / sizeof(k_state_sequence[0]));
          ++state_index) {
-      const PhoenixBenchmarkChannelMapStateRequest& request        = k_state_sequence[state_index];
-      bool                                          saw_saturation = false;
+      // Grab current desired state
+      const PhoenixBenchmarkChannelMapStateRequest& requested_state = k_state_sequence[state_index];
+      bool                                          saw_saturation  = false;
       // Step 9b: Sample the current state and capture whether saturation occurred.
-      if (!sample_state(request, options.dwell_us, accumulators, &saw_saturation, nullptr)) {
+      if (!sample_state(requested_state, options.dwell_us, accumulators, &saw_saturation, nullptr)) {
         emit_line(callbacks, "# channel_map,error=sampling_failed");
         (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
-        const char* message = (g_last_sample_error != nullptr) ? g_last_sample_error : k_error_hardware_failure;
-        return {false, PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED, message, run_has_warnings};
+        const char* message = (g_last_sample_error != nullptr) ? g_last_sample_error : k_error_sampling_failure;
+        return {false, PHOENIX_BENCHMARK_ERR_SAMPLING_FAILURE, message, run_has_warnings};
       }
 
       if (saw_saturation) {

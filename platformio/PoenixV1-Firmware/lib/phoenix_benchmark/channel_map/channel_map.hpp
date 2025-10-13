@@ -10,6 +10,8 @@
 constexpr int PHOENIX_BENCHMARK_OK                   = 0;
 constexpr int PHOENIX_BENCHMARK_ERR_UNIMPLEMENTED    = -1;
 constexpr int PHOENIX_BENCHMARK_ERR_INVALID_ARGUMENT = -2;
+constexpr int PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE = -3;
+constexpr int PHOENIX_BENCHMARK_ERR_SAMPLING_FAILURE = -4;
 
 /**
  * @brief Default configuration applied to channel map runs when callers omit overrides.
