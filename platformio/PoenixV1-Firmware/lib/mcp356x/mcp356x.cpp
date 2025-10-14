@@ -23,15 +23,36 @@ static inline bool mcp356x_is_valid_register(uint8_t reg) {
 //   [7:6] = device address, [5:2] = register or fast command code, [1:0] = type
 // where type corresponds to the "static" command encoding from Table 6-3.
 static inline uint8_t mcp356x_command_byte(uint8_t register_or_command, uint8_t command_type) {
+  static const uint8_t k_command_register_mask = 0x0Fu;  // CMD[5:2] encode register or fast-command value.
+  static const uint8_t k_command_type_mask     = 0x03u;  // CMD[1:0] select static/fast/incremental mode per Table 6-3.
+
   return (uint8_t) (((MCP356X_DEVICE_ADDRESS & MCP356X_DEVICE_ADDRESS_MASK) << 6) |
-                    ((register_or_command & 0x0Fu) << 2) | (command_type & 0x03u));
+                    ((register_or_command & k_command_register_mask) << 2) | (command_type & k_command_type_mask));
 }
 
+static const uint8_t k_config1_prescaler_mask  = 0xC0u;  // PRE[1:0] reside in bits 7:6.
+static const uint8_t k_config1_osr_mask        = 0x0Fu;  // OSR[3:0] occupies bits 5:2 before shifting.
+static const uint8_t k_config2_gain_mask       = 0x38u;  // CONFIG2.GAIN[2:0] lives in bits 5:3.
+static const uint8_t k_config2_gain_field_mask = 0x07u;  // Mask for the 3-bit gain enum prior to shifting.
+static const uint8_t k_config2_clear_gain_mask =
+    (uint8_t) (~k_config2_gain_mask);                 // Preserves BOOST/AZ bits while zeroing GAIN.
+static const uint8_t k_config2_reserved_lsb = 0x01u;  // CONFIG2 bit0 must remain set per datasheet Section 8.4.
+
 static inline uint8_t mcp356x_config2_with_gain_bits(mcp356x_gain gain) {
-  uint8_t config2 = (uint8_t) (MCP356X_CONFIG2_DEFAULT & 0xC7u);
-  config2 |= (uint8_t) ((static_cast<uint8_t>(gain) & 0x07u) << 3);
-  config2 |= 0x01u;  // Datasheet mandates CONFIG2 bit0 remains set.
+  uint8_t config2 = (uint8_t) (MCP356X_CONFIG2_DEFAULT & k_config2_clear_gain_mask);
+  config2 |= (uint8_t) ((static_cast<uint8_t>(gain) & k_config2_gain_field_mask) << 3);
+  config2 |= k_config2_reserved_lsb;  // Datasheet mandates CONFIG2 bit0 remains set.
   return config2;
+}
+
+static inline bool mcp356x_osr_is_valid(mcp356x_osr osr) {
+  return (static_cast<uint8_t>(osr) & ~k_config1_osr_mask) == 0u;
+}
+
+static inline uint8_t mcp356x_config1_with_osr_bits(mcp356x_osr osr, uint8_t preserved_prescaler_bits) {
+  uint8_t config1 = (uint8_t) (preserved_prescaler_bits & k_config1_prescaler_mask);
+  config1 |= (uint8_t) ((static_cast<uint8_t>(osr) & k_config1_osr_mask) << 2);
+  return config1;
 }
 void mcp356x_force_uninitialized_for_test(void) {
   g_initialized = false;
@@ -185,12 +206,12 @@ int mcp356x_set_gain(mcp356x_gain gain) {
     return return_code;
   }
 
-  const uint8_t preserved_bits = (uint8_t) (config2_value & 0xC7u);  // Clear GAIN[5:3].
-  const uint8_t gain_bits      = (uint8_t) (static_cast<uint8_t>(gain) & 0x07u);
+  const uint8_t preserved_bits = (uint8_t) (config2_value & k_config2_clear_gain_mask);  // Clear GAIN[5:3].
+  const uint8_t gain_bits      = (uint8_t) (static_cast<uint8_t>(gain) & k_config2_gain_field_mask);
 
   // Step 3: Merge the new gain setting and write it back to the device.
   config2_value = (uint8_t) (preserved_bits | (uint8_t) (gain_bits << 3));
-  config2_value |= 0x01u;  // Datasheet mandates CONFIG2 bit0 remains 1.
+  config2_value |= k_config2_reserved_lsb;  // Datasheet mandates CONFIG2 bit0 remains 1.
 
   return mcp356x_write_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
 }
@@ -217,34 +238,93 @@ int mcp356x_get_gain(mcp356x_gain* out_gain) {
   return MCP356X_OK;
 }
 
-int mcp356x_apply_default_config(void) {
-  return mcp356x_apply_default_config_with_gain(mcp356x_gain::gain_x1);
-}
-
-int mcp356x_apply_default_config_with_gain(mcp356x_gain gain) {
-  // Step 1: Require an initialised driver before writing configuration registers.
+int mcp356x_set_osr(mcp356x_osr osr) {
+  // Step 1: Guard against use before driver initialisation.
   if (!g_initialized) {
     return MCP356X_ERR_NOT_INITIALIZED;
   }
 
-  const uint8_t config0_value = MCP356X_CONFIG0_DEFAULT;
-  const uint8_t config1_value = MCP356X_CONFIG1_DEFAULT;
-  const uint8_t config2_value = mcp356x_config2_with_gain_bits(gain);
-  const uint8_t config3_value = MCP356X_CONFIG3_DEFAULT;
+  // Step 2: Reject bit patterns outside the CONFIG1.OSR[3:0] encoding range.
+  if (!mcp356x_osr_is_valid(osr)) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
 
-  // Step 2: Sequentially write the default register set, aborting on failure.
+  // Step 3: Read CONFIG1 so we can preserve the prescaler bits on update.
+  uint8_t config1_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  const uint8_t preserved_prescaler = (uint8_t) (config1_value & k_config1_prescaler_mask);
+  uint8_t       updated_config1     = mcp356x_config1_with_osr_bits(osr, preserved_prescaler);
+
+  // Step 4: Write the updated value back to CONFIG1.
+  return mcp356x_write_register(MCP356X_REG_CONFIG1, &updated_config1, 1u, NULL);
+}
+
+int mcp356x_get_osr(mcp356x_osr* out_osr) {
+  // Step 1: Validate output storage and runtime initialisation.
+  if (out_osr == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Read CONFIG1 and decode the OSR field.
+  uint8_t config1_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  const uint8_t osr_bits = (uint8_t) ((config1_value >> 2) & k_config1_osr_mask);
+  *out_osr               = static_cast<mcp356x_osr>(osr_bits);
+  return MCP356X_OK;
+}
+
+int mcp356x_apply_default_config(void) {
+  return mcp356x_apply_default_config_with_gain_and_osr(mcp356x_gain::gain_x1, mcp356x_osr::osr_4096);
+}
+
+int mcp356x_apply_default_config_with_gain(mcp356x_gain gain) {
+  return mcp356x_apply_default_config_with_gain_and_osr(gain, mcp356x_osr::osr_4096);
+}
+
+int mcp356x_apply_default_config_with_gain_and_osr(mcp356x_gain gain, mcp356x_osr osr) {
+  // Step 1: Require an initialised driver before touching configuration registers.
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Validate the OSR encoding before computing register images.
+  if (!mcp356x_osr_is_valid(osr)) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+
+  const uint8_t config0_value       = MCP356X_CONFIG0_DEFAULT;
+  const uint8_t preserved_prescaler = (uint8_t) (MCP356X_CONFIG1_DEFAULT & k_config1_prescaler_mask);
+  const uint8_t config1_value       = mcp356x_config1_with_osr_bits(osr, preserved_prescaler);
+  const uint8_t config2_value       = mcp356x_config2_with_gain_bits(gain);
+  const uint8_t config3_value       = MCP356X_CONFIG3_DEFAULT;
+
+  // Step 3: Sequentially program CONFIG0-3, aborting on the first failure.
   int return_code = mcp356x_write_register(MCP356X_REG_CONFIG0, &config0_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
+
   return_code = mcp356x_write_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
+
   return_code = mcp356x_write_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
+
   return mcp356x_write_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
 }
 

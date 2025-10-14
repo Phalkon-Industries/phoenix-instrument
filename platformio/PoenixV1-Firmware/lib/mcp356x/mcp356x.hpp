@@ -127,9 +127,9 @@ int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t leng
  */
 int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size_t length, uint8_t* status_byte);
 
-// ===================== Default Config Preset ==================================
+// ===================== Library Default Config Preset ==================================
 #define MCP356X_CONFIG0_DEFAULT 0b10110011  // Internal REF, continuous conversion, standby disabled
-#define MCP356X_CONFIG1_DEFAULT 0b00001100  // OSR=4096, boost off (high-resolution mode)
+#define MCP356X_CONFIG1_DEFAULT 0b00011100  // OSR=4096, AMCLK=MCLK
 #define MCP356X_CONFIG2_DEFAULT 0b10001011  // BOOST=10b, gain=1 (001b), AZ_MUX/AZ_REF enabled, LSB must stay 1
 #define MCP356X_CONFIG3_DEFAULT 0b00000000  // No auto-sequence, default conversion delay
 
@@ -145,6 +145,28 @@ enum class mcp356x_gain : uint8_t {
   gain_x16  = 0b101,
   gain_x32  = 0b110,
   gain_x64  = 0b111,
+};
+
+// Oversampling ratio encodings map directly to CONFIG1.OSR[3:0]. Values follow
+// datasheet Table 8-3 ordering so callers cannot accidentally write reserved
+// bit patterns into CONFIG1.
+enum class mcp356x_osr : uint8_t {
+  osr_32    = 0b0000,
+  osr_64    = 0b0001,
+  osr_128   = 0b0010,
+  osr_256   = 0b0011,  // (POR default))
+  osr_512   = 0b0100,
+  osr_1024  = 0b0101,
+  osr_2048  = 0b0110,
+  osr_4096  = 0b0111,
+  osr_8192  = 0b1000,
+  osr_16384 = 0b1001,
+  osr_20480 = 0b1010,
+  osr_24576 = 0b1011,
+  osr_40960 = 0b1100,
+  osr_49152 = 0b1101,
+  osr_81920 = 0b1110,
+  osr_98304 = 0b1111,
 };
 
 /**
@@ -168,6 +190,28 @@ int mcp356x_set_gain(mcp356x_gain gain);
  *         NULL, or a propagated error from the register read helper.
  */
 int mcp356x_get_gain(mcp356x_gain* out_gain);
+
+/**
+ * @brief Update CONFIG1.OSR[3:0] while keeping prescaler and reserved bits intact.
+ *
+ * Performs a read-modify-write of CONFIG1 so the prescaler (PRE[1:0]) remains
+ * untouched and the reserved bits [1:0] stay cleared. The driver must be
+ * initialised before use.
+ *
+ * @param osr Requested oversampling ratio.
+ * @return MCP356X_OK on success or a negative error propagated from register
+ *         helpers.
+ */
+int mcp356x_set_osr(mcp356x_osr osr);
+
+/**
+ * @brief Read CONFIG1.OSR[3:0] and decode it into the OSR enum.
+ *
+ * @param out_osr Pointer receiving the decoded oversampling ratio.
+ * @return MCP356X_OK on success, MCP356X_ERR_INVALID_ARG when @p out_osr is
+ *         NULL, or a propagated error from mcp356x_read_register.
+ */
+int mcp356x_get_osr(mcp356x_osr* out_osr);
 
 /**
  * @brief Configure the ADC MUX for a single-ended channel relative to AGND.
@@ -203,6 +247,19 @@ int mcp356x_apply_default_config(void);
  * @return MCP356X_OK if all four writes succeed, otherwise propagates the first error encountered.
  */
 int mcp356x_apply_default_config_with_gain(mcp356x_gain gain);
+
+/**
+ * @brief Apply the default configuration while overriding both gain and OSR.
+ *
+ * Combines the behaviour of the standard default helper with register updates
+ * for CONFIG1.OSR[3:0] and CONFIG2.GAIN[2:0]. PRE bits and reserved bits remain
+ * in their datasheet-required states.
+ *
+ * @param gain Desired PGA gain value.
+ * @param osr  Desired oversampling ratio.
+ * @return MCP356X_OK when all writes succeed or a propagated driver error.
+ */
+int mcp356x_apply_default_config_with_gain_and_osr(mcp356x_gain gain, mcp356x_osr osr);
 
 /**
  * @brief Test-only hook to clear the driver's initialisation flag.
