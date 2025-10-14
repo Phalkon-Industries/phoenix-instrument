@@ -10,6 +10,7 @@
 #define MCP356X_EXPECTED_STATUS_START 0x17u
 
 static const uint32_t k_spi_clock_hz = 500000UL;
+static const uint8_t  k_config1_prescaler_mask = 0xC0u;
 
 static void test_fast_command_start_status(void) {
   // Step 1. Trigger a full reset so the ADC starts from power-on defaults.
@@ -259,6 +260,80 @@ static void test_set_osr_rejects_invalid_enums(void) {
   TEST_ASSERT_EQUAL_HEX8(config1_before, config1_after);
 }
 
+static void test_set_prescaler_updates_config1_bits(void) {
+  // Step 1. Apply the default configuration to establish the CONFIG1 baseline.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Capture CONFIG1 prior to changing the prescaler.
+  uint8_t config1_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_before, 1u, NULL));
+
+  // Step 3. Request an MCLK/4 prescaler and read CONFIG1 back.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_prescaler(mcp356x_prescaler::mclk_div4));
+
+  uint8_t config1_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
+
+  // Step 4. Verify OSR bits remain untouched and prescaler bits match the request.
+  const uint8_t expected_config1 = (uint8_t) ((config1_before & (uint8_t) (~k_config1_prescaler_mask)) |
+                                              (static_cast<uint8_t>(mcp356x_prescaler::mclk_div4) << 6));
+  TEST_ASSERT_EQUAL_HEX8(expected_config1, config1_after);
+}
+
+static void test_get_prescaler_reads_current_setting(void) {
+  // Step 1. Apply the default configuration then select a new prescaler value.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_prescaler(mcp356x_prescaler::mclk_div8));
+
+  // Step 2. Query the prescaler and confirm it reflects the updated setting.
+  mcp356x_prescaler reported_prescaler = mcp356x_prescaler::mclk_div1;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_prescaler(&reported_prescaler));
+  TEST_ASSERT_EQUAL(mcp356x_prescaler::mclk_div8, reported_prescaler);
+}
+
+static void test_default_config_preserves_por_prescaler(void) {
+  // Step 1. Apply the standard default configuration.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Confirm the prescaler remains at the POR default (MCLK/1).
+  mcp356x_prescaler reported_prescaler = mcp356x_prescaler::mclk_div2;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_prescaler(&reported_prescaler));
+  TEST_ASSERT_EQUAL(mcp356x_prescaler::mclk_div1, reported_prescaler);
+}
+
+static void test_prescaler_helpers_require_initialization(void) {
+  // Step 1. Force the driver into an uninitialised state for guard testing.
+  mcp356x_force_uninitialized_for_test();
+
+  // Step 2. Attempt to set and get the prescaler, expecting not-initialised errors.
+  int                 return_code      = mcp356x_set_prescaler(mcp356x_prescaler::mclk_div2);
+  mcp356x_prescaler   reported_setting = mcp356x_prescaler::mclk_div1;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, return_code);
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_prescaler(&reported_setting));
+
+  // Step 3. Reinitialise for downstream tests.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
+static void test_set_prescaler_rejects_invalid_enums(void) {
+  // Step 1. Capture CONFIG1 before issuing an invalid prescaler request.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  uint8_t config1_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_before, 1u, NULL));
+
+  // Step 2. Invoke the setter with an out-of-range enum value and expect rejection.
+  const mcp356x_prescaler invalid_prescaler = static_cast<mcp356x_prescaler>(0x04u);
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_prescaler(invalid_prescaler));
+
+  // Step 3. Confirm CONFIG1 remains unchanged.
+  uint8_t config1_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config1_before, config1_after);
+}
+
 static void test_get_gain_rejects_null_pointer(void) {
   TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_gain(NULL));
 }
@@ -440,6 +515,11 @@ void setup() {
   RUN_TEST(test_default_config_helpers_program_expected_osr);
   RUN_TEST(test_osr_helpers_require_initialization);
   RUN_TEST(test_set_osr_rejects_invalid_enums);
+  RUN_TEST(test_set_prescaler_updates_config1_bits);
+  RUN_TEST(test_get_prescaler_reads_current_setting);
+  RUN_TEST(test_default_config_preserves_por_prescaler);
+  RUN_TEST(test_prescaler_helpers_require_initialization);
+  RUN_TEST(test_set_prescaler_rejects_invalid_enums);
   RUN_TEST(test_get_gain_rejects_null_pointer);
   RUN_TEST(test_gain_set_get_roundtrip_sequence);
   RUN_TEST(test_gain_helpers_require_initialization);

@@ -169,6 +169,14 @@ enum class mcp356x_osr : uint8_t {
   osr_98304 = 0b1111,
 };
 
+// Prescaler encodings map to CONFIG1.PRE[1:0] and control the analog master clock.
+enum class mcp356x_prescaler : uint8_t {
+  mclk_div1 = 0b00,
+  mclk_div2 = 0b01,
+  mclk_div4 = 0b10,
+  mclk_div8 = 0b11,
+};
+
 /**
  * @brief Update CONFIG2.GAIN[2:0] while keeping other CONFIG2 fields intact.
  *
@@ -176,7 +184,7 @@ enum class mcp356x_osr : uint8_t {
  * AZ_MUX, AZ_REF, and the mandatory bit0=1 remain untouched. The device must be
  * initialised before use.
  *
- * @param gain           Desired hardware gain (1/3× through 64×).
+ * @param gain Desired hardware gain (1/3× through 64×).
  * @return MCP356X_OK on success, or a negative error propagated from register
  *         read/write helpers.
  */
@@ -212,6 +220,26 @@ int mcp356x_set_osr(mcp356x_osr osr);
  *         NULL, or a propagated error from mcp356x_read_register.
  */
 int mcp356x_get_osr(mcp356x_osr* out_osr);
+
+/**
+ * @brief Update CONFIG1.PRE[1:0] while preserving OSR and reserved bits.
+ *
+ * Executes a read-modify-write of CONFIG1 so OSR[3:0] and the reserved LSBs
+ * remain untouched. Rejects invalid enum values before touching hardware.
+ *
+ * @param prescaler Requested prescaler selection (MCLK/1 through MCLK/8).
+ * @return MCP356X_OK on success or a negative driver error code.
+ */
+int mcp356x_set_prescaler(mcp356x_prescaler prescaler);
+
+/**
+ * @brief Read CONFIG1.PRE[1:0] and decode it into the prescaler enum.
+ *
+ * @param out_prescaler Pointer receiving the decoded prescaler value.
+ * @return MCP356X_OK on success, MCP356X_ERR_INVALID_ARG when @p out_prescaler is
+ *         NULL, or a propagated register access error.
+ */
+int mcp356x_get_prescaler(mcp356x_prescaler* out_prescaler);
 
 /**
  * @brief Configure the ADC MUX for a single-ended channel relative to AGND.
