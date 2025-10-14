@@ -4,8 +4,8 @@
             "command": "channel_map",
             "parameters": {
                 "sweeps": 100,
-                "dwell_us": 100,
-                "wiper_code": 0
+                "dwell_us": 10000,
+                "wiper_code": 255
             }
         }
     ]
