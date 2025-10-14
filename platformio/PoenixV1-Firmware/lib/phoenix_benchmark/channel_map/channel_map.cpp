@@ -38,9 +38,9 @@ static constexpr int k_switch_in1_pin = 17;
 #ifdef TS5A3359_IN2
 static_assert(TS5A3359_IN2 == 18, "Switch IN2 pin changed; update channel_map constants");
 #endif
-static constexpr int         k_switch_in2_pin        = 18;
-static constexpr std::size_t k_digipot_channel_count = sizeof(k_digipot_channels) / sizeof(k_digipot_channels[0]);
-static constexpr std::size_t k_max_sample_attempts   = 3u;
+static constexpr int         k_switch_in2_pin          = 18;
+static constexpr std::size_t k_digipot_channel_count   = sizeof(k_digipot_channels) / sizeof(k_digipot_channels[0]);
+static constexpr uint32_t    k_adc_inter_read_delay_us = 100u;
 
 static constexpr PhoenixBenchmarkChannelMapStateDescriptor
     k_state_descriptors[k_phoenix_benchmark_channel_map_state_descriptor_count] = {
@@ -225,58 +225,67 @@ static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, 
   // Step 4: Grab the accumulator for this state so we can store statistics.
   PhoenixBenchmarkStateAccumulator& accumulator = accumulators[request.accumulator_index];
 
-  // Step 5: Attempt to capture both ADC channels
-  for (std::size_t attempt = 0u; attempt < k_max_sample_attempts; ++attempt) {
-    int32_t channel_a_code = 0;
-    // Step 5a: Sample channel A and bail if the ADC reports a failure.
-    if (!read_adc_channel(AdcHalChannel::ADC_HAL_CHANNEL_4, &channel_a_code)) {
-      g_last_sample_error = "adc read failed (channel A)";
-      return false;
-    }
-
-    int32_t channel_b_code = 0;
-    // Step 5b: Sample channel B and bail if failure
-    if (!read_adc_channel(AdcHalChannel::ADC_HAL_CHANNEL_5, &channel_b_code)) {
-      g_last_sample_error = "adc read failed (channel B)";
-      return false;
-    }
-
-    // Step 5c: Inject synthetic saturation when tests request it.
-    if (g_force_saturation_for_test) {
-      channel_a_code = k_positive_full_scale_test_code;
-      channel_b_code = k_negative_full_scale_test_code;
-    }
-
-    const bool a_saturated = phoenix_benchmark_is_adc_code_saturated(channel_a_code);
-    const bool b_saturated = phoenix_benchmark_is_adc_code_saturated(channel_b_code);
-    // Step 5f: Handle saturation detection and statistics.
-    bool saturated = false;
-    if (a_saturated) {
-      ++accumulator.channel_a_saturation_count;
-      saturated = true;
-    }
-    if (b_saturated) {
-      ++accumulator.channel_b_saturation_count;
-      saturated = true;
-    }
-    if (out_saturation_detected != nullptr) {
-      *out_saturation_detected = saturated;
-    }
-    if (saturated) {
-      g_last_sample_error = k_error_adc_saturation;
-    }
-    // Step 5d: Update accumulators with the sampled codes.
-    accumulator.channel_a_codes.update(channel_a_code);
-    accumulator.channel_b_codes.update(channel_b_code);
-
-    // Step 5e: Mark that we captured a sample.
-    if (out_sample_captured != nullptr) {
-      *out_sample_captured = true;
-    }
-
-    // Step 5g: Return after successful sample, regardless of saturation.
-    return true;
+  // Step 5: Capture both ADC channels with deterministic timing.
+  int32_t channel_a_code = 0;
+  // Step 5a: Sample channel A and bail if the ADC reports a failure.
+  if (!read_adc_channel(AdcHalChannel::ADC_HAL_CHANNEL_4, &channel_a_code)) {
+    g_last_sample_error = "adc read failed (channel A)";
+    return false;
   }
+
+  // Step 5b: Insert a fixed guard delay so every state shares identical timing.
+  if (k_adc_inter_read_delay_us > 0u) {
+    delayMicroseconds(k_adc_inter_read_delay_us);
+  }
+
+  int32_t channel_b_code = 0;
+  // Step 5c: Sample channel B and bail if failure occurs.
+  if (!read_adc_channel(AdcHalChannel::ADC_HAL_CHANNEL_5, &channel_b_code)) {
+    g_last_sample_error = "adc read failed (channel B)";
+    return false;
+  }
+
+  // Step 5d: Apply a matching guard delay to keep the total dwell deterministic.
+  if (k_adc_inter_read_delay_us > 0u) {
+    delayMicroseconds(k_adc_inter_read_delay_us);
+  }
+
+  // Step 5e: Inject synthetic saturation when tests request it.
+  if (g_force_saturation_for_test) {
+    channel_a_code = k_positive_full_scale_test_code;
+    channel_b_code = k_negative_full_scale_test_code;
+  }
+
+  const bool a_saturated = phoenix_benchmark_is_adc_code_saturated(channel_a_code);
+  const bool b_saturated = phoenix_benchmark_is_adc_code_saturated(channel_b_code);
+  // Step 5f: Handle saturation detection and statistics.
+  bool saturated = false;
+  if (a_saturated) {
+    ++accumulator.channel_a_saturation_count;
+    saturated = true;
+  }
+  if (b_saturated) {
+    ++accumulator.channel_b_saturation_count;
+    saturated = true;
+  }
+  if (out_saturation_detected != nullptr) {
+    *out_saturation_detected = saturated;
+  }
+  if (saturated) {
+    g_last_sample_error = k_error_adc_saturation;
+  }
+
+  // Step 5g: Update accumulators with the sampled codes.
+  accumulator.channel_a_codes.update(channel_a_code);
+  accumulator.channel_b_codes.update(channel_b_code);
+
+  // Step 5h: Mark that we captured a sample.
+  if (out_sample_captured != nullptr) {
+    *out_sample_captured = true;
+  }
+
+  // Step 5i: Return after the single deterministic sampling sequence.
+  return true;
 }
 
 static void reset_accumulators(PhoenixBenchmarkStateAccumulator* accumulators) {
