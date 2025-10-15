@@ -151,6 +151,33 @@ static void test_apply_default_config_writes_expected_values(void) {
   TEST_ASSERT_EQUAL_HEX8(expected_config3, config_value);
 }
 
+static void test_apply_default_config_programs_irq_defaults(void) {
+  // Step 1. Apply the baseline configuration helper.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Inspect the IRQ register to ensure mode and enables match expectations.
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  const uint8_t expected_lower_bits =
+      (uint8_t) ((static_cast<uint8_t>(mcp356x_irq_mode::irq_push_pull) << 2) | MCP356X_IRQ_EN_FASTCMD_MASK);
+  const uint8_t inspect_mask =
+      (uint8_t) (MCP356X_IRQ_MODE_MASK | MCP356X_IRQ_EN_FASTCMD_MASK | MCP356X_IRQ_EN_CONV_START_MASK);
+  TEST_ASSERT_BITS(inspect_mask, expected_lower_bits, irq_value);
+
+  // Step 3. Cross-check the public getters mirror the programmed state.
+  mcp356x_irq_mode reported_mode = mcp356x_irq_mode::irq_high_z;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_mode(&reported_mode));
+  TEST_ASSERT_EQUAL(mcp356x_irq_mode::irq_push_pull, reported_mode);
+
+  bool fastcmd_enabled = false;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_fastcmd_enabled(&fastcmd_enabled));
+  TEST_ASSERT_TRUE(fastcmd_enabled);
+
+  bool start_interrupt_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_conversion_start_interrupt_enabled(&start_interrupt_enabled));
+  TEST_ASSERT_FALSE(start_interrupt_enabled);
+}
+
 static void test_apply_settings_programs_requested_fields(void) {
   // Step 0. Reset to the default configuration to ensure a known baseline.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
@@ -185,6 +212,48 @@ static void test_apply_settings_programs_requested_fields(void) {
                  ((static_cast<uint8_t>(mcp356x_data_format::data32_signed) & 0x03u) << 4) |
                  (MCP356X_CONFIG3_DEFAULT & 0x0Fu));
   TEST_ASSERT_EQUAL_HEX8(expected_config3, config_value);
+}
+
+static void test_apply_settings_programs_irq_fields(void) {
+  // Step 0. Apply defaults to guarantee a known register image.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 1. Request a custom IRQ configuration through the shared settings helper.
+  const mcp356x_settings settings = {
+      mcp356x_gain::gain_x2,
+      mcp356x_osr::osr_1024,
+      mcp356x_prescaler::mclk_div2,
+      mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data24,
+      mcp356x_irq_mode::mdat_high_z,
+      false,
+      true,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_settings(&settings));
+
+  // Step 2. Inspect the IRQ register to confirm the mode and enable bits match the request.
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  const uint8_t expected_lower_bits =
+      (uint8_t) ((static_cast<uint8_t>(settings.irq_mode) << 2) |
+                 (settings.irq_fastcmd_enabled ? MCP356X_IRQ_EN_FASTCMD_MASK : 0u) |
+                 (settings.irq_conversion_start_interrupt_enabled ? MCP356X_IRQ_EN_CONV_START_MASK : 0u));
+  const uint8_t inspect_mask =
+      (uint8_t) (MCP356X_IRQ_MODE_MASK | MCP356X_IRQ_EN_FASTCMD_MASK | MCP356X_IRQ_EN_CONV_START_MASK);
+  TEST_ASSERT_BITS(inspect_mask, expected_lower_bits, irq_value);
+
+  // Step 3. Validate the getters decode the stored configuration correctly.
+  mcp356x_irq_mode reported_mode = mcp356x_irq_mode::irq_push_pull;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_mode(&reported_mode));
+  TEST_ASSERT_EQUAL(settings.irq_mode, reported_mode);
+
+  bool fastcmd_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_fastcmd_enabled(&fastcmd_enabled));
+  TEST_ASSERT_EQUAL(settings.irq_fastcmd_enabled, fastcmd_enabled);
+
+  bool start_interrupt_enabled = false;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_conversion_start_interrupt_enabled(&start_interrupt_enabled));
+  TEST_ASSERT_EQUAL(settings.irq_conversion_start_interrupt_enabled, start_interrupt_enabled);
 }
 
 static void test_set_gain_updates_config2_gain_bits(void) {
@@ -291,6 +360,87 @@ static void test_auto_zero_helpers_validate_inputs(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   delay(2);
+}
+
+static void test_irq_helpers_validate_inputs(void) {
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_irq_mode(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_irq_fastcmd_enabled(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_irq_conversion_start_interrupt_enabled(NULL));
+
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_irq_mode(static_cast<mcp356x_irq_mode>(0x04u)));
+
+  mcp356x_force_uninitialized_for_test();
+
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_irq_mode(mcp356x_irq_mode::irq_high_z));
+  mcp356x_irq_mode mode = mcp356x_irq_mode::irq_high_z;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_irq_mode(&mode));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_irq_fastcmd_enabled(true));
+  bool fastcmd_enabled = false;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_irq_fastcmd_enabled(&fastcmd_enabled));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_irq_conversion_start_interrupt_enabled(true));
+  bool start_interrupt_enabled = false;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED,
+                    mcp356x_get_irq_conversion_start_interrupt_enabled(&start_interrupt_enabled));
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
+static void test_irq_mode_roundtrip(void) {
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_mode(mcp356x_irq_mode::irq_push_pull));
+
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  const uint8_t expected_push_pull_bits = (uint8_t) (static_cast<uint8_t>(mcp356x_irq_mode::irq_push_pull) << 2);
+  TEST_ASSERT_BITS(MCP356X_IRQ_MODE_MASK, expected_push_pull_bits, irq_value);
+
+  mcp356x_irq_mode reported_mode = mcp356x_irq_mode::irq_high_z;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_mode(&reported_mode));
+  TEST_ASSERT_EQUAL(mcp356x_irq_mode::irq_push_pull, reported_mode);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_mode(mcp356x_irq_mode::mdat_push_pull));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  const uint8_t expected_mdat_bits = (uint8_t) (static_cast<uint8_t>(mcp356x_irq_mode::mdat_push_pull) << 2);
+  TEST_ASSERT_BITS(MCP356X_IRQ_MODE_MASK, expected_mdat_bits, irq_value);
+}
+
+static void test_irq_fastcmd_flag_roundtrip(void) {
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_fastcmd_enabled(false));
+
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  TEST_ASSERT_BITS(MCP356X_IRQ_EN_FASTCMD_MASK, 0u, irq_value);
+
+  bool fastcmd_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_fastcmd_enabled(&fastcmd_enabled));
+  TEST_ASSERT_FALSE(fastcmd_enabled);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_fastcmd_enabled(true));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  TEST_ASSERT_BITS(MCP356X_IRQ_EN_FASTCMD_MASK, MCP356X_IRQ_EN_FASTCMD_MASK, irq_value);
+}
+
+static void test_irq_conversion_start_interrupt_flag_roundtrip(void) {
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_conversion_start_interrupt_enabled(false));
+
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  TEST_ASSERT_BITS(MCP356X_IRQ_EN_CONV_START_MASK, 0u, irq_value);
+
+  bool start_interrupt_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_conversion_start_interrupt_enabled(&start_interrupt_enabled));
+  TEST_ASSERT_FALSE(start_interrupt_enabled);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_conversion_start_interrupt_enabled(true));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  TEST_ASSERT_BITS(MCP356X_IRQ_EN_CONV_START_MASK, MCP356X_IRQ_EN_CONV_START_MASK, irq_value);
 }
 
 static void test_set_osr_updates_config1_bits(void) {
@@ -908,12 +1058,18 @@ void setup() {
   RUN_TEST(test_mux_select_single_channel_writes_mux_register);
   RUN_TEST(test_mux_select_single_channel_rejects_invalid_inputs);
   RUN_TEST(test_apply_default_config_writes_expected_values);
+  RUN_TEST(test_apply_default_config_programs_irq_defaults);
   RUN_TEST(test_apply_settings_programs_requested_fields);
+  RUN_TEST(test_apply_settings_programs_irq_fields);
   RUN_TEST(test_set_gain_updates_config2_gain_bits);
   RUN_TEST(test_set_auto_zero_mux_updates_config2_bit);
   RUN_TEST(test_set_auto_zero_reference_updates_config2_bit);
   RUN_TEST(test_get_auto_zero_helpers_read_current_settings);
   RUN_TEST(test_auto_zero_helpers_validate_inputs);
+  RUN_TEST(test_irq_helpers_validate_inputs);
+  RUN_TEST(test_irq_mode_roundtrip);
+  RUN_TEST(test_irq_fastcmd_flag_roundtrip);
+  RUN_TEST(test_irq_conversion_start_interrupt_flag_roundtrip);
   RUN_TEST(test_set_osr_updates_config1_bits);
   RUN_TEST(test_get_osr_reads_current_setting);
   RUN_TEST(test_default_config_helpers_program_expected_osr);

@@ -28,6 +28,13 @@
 #define MCP356X_REG_RESERVED_E 0x0E
 #define MCP356X_REG_CRCREG 0x0F  // 16-bit (read only)
 
+// ===================== IRQ Bit Masks ========================================
+#define MCP356X_IRQ_DRDY_MASK 0x40u
+#define MCP356X_IRQ_POR_MASK 0x01u
+#define MCP356X_IRQ_MODE_MASK 0x0Cu
+#define MCP356X_IRQ_EN_FASTCMD_MASK 0x02u
+#define MCP356X_IRQ_EN_CONV_START_MASK 0x01u
+
 // ===================== Fast Command Encodings (CMD[5:2]) =======================
 // When Type bits (CMD[1:0]) = 00 (Fast Command)
 #define MCP356X_FASTCMD_START 0b1010
@@ -128,8 +135,8 @@ int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t leng
 int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size_t length, uint8_t* status_byte);
 
 // ===================== Power-On Reset Register Images ==================================
-#define MCP356X_CONFIG0_POR 0b11000000  // Datasheet POR CONFIG0 value
-#define MCP356X_CONFIG1_POR 0b00001100  // Datasheet POR CONFIG1 value
+#define MCP356X_CONFIG0_POR 0b11000000  // Datasheet POR CONFIG0 value (confirmed on Phoenix hardware)
+#define MCP356X_CONFIG1_POR 0b00001100  // Datasheet POR CONFIG1 value (OSR=256, PRE=1)
 #define MCP356X_CONFIG2_POR 0b10001011  // Datasheet POR CONFIG2 value
 #define MCP356X_CONFIG3_POR 0b00000000  // Datasheet POR CONFIG3 value
 
@@ -200,6 +207,15 @@ enum class mcp356x_data_format : uint8_t {
   data32_signed_chid = 0b11,
 };
 
+// IRQ mode encodings map to IRQ_MODE[1:0] and select between IRQ/MDAT output
+// behaviour and inactive-state polarity.
+enum class mcp356x_irq_mode : uint8_t {
+  irq_high_z     = 0b00,  // IRQ output, inactive high-Z (requires pull-up).
+  irq_push_pull  = 0b01,  // IRQ output, inactive driven high.
+  mdat_high_z    = 0b10,  // MDAT output with POR/CRC interrupts.
+  mdat_push_pull = 0b11,  // MDAT output, inactive driven high.
+};
+
 // Aggregated configuration payload used by the unified initialisation helper.
 struct mcp356x_settings {
   mcp356x_gain            gain;
@@ -207,6 +223,9 @@ struct mcp356x_settings {
   mcp356x_prescaler       prescaler;
   mcp356x_conversion_mode conversion_mode;
   mcp356x_data_format     data_format;
+  mcp356x_irq_mode        irq_mode;
+  bool                    irq_fastcmd_enabled;
+  bool                    irq_conversion_start_interrupt_enabled;
 };
 
 /**
@@ -250,6 +269,36 @@ int mcp356x_set_auto_zero_reference(bool enable);
  * @brief Read CONFIG2.AZ_REF and report the reference auto-zero state.
  */
 int mcp356x_get_auto_zero_reference(bool* out_enable);
+
+/**
+ * @brief Configure IRQ_MODE[1:0] to select IRQ/MDAT behaviour and polarity.
+ */
+int mcp356x_set_irq_mode(mcp356x_irq_mode mode);
+
+/**
+ * @brief Read IRQ_MODE[1:0] and decode it into the IRQ mode enum.
+ */
+int mcp356x_get_irq_mode(mcp356x_irq_mode* out_mode);
+
+/**
+ * @brief Enable or disable fast-command support via IRQ.EN_FASTCMD.
+ */
+int mcp356x_set_irq_fastcmd_enabled(bool enable);
+
+/**
+ * @brief Report the current setting of IRQ.EN_FASTCMD.
+ */
+int mcp356x_get_irq_fastcmd_enabled(bool* out_enable);
+
+/**
+ * @brief Enable or disable conversion-start interrupts via IRQ.EN_STP.
+ */
+int mcp356x_set_irq_conversion_start_interrupt_enabled(bool enable);
+
+/**
+ * @brief Report the current state of IRQ.EN_STP.
+ */
+int mcp356x_get_irq_conversion_start_interrupt_enabled(bool* out_enable);
 
 /**
  * @brief Update CONFIG1.OSR[3:0] while keeping prescaler and reserved bits intact.

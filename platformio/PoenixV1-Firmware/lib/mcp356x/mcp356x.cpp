@@ -119,6 +119,28 @@ static inline uint8_t mcp356x_data_length_from_format(mcp356x_data_format format
   }
   return 4u;
 }
+
+static int mcp356x_update_irq_register(uint8_t mask, uint8_t desired_bits) {
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t irq_value   = 0u;
+  int     return_code = mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  desired_bits &= mask;
+  const uint8_t preserved_bits = (uint8_t) (irq_value & (uint8_t) (~mask));
+  const uint8_t updated_value  = (uint8_t) (preserved_bits | desired_bits);
+
+  if (updated_value == irq_value) {
+    return MCP356X_OK;
+  }
+
+  return mcp356x_write_register(MCP356X_REG_IRQ, &updated_value, 1u, NULL);
+}
 void mcp356x_force_uninitialized_for_test(void) {
   g_initialized = false;
 }
@@ -347,6 +369,106 @@ int mcp356x_get_auto_zero_reference(bool* out_enable) {
   return MCP356X_OK;
 }
 
+int mcp356x_set_irq_mode(mcp356x_irq_mode mode) {
+  // Step 1: Require driver initialisation before touching the IRQ register.
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Reject bit patterns outside the two-bit IRQ_MODE field.
+  const uint8_t mode_bits = static_cast<uint8_t>(mode);
+  if ((mode_bits & ~0x03u) != 0u) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+
+  // Step 3: Update only the IRQ_MODE bits while preserving the status nibble.
+  const uint8_t desired_bits = (uint8_t) (mode_bits << 2);
+  return mcp356x_update_irq_register(MCP356X_IRQ_MODE_MASK, desired_bits);
+}
+
+int mcp356x_get_irq_mode(mcp356x_irq_mode* out_mode) {
+  // Step 1: Validate caller storage and initialisation state.
+  if (out_mode == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Read the IRQ register and decode the mode bits.
+  uint8_t irq_value   = 0u;
+  int     return_code = mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  const uint8_t mode_bits = (uint8_t) ((irq_value & MCP356X_IRQ_MODE_MASK) >> 2);
+  *out_mode               = static_cast<mcp356x_irq_mode>(mode_bits & 0x03u);
+  return MCP356X_OK;
+}
+
+int mcp356x_set_irq_fastcmd_enabled(bool enable) {
+  // Step 1: Ensure the driver is initialised before updating the IRQ register.
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Update the EN_FASTCMD bit while preserving other fields.
+  const uint8_t desired_bits = enable ? MCP356X_IRQ_EN_FASTCMD_MASK : 0u;
+  return mcp356x_update_irq_register(MCP356X_IRQ_EN_FASTCMD_MASK, desired_bits);
+}
+
+int mcp356x_get_irq_fastcmd_enabled(bool* out_enable) {
+  // Step 1: Validate output storage and initialisation state.
+  if (out_enable == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Read and decode the EN_FASTCMD bit.
+  uint8_t irq_value   = 0u;
+  int     return_code = mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  *out_enable = (irq_value & MCP356X_IRQ_EN_FASTCMD_MASK) != 0u;
+  return MCP356X_OK;
+}
+
+int mcp356x_set_irq_conversion_start_interrupt_enabled(bool enable) {
+  // Step 1: Ensure the driver is initialised before updating the IRQ register.
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Update the EN_STP bit while preserving other fields.
+  const uint8_t desired_bits = enable ? MCP356X_IRQ_EN_CONV_START_MASK : 0u;
+  return mcp356x_update_irq_register(MCP356X_IRQ_EN_CONV_START_MASK, desired_bits);
+}
+
+int mcp356x_get_irq_conversion_start_interrupt_enabled(bool* out_enable) {
+  // Step 1: Validate output storage and initialisation state.
+  if (out_enable == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Read and decode the EN_STP bit.
+  uint8_t irq_value   = 0u;
+  int     return_code = mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  *out_enable = (irq_value & MCP356X_IRQ_EN_CONV_START_MASK) != 0u;
+  return MCP356X_OK;
+}
+
 int mcp356x_set_osr(mcp356x_osr osr) {
   // Step 1: Guard against use before driver initialisation.
   if (!g_initialized) {
@@ -499,9 +621,14 @@ int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_dat
 int mcp356x_apply_default_config(void) {
   // Step 1: Compose the datasheet baseline so downstream helpers see a full register image.
   const mcp356x_settings defaults = {
-      mcp356x_gain::gain_x1,        mcp356x_osr::osr_4096,
-      mcp356x_prescaler::mclk_div1, mcp356x_conversion_mode::oneshot_shutdown,
+      mcp356x_gain::gain_x1,
+      mcp356x_osr::osr_4096,
+      mcp356x_prescaler::mclk_div1,
+      mcp356x_conversion_mode::oneshot_shutdown,
       mcp356x_data_format::data24,
+      mcp356x_irq_mode::irq_push_pull,
+      true,
+      false,
   };
   // Step 2: Delegate to the unified helper so CONFIG0-3 are programmed consistently.
   return mcp356x_apply_settings(&defaults);
@@ -524,6 +651,9 @@ int mcp356x_apply_settings(const mcp356x_settings* settings) {
     return MCP356X_ERR_INVALID_ARG;
   }
   if (!mcp356x_conversion_mode_is_valid(settings->conversion_mode)) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if ((static_cast<uint8_t>(settings->irq_mode) & 0xFCu) != 0u) {
     return MCP356X_ERR_INVALID_ARG;
   }
 
@@ -553,6 +683,21 @@ int mcp356x_apply_settings(const mcp356x_settings* settings) {
   }
 
   return_code = mcp356x_write_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  return_code = mcp356x_set_irq_mode(settings->irq_mode);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  return_code = mcp356x_set_irq_fastcmd_enabled(settings->irq_fastcmd_enabled);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  return_code = mcp356x_set_irq_conversion_start_interrupt_enabled(settings->irq_conversion_start_interrupt_enabled);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
