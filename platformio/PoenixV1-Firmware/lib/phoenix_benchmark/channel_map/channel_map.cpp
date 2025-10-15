@@ -78,9 +78,8 @@ static bool                               g_force_saturation_for_test = false;
 static constexpr int32_t  k_positive_full_scale_test_code = k_phoenix_benchmark_adc_positive_full_scale_code;
 static constexpr int32_t  k_negative_full_scale_test_code = k_phoenix_benchmark_adc_negative_full_scale_code;
 static const AdcHalConfig k_adc_config                    = {
-                       .chip_select_pin = k_pin_adc_cs,
-                       .spi_clock_hz    = k_spi_clock_hz,
-                       .default_gain    = AdcHalGain::ADC_HAL_GAIN_1,
+    .chip_select_pin = k_pin_adc_cs,
+    .spi_clock_hz    = k_spi_clock_hz,
 };
 
 static void enable_power_domains(void) {

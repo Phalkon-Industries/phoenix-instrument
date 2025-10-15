@@ -7,7 +7,6 @@
 static const AdcHalConfig k_valid_config = {
     .chip_select_pin = PIN_ADC_CS,
     .spi_clock_hz    = 500000UL,
-    .default_gain    = AdcHalGain::ADC_HAL_GAIN_1,
 };
 
 void setUp(void) {
@@ -58,21 +57,6 @@ static void test_adc_hal_apply_default_configuration_is_idempotent(void) {
   TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_default_config_call_count());
 }
 
-static void test_adc_hal_apply_default_configuration_propagates_gain(void) {
-  // Step 1. Clone the baseline config so we can modify only the gain field.
-  AdcHalConfig gain_config = k_valid_config;
-  gain_config.default_gain = AdcHalGain::ADC_HAL_GAIN_32;
-
-  // Step 2. Initialise using the modified gain and apply defaults.
-  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&gain_config));
-  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
-
-  // Step 3. Verify the shim recorded the gain request exactly once.
-  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_default_config_call_count());
-  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(AdcHalGain::ADC_HAL_GAIN_32),
-                          static_cast<uint8_t>(adc_hal_test_last_gain_requested()));
-}
-
 static void test_adc_hal_read_single_ended_tracks_last_channel(void) {
   // Step 1. Bring the HAL online and push the canned default configuration.
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&k_valid_config));
@@ -96,7 +80,6 @@ void setup() {
   RUN_TEST(test_adc_hal_read_requires_initialisation);
   RUN_TEST(test_adc_hal_enter_standby_succeeds_post_initialise);
   RUN_TEST(test_adc_hal_apply_default_configuration_is_idempotent);
-  RUN_TEST(test_adc_hal_apply_default_configuration_propagates_gain);
   RUN_TEST(test_adc_hal_read_single_ended_tracks_last_channel);
   // Step 3. Signal Unity to flush results before yielding to loop().
   UNITY_END();
