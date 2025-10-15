@@ -268,6 +268,90 @@ static void test_apply_settings_rejects_invalid_arguments(void) {
   TEST_ASSERT_EQUAL_HEX8(config1_before, config1_after);
 }
 
+static void test_set_conversion_config_updates_config3_bits(void) {
+  // Step 1. Apply the baseline configuration so CONFIG3 starts from a known state.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Prime CONFIG3 with CRC enable so we can verify the helper preserves existing flags.
+  const uint8_t config3_seed = 0x04u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG3, &config3_seed, 1u, NULL));
+
+  // Step 3. Request one-shot standby conversions with signed 32-bit data output.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_conversion_config(mcp356x_conversion_mode::oneshot_standby,
+                                                              mcp356x_data_format::data32_signed));
+
+  // Step 4. Read CONFIG3 back and ensure mode/data bits match while lower flags stay intact.
+  uint8_t config3_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL));
+  const uint8_t expected_config3 =
+      (uint8_t) (((static_cast<uint8_t>(mcp356x_conversion_mode::oneshot_standby) & 0x03u) << 6) |
+                 ((static_cast<uint8_t>(mcp356x_data_format::data32_signed) & 0x03u) << 4) | (config3_seed & 0x0Fu));
+  TEST_ASSERT_EQUAL_HEX8(expected_config3, config3_value);
+}
+
+static void test_get_conversion_config_reads_current_settings(void) {
+  // Step 1. Apply defaults to guarantee writes below start from POR values.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Program CONFIG3 with an explicit combination of conversion mode and data format.
+  const uint8_t programmed_config3 = (uint8_t) (((uint8_t) 0x02u << 6) | ((uint8_t) 0x03u << 4));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG3, &programmed_config3, 1u, NULL));
+
+  // Step 3. Retrieve the configuration via the helper and confirm enum decoding.
+  mcp356x_conversion_mode reported_mode   = mcp356x_conversion_mode::continuous;
+  mcp356x_data_format     reported_format = mcp356x_data_format::data24;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_conversion_config(&reported_mode, &reported_format));
+  TEST_ASSERT_EQUAL(mcp356x_conversion_mode::oneshot_shutdown, reported_mode);
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data32_signed_chid, reported_format);
+}
+
+static void test_set_conversion_config_rejects_invalid_mode(void) {
+  // Step 1. Capture the CONFIG3 baseline before exercising invalid enums.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  uint8_t config3_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_before, 1u, NULL));
+
+  // Step 2. Pass a reserved CONV_MODE value and expect the helper to reject it without writes.
+  const mcp356x_conversion_mode invalid_mode = static_cast<mcp356x_conversion_mode>(0x03u);
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_conversion_config(invalid_mode, mcp356x_data_format::data24));
+
+  // Step 3. Confirm CONFIG3 remains unchanged after the rejected call.
+  uint8_t config3_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config3_before, config3_after);
+}
+
+static void test_get_conversion_config_rejects_null_pointers(void) {
+  // Step 1. Apply defaults so we can focus on pointer validation paths.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Reject a missing mode pointer while leaving CONFIG3 untouched.
+  mcp356x_data_format format = mcp356x_data_format::data24;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_conversion_config(NULL, &format));
+
+  // Step 3. Reject a missing format pointer as well.
+  mcp356x_conversion_mode mode = mcp356x_conversion_mode::continuous;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_conversion_config(&mode, NULL));
+}
+
+static void test_conversion_config_helpers_require_initialization(void) {
+  // Step 1. Force the driver into an uninitialised state to trip guard rails.
+  mcp356x_force_uninitialized_for_test();
+
+  // Step 2. Attempt to set and get the conversion configuration while expecting not-initialised errors.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED,
+                    mcp356x_set_conversion_config(mcp356x_conversion_mode::continuous, mcp356x_data_format::data24));
+
+  mcp356x_conversion_mode mode   = mcp356x_conversion_mode::continuous;
+  mcp356x_data_format     format = mcp356x_data_format::data24;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_conversion_config(&mode, &format));
+
+  // Step 3. Reinitialise the driver so subsequent tests run under the normal configuration.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
 static void test_osr_helpers_require_initialization(void) {
   // Step 1. Force the driver into an uninitialised state for guard validation.
   mcp356x_force_uninitialized_for_test();
@@ -554,6 +638,11 @@ void setup() {
   RUN_TEST(test_get_osr_reads_current_setting);
   RUN_TEST(test_default_config_helpers_program_expected_osr);
   RUN_TEST(test_apply_settings_rejects_invalid_arguments);
+  RUN_TEST(test_set_conversion_config_updates_config3_bits);
+  RUN_TEST(test_get_conversion_config_reads_current_settings);
+  RUN_TEST(test_set_conversion_config_rejects_invalid_mode);
+  RUN_TEST(test_get_conversion_config_rejects_null_pointers);
+  RUN_TEST(test_conversion_config_helpers_require_initialization);
   RUN_TEST(test_osr_helpers_require_initialization);
   RUN_TEST(test_set_osr_rejects_invalid_enums);
   RUN_TEST(test_set_prescaler_updates_config1_bits);

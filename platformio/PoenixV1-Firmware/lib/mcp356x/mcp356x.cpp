@@ -37,8 +37,11 @@ static const uint8_t k_config1_prescaler_value_mask =
 static const uint8_t k_config2_gain_mask       = 0x38u;  // CONFIG2.GAIN[2:0] lives in bits 5:3.
 static const uint8_t k_config2_gain_field_mask = 0x07u;  // Mask for the 3-bit gain enum prior to shifting.
 static const uint8_t k_config2_clear_gain_mask =
-    (uint8_t) (~k_config2_gain_mask);                 // Preserves BOOST/AZ bits while zeroing GAIN.
-static const uint8_t k_config2_reserved_lsb = 0x01u;  // CONFIG2 bit0 must remain set per datasheet Section 8.4.
+    (uint8_t) (~k_config2_gain_mask);                  // Preserves BOOST/AZ bits while zeroing GAIN.
+static const uint8_t k_config2_reserved_lsb  = 0x01u;  // CONFIG2 bit0 must remain set per datasheet Section 8.4.
+static const uint8_t k_config3_mode_mask     = 0xC0u;  // CONV_MODE[1:0] occupy bits 7:6.
+static const uint8_t k_config3_format_mask   = 0x30u;  // DATA_FORMAT[1:0] occupy bits 5:4.
+static const uint8_t k_config3_preserve_mask = 0x0Fu;  // Preserve CRC and reserved bits [3:0].
 
 static inline uint8_t mcp356x_config2_with_gain_bits(mcp356x_gain gain) {
   uint8_t config2 = (uint8_t) (MCP356X_CONFIG2_DEFAULT & k_config2_clear_gain_mask);
@@ -65,6 +68,18 @@ static inline uint8_t mcp356x_config1_with_prescaler_bits(mcp356x_prescaler pres
   uint8_t config1 = (uint8_t) (preserved_osr_bits & (uint8_t) (~k_config1_prescaler_mask));
   config1 |= (uint8_t) ((static_cast<uint8_t>(prescaler) & k_config1_prescaler_value_mask) << 6);
   return config1;
+}
+
+static inline bool mcp356x_conversion_mode_is_valid(mcp356x_conversion_mode mode) {
+  return (static_cast<uint8_t>(mode) & 0x03u) != 0x03u;
+}
+
+static inline uint8_t mcp356x_config3_with_mode_format(mcp356x_conversion_mode mode, mcp356x_data_format format,
+                                                       uint8_t preserved_lower_bits) {
+  uint8_t config3 = (uint8_t) (preserved_lower_bits & k_config3_preserve_mask);
+  config3 |= (uint8_t) ((static_cast<uint8_t>(mode) & 0x03u) << 6);
+  config3 |= (uint8_t) ((static_cast<uint8_t>(format) & 0x03u) << 4);
+  return config3;
 }
 void mcp356x_force_uninitialized_for_test(void) {
   g_initialized = false;
@@ -339,6 +354,57 @@ int mcp356x_get_prescaler(mcp356x_prescaler* out_prescaler) {
 
   const uint8_t prescaler_bits = (uint8_t) ((config1_value >> 6) & k_config1_prescaler_value_mask);
   *out_prescaler               = static_cast<mcp356x_prescaler>(prescaler_bits);
+  return MCP356X_OK;
+}
+
+int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_format format) {
+  // Step 1: Require initialisation before touching CONFIG3.
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Reject reserved conversion-mode encodings so we never clock invalid bits into CONFIG3.
+  if (!mcp356x_conversion_mode_is_valid(mode)) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+
+  // Step 3: Read CONFIG3 to preserve CRC configuration and reserved bits in the lower nibble.
+  uint8_t config3_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  const uint8_t updated_config3 = mcp356x_config3_with_mode_format(mode, format, config3_value);
+
+  // Step 4: Write the updated CONFIG3 image back to the device.
+  return mcp356x_write_register(MCP356X_REG_CONFIG3, &updated_config3, 1u, NULL);
+}
+
+int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_data_format* out_format) {
+  // Step 1: Validate output storage and ensure the driver has been initialised.
+  if (out_mode == NULL || out_format == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Read CONFIG3 and decode the conversion mode/data format fields.
+  uint8_t config3_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  const uint8_t mode_bits = (uint8_t) ((config3_value & k_config3_mode_mask) >> 6);
+  if (mode_bits == 0x03u) {
+    return MCP356X_ERR_UNSUPPORTED;
+  }
+  const uint8_t format_bits = (uint8_t) ((config3_value & k_config3_format_mask) >> 4);
+
+  *out_mode   = static_cast<mcp356x_conversion_mode>(mode_bits);
+  *out_format = static_cast<mcp356x_data_format>(format_bits);
   return MCP356X_OK;
 }
 

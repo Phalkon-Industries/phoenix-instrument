@@ -177,6 +177,23 @@ enum class mcp356x_prescaler : uint8_t {
   mclk_div8 = 0b11,
 };
 
+// Conversion mode encodings map to CONFIG3.CONV_MODE[1:0]. 0b11 is reserved per
+// the datasheet, so callers must never request it.
+enum class mcp356x_conversion_mode : uint8_t {
+  continuous       = 0b00,
+  oneshot_standby  = 0b01,
+  oneshot_shutdown = 0b10,
+};
+
+// Data format encodings map to CONFIG3.DATA_FORMAT[1:0] and control how the ADC
+// presents conversion results on the SPI bus.
+enum class mcp356x_data_format : uint8_t {
+  data24             = 0b00,
+  data32_left        = 0b01,
+  data32_signed      = 0b10,
+  data32_signed_chid = 0b11,
+};
+
 // Aggregated configuration payload used by the unified initialisation helper.
 struct mcp356x_settings {
   mcp356x_gain      gain;
@@ -247,6 +264,23 @@ int mcp356x_set_prescaler(mcp356x_prescaler prescaler);
  *         NULL, or a propagated register access error.
  */
 int mcp356x_get_prescaler(mcp356x_prescaler* out_prescaler);
+
+/**
+ * @brief Update CONFIG3 conversion mode and data format selections.
+ *
+ * Applies the requested conversion sequencing mode and SPI output width while
+ * preserving CRC-related bits. The helper rejects reserved conversion-mode
+ * encodings before touching hardware and requires prior initialisation.
+ */
+int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_format format);
+
+/**
+ * @brief Read CONFIG3 and decode the current conversion mode/data format pair.
+ *
+ * Populates the caller-provided storage with the decoded enums. Requires
+ * driver initialisation and validates the output pointers before use.
+ */
+int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_data_format* out_format);
 
 /**
  * @brief Configure the ADC MUX for a single-ended channel relative to AGND.
