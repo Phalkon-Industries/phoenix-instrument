@@ -11,6 +11,8 @@
 
 static const uint32_t k_spi_clock_hz           = 500000UL;
 static const uint8_t  k_config1_prescaler_mask = 0xC0u;
+static const uint8_t  k_config2_az_mux_mask    = 0x04u;
+static const uint8_t  k_config2_az_ref_mask    = 0x02u;
 
 static void test_fast_command_start_status(void) {
   // Step 1. Trigger a full reset so the ADC starts from power-on defaults.
@@ -208,6 +210,89 @@ static void test_set_gain_updates_config2_gain_bits(void) {
   TEST_ASSERT_EQUAL(mcp356x_gain::gain_x8, reported_gain);
 }
 
+static void test_set_auto_zero_mux_updates_config2_bit(void) {
+  // Step 1. Apply the default configuration to start from a known baseline.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Capture CONFIG2 before toggling the mux auto-zero bit.
+  uint8_t config2_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_before, 1u, NULL));
+
+  // Step 3. Enable the MUX auto-zero path and confirm CONFIG2 reflects the change.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_mux(true));
+  uint8_t config2_enabled = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_enabled, 1u, NULL));
+  const uint8_t expected_enabled = (uint8_t) ((config2_before | k_config2_az_mux_mask) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_enabled, config2_enabled);
+
+  // Step 4. Disable the path again and ensure the bit clears without disturbing others.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_mux(false));
+  uint8_t config2_disabled = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_disabled, 1u, NULL));
+  const uint8_t expected_disabled = (uint8_t) ((config2_enabled & (uint8_t) (~k_config2_az_mux_mask)) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_disabled, config2_disabled);
+}
+
+static void test_set_auto_zero_reference_updates_config2_bit(void) {
+  // Step 1. Apply the default configuration to ensure a known CONFIG2 image.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Capture CONFIG2 before altering the reference auto-zero bit.
+  uint8_t config2_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_before, 1u, NULL));
+
+  // Step 3. Disable the reference auto-zero path and verify CONFIG2 updates.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_reference(false));
+  uint8_t config2_disabled = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_disabled, 1u, NULL));
+  const uint8_t expected_disabled = (uint8_t) ((config2_before & (uint8_t) (~k_config2_az_ref_mask)) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_disabled, config2_disabled);
+
+  // Step 4. Re-enable the path and ensure the bit returns high while others remain untouched.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_reference(true));
+  uint8_t config2_enabled = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_enabled, 1u, NULL));
+  const uint8_t expected_enabled = (uint8_t) ((config2_disabled | k_config2_az_ref_mask) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_enabled, config2_enabled);
+}
+
+static void test_get_auto_zero_helpers_read_current_settings(void) {
+  // Step 1. Apply defaults then drive a known auto-zero combination via setters.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_mux(true));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_reference(false));
+
+  // Step 2. Read back each state individually and confirm decoding.
+  bool mux_enabled       = false;
+  bool reference_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_auto_zero_mux(&mux_enabled));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_auto_zero_reference(&reference_enabled));
+  TEST_ASSERT_TRUE(mux_enabled);
+  TEST_ASSERT_FALSE(reference_enabled);
+}
+
+static void test_auto_zero_helpers_validate_inputs(void) {
+  // Step 1. Ensure the driver starts from a known initialised state.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Reject null storage in the getters.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_auto_zero_mux(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_auto_zero_reference(NULL));
+
+  // Step 3. Verify helpers guard against use before initialisation.
+  mcp356x_force_uninitialized_for_test();
+  bool az_state = false;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_auto_zero_mux(true));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_auto_zero_mux(&az_state));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_auto_zero_reference(true));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_auto_zero_reference(&az_state));
+
+  // Step 4. Restore initialised state for subsequent tests.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
 static void test_set_osr_updates_config1_bits(void) {
   // Step 1. Apply the baseline configuration to establish known CONFIG1 bits.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
@@ -265,6 +350,82 @@ static void test_default_config_helpers_program_expected_osr(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL));
   const uint8_t expected_config2 = (uint8_t) ((MCP356X_CONFIG2_DEFAULT & 0xC7u) | (0b100u << 3) | 0x01u);
   TEST_ASSERT_EQUAL_HEX8(expected_config2, config2_value);
+}
+
+static void test_offset_calibration_round_trip(void) {
+  // Step 1. Apply defaults to guarantee deterministic baseline writes.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Program a negative offset code and ensure the register reflects it.
+  const int32_t offset_code = -0x12345;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_offset_calibration(offset_code));
+
+  uint8_t raw_offset[3] = {0u};
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_OFFSETCAL, raw_offset, sizeof(raw_offset), NULL));
+  const uint32_t expected_encoded = (uint32_t) (offset_code & 0xFFFFFF);
+  TEST_ASSERT_EQUAL_HEX8((expected_encoded >> 16) & 0xFFu, raw_offset[0]);
+  TEST_ASSERT_EQUAL_HEX8((expected_encoded >> 8) & 0xFFu, raw_offset[1]);
+  TEST_ASSERT_EQUAL_HEX8(expected_encoded & 0xFFu, raw_offset[2]);
+
+  // Step 3. Read the value back through the helper and assert sign extension.
+  int32_t reported_offset = 0;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_offset_calibration(&reported_offset));
+  TEST_ASSERT_EQUAL(offset_code, reported_offset);
+}
+
+static void test_offset_calibration_rejects_invalid_arguments(void) {
+  // Step 1. Confirm pointer validation rejects null storage.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_offset_calibration(NULL));
+
+  // Step 2. Reject values outside the signed 24-bit range.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_offset_calibration(0x00800000));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_offset_calibration(-0x00800001));
+}
+
+static void test_gain_calibration_round_trip(void) {
+  // Step 1. Apply defaults so writes begin from the POR state.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Program a gain calibration code and verify the register image.
+  const uint32_t gain_code = 0x7F1234u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_gain_calibration(gain_code));
+
+  uint8_t raw_gain[3] = {0u};
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_GAINCAL, raw_gain, sizeof(raw_gain), NULL));
+  TEST_ASSERT_EQUAL_HEX8((gain_code >> 16) & 0xFFu, raw_gain[0]);
+  TEST_ASSERT_EQUAL_HEX8((gain_code >> 8) & 0xFFu, raw_gain[1]);
+  TEST_ASSERT_EQUAL_HEX8(gain_code & 0xFFu, raw_gain[2]);
+
+  // Step 3. Ensure the getter decodes the register image faithfully.
+  uint32_t reported_gain = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_gain_calibration(&reported_gain));
+  TEST_ASSERT_EQUAL_HEX32(gain_code, reported_gain);
+}
+
+static void test_gain_calibration_rejects_invalid_arguments(void) {
+  // Step 1. Reject null output pointers.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_gain_calibration(NULL));
+
+  // Step 2. Reject calibration codes that overflow the 24-bit register width.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_gain_calibration(0x01000000u));
+}
+
+static void test_calibration_helpers_require_initialization(void) {
+  // Step 1. Force the driver into an uninitialised state.
+  mcp356x_force_uninitialized_for_test();
+
+  // Step 2. Ensure each helper reports MCP356X_ERR_NOT_INITIALIZED.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_offset_calibration(0));
+  int32_t  offset_out = 0;
+  uint32_t gain_out   = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_offset_calibration(&offset_out));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_gain_calibration(0x800000u));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_gain_calibration(&gain_out));
+
+  // Step 3. Restore initialisation for subsequent tests.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
 }
 
 static void test_apply_settings_rejects_invalid_arguments(void) {
@@ -749,9 +910,18 @@ void setup() {
   RUN_TEST(test_apply_default_config_writes_expected_values);
   RUN_TEST(test_apply_settings_programs_requested_fields);
   RUN_TEST(test_set_gain_updates_config2_gain_bits);
+  RUN_TEST(test_set_auto_zero_mux_updates_config2_bit);
+  RUN_TEST(test_set_auto_zero_reference_updates_config2_bit);
+  RUN_TEST(test_get_auto_zero_helpers_read_current_settings);
+  RUN_TEST(test_auto_zero_helpers_validate_inputs);
   RUN_TEST(test_set_osr_updates_config1_bits);
   RUN_TEST(test_get_osr_reads_current_setting);
   RUN_TEST(test_default_config_helpers_program_expected_osr);
+  RUN_TEST(test_offset_calibration_round_trip);
+  RUN_TEST(test_offset_calibration_rejects_invalid_arguments);
+  RUN_TEST(test_gain_calibration_round_trip);
+  RUN_TEST(test_gain_calibration_rejects_invalid_arguments);
+  RUN_TEST(test_calibration_helpers_require_initialization);
   RUN_TEST(test_apply_settings_rejects_invalid_arguments);
   RUN_TEST(test_set_conversion_config_updates_config3_bits);
   RUN_TEST(test_get_conversion_config_reads_current_settings);

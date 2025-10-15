@@ -46,6 +46,8 @@ static const uint8_t k_config2_gain_field_mask = 0x07u;  // Mask for the 3-bit g
 static const uint8_t k_config2_clear_gain_mask =
     (uint8_t) (~k_config2_gain_mask);                  // Preserves BOOST/AZ bits while zeroing GAIN.
 static const uint8_t k_config2_reserved_lsb  = 0x01u;  // CONFIG2 bit0 must remain set per datasheet Section 8.4.
+static const uint8_t k_config2_az_mux_mask   = 0x04u;  // CONFIG2 bit2 enables input multiplexer auto-zero.
+static const uint8_t k_config2_az_ref_mask   = 0x02u;  // CONFIG2 bit1 enables reference buffer auto-zero.
 static const uint8_t k_config3_mode_mask     = 0xC0u;  // CONV_MODE[1:0] occupy bits 7:6.
 static const uint8_t k_config3_format_mask   = 0x30u;  // DATA_FORMAT[1:0] occupy bits 5:4.
 static const uint8_t k_config3_preserve_mask = 0x0Fu;  // Preserve CRC and reserved bits [3:0].
@@ -55,6 +57,28 @@ static inline uint8_t mcp356x_config2_with_gain_bits(mcp356x_gain gain) {
   config2 |= (uint8_t) ((static_cast<uint8_t>(gain) & k_config2_gain_field_mask) << 3);
   config2 |= k_config2_reserved_lsb;  // Datasheet mandates CONFIG2 bit0 remains set.
   return config2;
+}
+
+static int mcp356x_update_config2_auto_zero(uint8_t bit_mask, bool enable) {
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t config2_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  if (enable) {
+    config2_value |= bit_mask;
+  }
+  else {
+    config2_value &= (uint8_t) (~bit_mask);
+  }
+  config2_value |= k_config2_reserved_lsb;
+
+  return mcp356x_write_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
 }
 
 static inline bool mcp356x_osr_is_valid(mcp356x_osr osr) {
@@ -279,6 +303,50 @@ int mcp356x_get_gain(mcp356x_gain* out_gain) {
   return MCP356X_OK;
 }
 
+int mcp356x_set_auto_zero_mux(bool enable) {
+  return mcp356x_update_config2_auto_zero(k_config2_az_mux_mask, enable);
+}
+
+int mcp356x_get_auto_zero_mux(bool* out_enable) {
+  if (out_enable == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t config2_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  *out_enable = (config2_value & k_config2_az_mux_mask) != 0u;
+  return MCP356X_OK;
+}
+
+int mcp356x_set_auto_zero_reference(bool enable) {
+  return mcp356x_update_config2_auto_zero(k_config2_az_ref_mask, enable);
+}
+
+int mcp356x_get_auto_zero_reference(bool* out_enable) {
+  if (out_enable == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  uint8_t config2_value = 0u;
+  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  *out_enable = (config2_value & k_config2_az_ref_mask) != 0u;
+  return MCP356X_OK;
+}
+
 int mcp356x_set_osr(mcp356x_osr osr) {
   // Step 1: Guard against use before driver initialisation.
   if (!g_initialized) {
@@ -490,6 +558,93 @@ int mcp356x_apply_settings(const mcp356x_settings* settings) {
   }
 
   g_cached_data_format = settings->data_format;
+  return MCP356X_OK;
+}
+
+int mcp356x_set_offset_calibration(int32_t code) {
+  // Step 1: Guard against use before driver initialisation.
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Enforce the signed 24-bit range documented for OFFSETCAL.
+  if (code < -0x00800000 || code > 0x007FFFFF) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+
+  // Step 3: Encode the two's-complement payload and commit it to the register.
+  const uint32_t encoded   = (uint32_t) code & 0x00FFFFFFu;
+  const uint8_t  buffer[3] = {
+      (uint8_t) ((encoded >> 16) & 0xFFu),
+      (uint8_t) ((encoded >> 8) & 0xFFu),
+      (uint8_t) (encoded & 0xFFu),
+  };
+  return mcp356x_write_register(MCP356X_REG_OFFSETCAL, buffer, sizeof(buffer), NULL);
+}
+
+int mcp356x_get_offset_calibration(int32_t* out_code) {
+  // Step 1: Validate pointer arguments and initialisation state.
+  if (out_code == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Read the 24-bit OFFSETCAL register image.
+  uint8_t buffer[3]   = {0u};
+  int     return_code = mcp356x_read_register(MCP356X_REG_OFFSETCAL, buffer, sizeof(buffer), NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  // Step 3: Sign-extend the two's-complement value to 32 bits for the caller.
+  int32_t value = (int32_t) ((buffer[0] << 16) | (buffer[1] << 8) | buffer[2]);
+  if ((value & 0x00800000) != 0) {
+    value |= (int32_t) 0xFF000000;
+  }
+
+  *out_code = value;
+  return MCP356X_OK;
+}
+
+int mcp356x_set_gain_calibration(uint32_t code) {
+  // Step 1: Guard against use before driver initialisation.
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Ensure the unsigned 24-bit field does not overflow.
+  if ((code & 0xFF000000u) != 0u) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+
+  // Step 3: Encode the calibration value and update GAINCAL.
+  const uint8_t buffer[3] = {
+      (uint8_t) ((code >> 16) & 0xFFu),
+      (uint8_t) ((code >> 8) & 0xFFu),
+      (uint8_t) (code & 0xFFu),
+  };
+  return mcp356x_write_register(MCP356X_REG_GAINCAL, buffer, sizeof(buffer), NULL);
+}
+
+int mcp356x_get_gain_calibration(uint32_t* out_code) {
+  // Step 1: Validate pointer arguments and initialisation state.
+  if (out_code == NULL) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
+  if (!g_initialized) {
+    return MCP356X_ERR_NOT_INITIALIZED;
+  }
+
+  // Step 2: Read the 24-bit GAINCAL register and decode it.
+  uint8_t buffer[3]   = {0u};
+  int     return_code = mcp356x_read_register(MCP356X_REG_GAINCAL, buffer, sizeof(buffer), NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  *out_code = ((uint32_t) buffer[0] << 16) | ((uint32_t) buffer[1] << 8) | buffer[2];
   return MCP356X_OK;
 }
 

@@ -232,6 +232,26 @@ int mcp356x_set_gain(mcp356x_gain gain);
 int mcp356x_get_gain(mcp356x_gain* out_gain);
 
 /**
+ * @brief Toggle CONFIG2.AZ_MUX while preserving BOOST/GAIN fields.
+ */
+int mcp356x_set_auto_zero_mux(bool enable);
+
+/**
+ * @brief Read CONFIG2.AZ_MUX and report whether input auto-zero is enabled.
+ */
+int mcp356x_get_auto_zero_mux(bool* out_enable);
+
+/**
+ * @brief Toggle CONFIG2.AZ_REF while preserving BOOST/GAIN fields.
+ */
+int mcp356x_set_auto_zero_reference(bool enable);
+
+/**
+ * @brief Read CONFIG2.AZ_REF and report the reference auto-zero state.
+ */
+int mcp356x_get_auto_zero_reference(bool* out_enable);
+
+/**
  * @brief Update CONFIG1.OSR[3:0] while keeping prescaler and reserved bits intact.
  *
  * Performs a read-modify-write of CONFIG1 so the prescaler (PRE[1:0]) remains
@@ -329,6 +349,14 @@ int mcp356x_apply_default_config(void);
  *         MCP356X_ERR_INVALID_ARG when @p settings is NULL or contains invalid values.
  */
 int mcp356x_apply_settings(const mcp356x_settings* settings);
+
+int mcp356x_set_offset_calibration(int32_t code);
+
+int mcp356x_get_offset_calibration(int32_t* out_code);
+
+int mcp356x_set_gain_calibration(uint32_t code);
+
+int mcp356x_get_gain_calibration(uint32_t* out_code);
 
 /**
  * @brief Test-only hook to clear the driver's initialisation flag.
