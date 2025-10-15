@@ -177,6 +177,13 @@ enum class mcp356x_prescaler : uint8_t {
   mclk_div8 = 0b11,
 };
 
+// Aggregated configuration payload used by the unified initialisation helper.
+struct mcp356x_settings {
+  mcp356x_gain      gain;
+  mcp356x_osr       osr;
+  mcp356x_prescaler prescaler;
+};
+
 /**
  * @brief Update CONFIG2.GAIN[2:0] while keeping other CONFIG2 fields intact.
  *
@@ -254,40 +261,27 @@ int mcp356x_get_prescaler(mcp356x_prescaler* out_prescaler);
 int mcp356x_select_single_ended_channel(uint8_t channel_index);
 
 /**
- * @brief Write a curated default configuration into CONFIG0-3 registers.
+ * @brief Apply the curated default configuration to CONFIG0-3 registers.
  *
- * Centralises the "golden" register image used during application bring-up so
- * firmware and tests share a consistent baseline. This helper preserves the
- * legacy behaviour of programming CONFIG2 with gain=1×.
+ * Convenience wrapper that programmes the Phoenix baseline register image:
+ * gain = 1×, OSR = 4096, prescaler = MCLK/1.
  *
- * @return MCP356X_OK if all four writes succeed, otherwise propagates the first error encountered.
+ * @return MCP356X_OK if all writes succeed, otherwise propagates the first error encountered.
  */
 int mcp356x_apply_default_config(void);
 
 /**
- * @brief Apply the default configuration while overriding CONFIG2.GAIN[2:0].
+ * @brief Configure CONFIG0-3 using a caller-specified settings struct.
  *
- * Allows firmware to bootstrap the ADC into the standard Phoenix baseline but
- * with a caller-specified PGA gain. BOOST, AZ_MUX, AZ_REF, and the reserved LSB
- * remain fixed to their datasheet defaults.
+ * Applies the standard Phoenix defaults for CONFIG0/CONFIG3 while populating
+ * CONFIG1/CONFIG2 from the provided gain, OSR, and prescaler selections.
+ * The driver must be initialised beforehand.
  *
- * @param gain Desired hardware gain (1/3× through 64×).
- * @return MCP356X_OK if all four writes succeed, otherwise propagates the first error encountered.
+ * @param settings Pointer to the desired configuration payload.
+ * @return MCP356X_OK on success, a negative driver error on failure, or
+ *         MCP356X_ERR_INVALID_ARG when @p settings is NULL or contains invalid values.
  */
-int mcp356x_apply_default_config_with_gain(mcp356x_gain gain);
-
-/**
- * @brief Apply the default configuration while overriding both gain and OSR.
- *
- * Combines the behaviour of the standard default helper with register updates
- * for CONFIG1.OSR[3:0] and CONFIG2.GAIN[2:0]. PRE bits and reserved bits remain
- * in their datasheet-required states.
- *
- * @param gain Desired PGA gain value.
- * @param osr  Desired oversampling ratio.
- * @return MCP356X_OK when all writes succeed or a propagated driver error.
- */
-int mcp356x_apply_default_config_with_gain_and_osr(mcp356x_gain gain, mcp356x_osr osr);
+int mcp356x_apply_settings(const mcp356x_settings* settings);
 
 /**
  * @brief Test-only hook to clear the driver's initialisation flag.

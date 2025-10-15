@@ -9,7 +9,7 @@
 // Expected status byte when issuing FAST START command (device address bits = 0b01)
 #define MCP356X_EXPECTED_STATUS_START 0x17u
 
-static const uint32_t k_spi_clock_hz = 500000UL;
+static const uint32_t k_spi_clock_hz           = 500000UL;
 static const uint8_t  k_config1_prescaler_mask = 0xC0u;
 
 static void test_fast_command_start_status(void) {
@@ -125,17 +125,27 @@ static void test_apply_default_config_writes_expected_values(void) {
   TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_DEFAULT, config_value);
 }
 
-static void test_apply_default_config_with_gain_overrides_pga(void) {
-  // Step 1. Apply the default configuration while requesting a 32× PGA gain.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config_with_gain(mcp356x_gain::gain_x32));
+static void test_apply_settings_programs_requested_fields(void) {
+  // Step 0. Reset to the default configuration to ensure a known baseline.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
 
-  // Step 2. Confirm the CONFIG registers match the expected bit patterns with the gain override.
+  // Step 1. Apply the configuration using the unified helper.
+  const mcp356x_settings settings = {
+      mcp356x_gain::gain_x32,
+      mcp356x_osr::osr_2048,
+      mcp356x_prescaler::mclk_div4,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_settings(&settings));
+
+  // Step 2. Verify CONFIG0-3 reflect the requested combination.
   uint8_t config_value = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG0, &config_value, 1u, NULL));
   TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG0_DEFAULT, config_value);
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config_value, 1u, NULL));
-  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG1_DEFAULT, config_value);
+  const uint8_t expected_config1 = (uint8_t) (((static_cast<uint8_t>(mcp356x_prescaler::mclk_div4) & 0x03u) << 6) |
+                                              (static_cast<uint8_t>(mcp356x_osr::osr_2048) << 2));
+  TEST_ASSERT_EQUAL_HEX8(expected_config1, config_value);
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config_value, 1u, NULL));
   const uint8_t expected_config2 = (uint8_t) ((MCP356X_CONFIG2_DEFAULT & 0xC7u) | (0b110u << 3) | 0x01u);
@@ -143,11 +153,6 @@ static void test_apply_default_config_with_gain_overrides_pga(void) {
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config_value, 1u, NULL));
   TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_DEFAULT, config_value);
-
-  // Step 3. Use the getter to confirm the runtime gain matches the requested level.
-  mcp356x_gain reported_gain = mcp356x_gain::gain_x1;
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_gain(&reported_gain));
-  TEST_ASSERT_EQUAL(mcp356x_gain::gain_x32, reported_gain);
 }
 
 static void test_set_gain_updates_config2_gain_bits(void) {
@@ -212,20 +217,55 @@ static void test_default_config_helpers_program_expected_osr(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_osr(&default_osr));
   TEST_ASSERT_EQUAL(mcp356x_osr::osr_4096, default_osr);
 
-  // Step 2. Apply the new helper with both gain and OSR overrides and inspect CONFIG1/CONFIG2.
-  TEST_ASSERT_EQUAL(MCP356X_OK,
-                    mcp356x_apply_default_config_with_gain_and_osr(mcp356x_gain::gain_x8, mcp356x_osr::osr_8192));
+  // Step 2. Apply the settings helper with both gain and OSR overrides and inspect CONFIG1/CONFIG2.
+  const mcp356x_settings settings = {
+      mcp356x_gain::gain_x8,
+      mcp356x_osr::osr_8192,
+      mcp356x_prescaler::mclk_div1,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_settings(&settings));
 
   uint8_t config1_value = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL));
-  const uint8_t expected_config1 =
-      (uint8_t) ((MCP356X_CONFIG1_DEFAULT & 0xC0u) | (static_cast<uint8_t>(mcp356x_osr::osr_8192) << 2));
+  const uint8_t expected_config1 = (uint8_t) ((static_cast<uint8_t>(mcp356x_prescaler::mclk_div1) << 6) |
+                                              (static_cast<uint8_t>(mcp356x_osr::osr_8192) << 2));
   TEST_ASSERT_EQUAL_HEX8(expected_config1, config1_value);
 
   uint8_t config2_value = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL));
   const uint8_t expected_config2 = (uint8_t) ((MCP356X_CONFIG2_DEFAULT & 0xC7u) | (0b100u << 3) | 0x01u);
   TEST_ASSERT_EQUAL_HEX8(expected_config2, config2_value);
+}
+
+static void test_apply_settings_rejects_invalid_arguments(void) {
+  // Step 0. Ensure a known baseline image before exercising guard rails.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 1. Reject NULL pointers.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(NULL));
+
+  // Step 2. Reject invalid OSR encodings.
+  const mcp356x_settings invalid_osr_settings = {
+      mcp356x_gain::gain_x1,
+      static_cast<mcp356x_osr>(0x10u),
+      mcp356x_prescaler::mclk_div1,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(&invalid_osr_settings));
+
+  // Step 3. Reject invalid prescaler encodings while leaving CONFIG1 unchanged.
+  uint8_t config1_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_before, 1u, NULL));
+
+  const mcp356x_settings invalid_prescaler_settings = {
+      mcp356x_gain::gain_x1,
+      mcp356x_osr::osr_4096,
+      static_cast<mcp356x_prescaler>(0x04u),
+  };
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(&invalid_prescaler_settings));
+
+  uint8_t config1_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config1_before, config1_after);
 }
 
 static void test_osr_helpers_require_initialization(void) {
@@ -306,8 +346,8 @@ static void test_prescaler_helpers_require_initialization(void) {
   mcp356x_force_uninitialized_for_test();
 
   // Step 2. Attempt to set and get the prescaler, expecting not-initialised errors.
-  int                 return_code      = mcp356x_set_prescaler(mcp356x_prescaler::mclk_div2);
-  mcp356x_prescaler   reported_setting = mcp356x_prescaler::mclk_div1;
+  int               return_code      = mcp356x_set_prescaler(mcp356x_prescaler::mclk_div2);
+  mcp356x_prescaler reported_setting = mcp356x_prescaler::mclk_div1;
   TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, return_code);
   TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_prescaler(&reported_setting));
 
@@ -508,11 +548,12 @@ void setup() {
   RUN_TEST(test_mux_select_single_channel_writes_mux_register);
   RUN_TEST(test_mux_select_single_channel_rejects_invalid_inputs);
   RUN_TEST(test_apply_default_config_writes_expected_values);
-  RUN_TEST(test_apply_default_config_with_gain_overrides_pga);
+  RUN_TEST(test_apply_settings_programs_requested_fields);
   RUN_TEST(test_set_gain_updates_config2_gain_bits);
   RUN_TEST(test_set_osr_updates_config1_bits);
   RUN_TEST(test_get_osr_reads_current_setting);
   RUN_TEST(test_default_config_helpers_program_expected_osr);
+  RUN_TEST(test_apply_settings_rejects_invalid_arguments);
   RUN_TEST(test_osr_helpers_require_initialization);
   RUN_TEST(test_set_osr_rejects_invalid_enums);
   RUN_TEST(test_set_prescaler_updates_config1_bits);

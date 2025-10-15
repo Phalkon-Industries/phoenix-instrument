@@ -55,7 +55,12 @@ int adc_hal_apply_default_configuration(void) {
   }
 
   // Step 3: Push the default gain configuration into the MCP356x backend.
-  const int return_code = mcp356x_apply_default_config_with_gain(g_state.cached_gain);
+  const mcp356x_settings settings = {
+      g_state.cached_gain,
+      mcp356x_osr::osr_4096,
+      mcp356x_prescaler::mclk_div1,
+  };
+  const int return_code = mcp356x_apply_settings(&settings);
   if (return_code != MCP356X_OK) {
     return ADC_HAL_ERR_BACKEND_FAILURE;
   }
