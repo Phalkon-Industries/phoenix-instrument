@@ -13,6 +13,13 @@ static inline void mcp356x_delay_ms(uint32_t milliseconds) {
 static int         g_chip_select_pin = -1;
 static bool        g_initialized     = false;
 static SPISettings g_spi_settings(1000000UL, MSBFIRST, SPI_MODE0);
+// Measurement-speed exception: cache the active data-format locally so we avoid
+// re-reading CONFIG3 before every conversion. The style guide discourages
+// shadowed register copies, but we document this trade-off to keep high-rate
+// acquisition paths within budget.
+static mcp356x_data_format g_cached_data_format = mcp356x_data_format::data24;
+static uint8_t             g_last_data_length   = 0u;
+static uint32_t            g_last_raw_word      = 0u;
 
 // Datasheet helper: verify we stay inside the 0x0..0xF logical register window.
 static inline bool mcp356x_is_valid_register(uint8_t reg) {
@@ -80,6 +87,13 @@ static inline uint8_t mcp356x_config3_with_mode_format(mcp356x_conversion_mode m
   config3 |= (uint8_t) ((static_cast<uint8_t>(mode) & 0x03u) << 6);
   config3 |= (uint8_t) ((static_cast<uint8_t>(format) & 0x03u) << 4);
   return config3;
+}
+
+static inline uint8_t mcp356x_data_length_from_format(mcp356x_data_format format) {
+  if (format == mcp356x_data_format::data24) {
+    return 3u;
+  }
+  return 4u;
 }
 void mcp356x_force_uninitialized_for_test(void) {
   g_initialized = false;
@@ -378,7 +392,13 @@ int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_for
   const uint8_t updated_config3 = mcp356x_config3_with_mode_format(mode, format, config3_value);
 
   // Step 4: Write the updated CONFIG3 image back to the device.
-  return mcp356x_write_register(MCP356X_REG_CONFIG3, &updated_config3, 1u, NULL);
+  return_code = mcp356x_write_register(MCP356X_REG_CONFIG3, &updated_config3, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  g_cached_data_format = format;
+  return MCP356X_OK;
 }
 
 int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_data_format* out_format) {
@@ -411,9 +431,9 @@ int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_dat
 int mcp356x_apply_default_config(void) {
   // Step 1: Compose the datasheet baseline so downstream helpers see a full register image.
   const mcp356x_settings defaults = {
-      mcp356x_gain::gain_x1,
-      mcp356x_osr::osr_4096,
-      mcp356x_prescaler::mclk_div1,
+      mcp356x_gain::gain_x1,        mcp356x_osr::osr_4096,
+      mcp356x_prescaler::mclk_div1, mcp356x_conversion_mode::oneshot_shutdown,
+      mcp356x_data_format::data24,
   };
   // Step 2: Delegate to the unified helper so CONFIG0-3 are programmed consistently.
   return mcp356x_apply_settings(&defaults);
@@ -435,6 +455,9 @@ int mcp356x_apply_settings(const mcp356x_settings* settings) {
   if (!mcp356x_prescaler_is_valid(settings->prescaler)) {
     return MCP356X_ERR_INVALID_ARG;
   }
+  if (!mcp356x_conversion_mode_is_valid(settings->conversion_mode)) {
+    return MCP356X_ERR_INVALID_ARG;
+  }
 
   // Step 3: Compose CONFIG0-3 images to reflect the requested gain/OSR/prescaler trio.
   const uint8_t config0_value = MCP356X_CONFIG0_DEFAULT;
@@ -442,7 +465,8 @@ int mcp356x_apply_settings(const mcp356x_settings* settings) {
       (uint8_t) ((static_cast<uint8_t>(settings->prescaler) & k_config1_prescaler_value_mask) << 6);
   const uint8_t config1_value = mcp356x_config1_with_osr_bits(settings->osr, prescaler_bits);
   const uint8_t config2_value = mcp356x_config2_with_gain_bits(settings->gain);
-  const uint8_t config3_value = MCP356X_CONFIG3_DEFAULT;
+  const uint8_t config3_value =
+      mcp356x_config3_with_mode_format(settings->conversion_mode, settings->data_format, MCP356X_CONFIG3_DEFAULT);
 
   // Step 4: Program each CONFIG register sequentially so the device sees a coherent update.
   int return_code = mcp356x_write_register(MCP356X_REG_CONFIG0, &config0_value, 1u, NULL);
@@ -460,7 +484,13 @@ int mcp356x_apply_settings(const mcp356x_settings* settings) {
     return return_code;
   }
 
-  return mcp356x_write_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
+  return_code = mcp356x_write_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
+  if (return_code != MCP356X_OK) {
+    return return_code;
+  }
+
+  g_cached_data_format = settings->data_format;
+  return MCP356X_OK;
 }
 
 int mcp356x_start_conversion(uint8_t* status_byte) {
@@ -480,7 +510,11 @@ int mcp356x_enter_full_shutdown(uint8_t* status_byte) {
 }
 
 int mcp356x_full_reset(uint8_t* status_byte) {
-  return mcp356x_issue_fast_command(MCP356X_FASTCMD_FULLRESET, status_byte);
+  int return_code = mcp356x_issue_fast_command(MCP356X_FASTCMD_FULLRESET, status_byte);
+  if (return_code == MCP356X_OK) {
+    g_cached_data_format = mcp356x_data_format::data24;
+  }
+  return return_code;
 }
 
 int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result) {
@@ -505,20 +539,24 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
     return return_code;
   }
 
-  uint8_t  adc_bytes[3] = {0};
-  uint32_t elapsed_ms   = 0u;
-  bool     data_ready   = false;
+  const uint8_t payload_length = mcp356x_data_length_from_format(g_cached_data_format);
+  uint8_t       adc_bytes[4]   = {0};
+  uint32_t      elapsed_ms     = 0u;
+  bool          data_ready     = false;
+  g_last_data_length           = 0u;
+  g_last_raw_word              = 0u;
 
   // Step 5: Poll the ADC result register until data is ready or the timeout expires.
   while (!data_ready) {
     uint8_t read_status = 0xFFu;
-    return_code         = mcp356x_read_register(MCP356X_REG_ADCDATA, adc_bytes, sizeof adc_bytes, &read_status);
+    return_code         = mcp356x_read_register(MCP356X_REG_ADCDATA, adc_bytes, payload_length, &read_status);
     if (return_code != MCP356X_OK) {
       return return_code;
     }
 
     data_ready = ((read_status & MCP356X_STATUS_DR_MASK) == 0u);
     if (data_ready) {
+      g_last_data_length = payload_length;
       break;
     }
 
@@ -530,13 +568,61 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
     ++elapsed_ms;
   }
 
-  // Step 6: Combine the 24-bit two's complement result and sign-extend to 32 bits.
-  int32_t raw_value = (int32_t) ((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
-  if (raw_value & 0x800000) {
-    raw_value |= 0xFF000000;
+  uint32_t raw_word  = 0u;
+  int32_t  raw_value = 0;
+
+  switch (g_cached_data_format) {
+    case mcp356x_data_format::data24: {
+      raw_word  = (uint32_t) ((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
+      raw_value = (int32_t) raw_word;
+      if (raw_value & 0x800000) {
+        raw_value |= 0xFF000000;
+      }
+      break;
+    }
+    case mcp356x_data_format::data32_left: {
+      raw_word  = (uint32_t) (((uint32_t) adc_bytes[0] << 24) | ((uint32_t) adc_bytes[1] << 16) |
+                             ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
+      raw_value = (int32_t) (static_cast<int32_t>(raw_word) >> 8);
+      break;
+    }
+    case mcp356x_data_format::data32_signed: {
+      raw_word  = (uint32_t) (((uint32_t) adc_bytes[0] << 24) | ((uint32_t) adc_bytes[1] << 16) |
+                             ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
+      raw_value = (int32_t) raw_word;
+      break;
+    }
+    case mcp356x_data_format::data32_signed_chid: {
+      raw_word  = (uint32_t) (((uint32_t) adc_bytes[0] << 24) | ((uint32_t) adc_bytes[1] << 16) |
+                             ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
+      raw_value = (int32_t) (static_cast<int32_t>(raw_word) >> 8);
+      break;
+    }
+    default: {
+      return MCP356X_ERR_UNSUPPORTED;
+    }
   }
+
+  g_last_raw_word = raw_word;
 
   // Step 7: Publish the conversion outcome to the caller.
   *result = raw_value;
   return MCP356X_OK;
+}
+
+mcp356x_data_format mcp356x_test_cached_data_format(void) {
+  return g_cached_data_format;
+}
+
+uint8_t mcp356x_test_last_data_length(void) {
+  return g_last_data_length;
+}
+
+void mcp356x_test_reset_diagnostics(void) {
+  g_last_data_length = 0u;
+  g_last_raw_word    = 0u;
+}
+
+uint32_t mcp356x_test_last_raw_word(void) {
+  return g_last_raw_word;
 }

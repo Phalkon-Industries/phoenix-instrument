@@ -127,11 +127,17 @@ int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t leng
  */
 int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size_t length, uint8_t* status_byte);
 
+// ===================== Power-On Reset Register Images ==================================
+#define MCP356X_CONFIG0_POR 0b11000000  // Datasheet POR CONFIG0 value
+#define MCP356X_CONFIG1_POR 0b00001100  // Datasheet POR CONFIG1 value
+#define MCP356X_CONFIG2_POR 0b10001011  // Datasheet POR CONFIG2 value
+#define MCP356X_CONFIG3_POR 0b00000000  // Datasheet POR CONFIG3 value
+
 // ===================== Library Default Config Preset ==================================
-#define MCP356X_CONFIG0_DEFAULT 0b10110011  // Internal REF, continuous conversion, standby disabled
-#define MCP356X_CONFIG1_DEFAULT 0b00011100  // OSR=4096, AMCLK=MCLK
-#define MCP356X_CONFIG2_DEFAULT 0b10001011  // BOOST=10b, gain=1 (001b), AZ_MUX/AZ_REF enabled, LSB must stay 1
-#define MCP356X_CONFIG3_DEFAULT 0b00000000  // No auto-sequence, default conversion delay
+#define MCP356X_CONFIG0_DEFAULT 0b10110011  // Phoenix baseline CONFIG0 (internal reference, standby disabled)
+#define MCP356X_CONFIG1_DEFAULT 0b00011100  // Phoenix baseline CONFIG1 (OSR 4096, AMCLK=MCLK)
+#define MCP356X_CONFIG2_DEFAULT 0b10001011  // Phoenix baseline CONFIG2 (BOOST=10b, gain=1, auto-zero enabled)
+#define MCP356X_CONFIG3_DEFAULT 0b00000000  // Phoenix baseline CONFIG3 (no auto-sequence, default delay)
 
 // Gain control resides in CONFIG2.GAIN[2:0]. Provide a typed enum so callers cannot
 // pass arbitrary bit patterns. The hardware exposes a 1/3x mode alongside the usual
@@ -196,9 +202,11 @@ enum class mcp356x_data_format : uint8_t {
 
 // Aggregated configuration payload used by the unified initialisation helper.
 struct mcp356x_settings {
-  mcp356x_gain      gain;
-  mcp356x_osr       osr;
-  mcp356x_prescaler prescaler;
+  mcp356x_gain            gain;
+  mcp356x_osr             osr;
+  mcp356x_prescaler       prescaler;
+  mcp356x_conversion_mode conversion_mode;
+  mcp356x_data_format     data_format;
 };
 
 /**
@@ -281,6 +289,11 @@ int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_for
  * driver initialisation and validates the output pointers before use.
  */
 int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_data_format* out_format);
+
+mcp356x_data_format mcp356x_test_cached_data_format(void);
+uint8_t             mcp356x_test_last_data_length(void);
+void                mcp356x_test_reset_diagnostics(void);
+uint32_t            mcp356x_test_last_raw_word(void);
 
 /**
  * @brief Configure the ADC MUX for a single-ended channel relative to AGND.

@@ -46,6 +46,26 @@ static void test_config0_register_roundtrip(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG0, &config0_before, 1u, NULL));
 }
 
+static void test_full_reset_restores_por_defaults(void) {
+  // Step 1. Assert a full reset to force the ADC back to its POR image.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+
+  // Step 2. Verify CONFIG0-3 match the documented power-on reset values.
+  uint8_t config_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG0, &config_value, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG0_POR, config_value);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config_value, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG1_POR, config_value);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config_value, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG2_POR, config_value);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config_value, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_POR, config_value);
+}
+
 static void test_single_ended_ch0_conversion(void) {
   // Step 1. Reset the ADC to a clean baseline before programming registers.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
@@ -122,7 +142,11 @@ static void test_apply_default_config_writes_expected_values(void) {
   TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG2_DEFAULT, config_value);
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config_value, 1u, NULL));
-  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_DEFAULT, config_value);
+  const uint8_t expected_config3 =
+      (uint8_t) (((static_cast<uint8_t>(mcp356x_conversion_mode::oneshot_shutdown) & 0x03u) << 6) |
+                 ((static_cast<uint8_t>(mcp356x_data_format::data24) & 0x03u) << 4) |
+                 (MCP356X_CONFIG3_DEFAULT & 0x0Fu));
+  TEST_ASSERT_EQUAL_HEX8(expected_config3, config_value);
 }
 
 static void test_apply_settings_programs_requested_fields(void) {
@@ -134,6 +158,8 @@ static void test_apply_settings_programs_requested_fields(void) {
       mcp356x_gain::gain_x32,
       mcp356x_osr::osr_2048,
       mcp356x_prescaler::mclk_div4,
+      mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data32_signed,
   };
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_settings(&settings));
 
@@ -152,7 +178,11 @@ static void test_apply_settings_programs_requested_fields(void) {
   TEST_ASSERT_EQUAL_HEX8(expected_config2, config_value);
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config_value, 1u, NULL));
-  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_DEFAULT, config_value);
+  const uint8_t expected_config3 =
+      (uint8_t) (((static_cast<uint8_t>(mcp356x_conversion_mode::continuous) & 0x03u) << 6) |
+                 ((static_cast<uint8_t>(mcp356x_data_format::data32_signed) & 0x03u) << 4) |
+                 (MCP356X_CONFIG3_DEFAULT & 0x0Fu));
+  TEST_ASSERT_EQUAL_HEX8(expected_config3, config_value);
 }
 
 static void test_set_gain_updates_config2_gain_bits(void) {
@@ -219,9 +249,9 @@ static void test_default_config_helpers_program_expected_osr(void) {
 
   // Step 2. Apply the settings helper with both gain and OSR overrides and inspect CONFIG1/CONFIG2.
   const mcp356x_settings settings = {
-      mcp356x_gain::gain_x8,
-      mcp356x_osr::osr_8192,
-      mcp356x_prescaler::mclk_div1,
+      mcp356x_gain::gain_x8,        mcp356x_osr::osr_8192,
+      mcp356x_prescaler::mclk_div1, mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data24,
   };
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_settings(&settings));
 
@@ -246,9 +276,9 @@ static void test_apply_settings_rejects_invalid_arguments(void) {
 
   // Step 2. Reject invalid OSR encodings.
   const mcp356x_settings invalid_osr_settings = {
-      mcp356x_gain::gain_x1,
-      static_cast<mcp356x_osr>(0x10u),
-      mcp356x_prescaler::mclk_div1,
+      mcp356x_gain::gain_x1,        static_cast<mcp356x_osr>(0x10u),
+      mcp356x_prescaler::mclk_div1, mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data24,
   };
   TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(&invalid_osr_settings));
 
@@ -260,12 +290,29 @@ static void test_apply_settings_rejects_invalid_arguments(void) {
       mcp356x_gain::gain_x1,
       mcp356x_osr::osr_4096,
       static_cast<mcp356x_prescaler>(0x04u),
+      mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data24,
   };
   TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(&invalid_prescaler_settings));
 
   uint8_t config1_after = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
   TEST_ASSERT_EQUAL_HEX8(config1_before, config1_after);
+
+  // Step 4. Reject invalid conversion mode encodings and ensure CONFIG3 remains untouched.
+  uint8_t config3_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_before, 1u, NULL));
+
+  const mcp356x_settings invalid_mode_settings = {
+      mcp356x_gain::gain_x1,        mcp356x_osr::osr_4096,
+      mcp356x_prescaler::mclk_div1, static_cast<mcp356x_conversion_mode>(0x03u),
+      mcp356x_data_format::data24,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(&invalid_mode_settings));
+
+  uint8_t config3_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config3_before, config3_after);
 }
 
 static void test_set_conversion_config_updates_config3_bits(void) {
@@ -350,6 +397,73 @@ static void test_conversion_config_helpers_require_initialization(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   delay(2);
+}
+
+static void test_conversion_config_updates_cached_data_format(void) {
+  // Step 1. Apply the baseline configuration and confirm the cached format reflects the default.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data24, mcp356x_test_cached_data_format());
+
+  // Step 2. Request a 32-bit signed data format and ensure the cached state tracks the change.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_conversion_config(mcp356x_conversion_mode::continuous,
+                                                              mcp356x_data_format::data32_signed));
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data32_signed, mcp356x_test_cached_data_format());
+}
+
+static void test_read_single_ended_respects_all_data_formats(void) {
+  // Sweep each DATA_FORMAT encoding to ensure both the decoded sample and
+  // captured diagnostic word match the datasheet's on-wire representation.
+  const mcp356x_data_format formats[] = {
+      mcp356x_data_format::data24,
+      mcp356x_data_format::data32_left,
+      mcp356x_data_format::data32_signed,
+      mcp356x_data_format::data32_signed_chid,
+  };
+
+  for (size_t i = 0; i < (sizeof formats / sizeof formats[0]); ++i) {
+    TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+    if (formats[i] != mcp356x_data_format::data24) {
+      TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_conversion_config(mcp356x_conversion_mode::continuous, formats[i]));
+    }
+
+    mcp356x_test_reset_diagnostics();
+
+    int32_t       code    = INT32_MIN;
+    const uint8_t channel = 0u;  // Test board only routes channel 0; reuse it for all format sweeps.
+    TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_single_ended_channel(channel, 200u, &code));
+
+    const uint8_t expected_length = (formats[i] == mcp356x_data_format::data24) ? 3u : 4u;
+    TEST_ASSERT_EQUAL_UINT8(expected_length, mcp356x_test_last_data_length());
+
+    const uint32_t raw_word = mcp356x_test_last_raw_word();
+
+    switch (formats[i]) {
+      case mcp356x_data_format::data24: {
+        const uint32_t raw24          = raw_word & 0xFFFFFFu;
+        const int32_t  expected_value = (raw24 & 0x800000u) ? (int32_t) (raw24 | 0xFF000000u) : (int32_t) raw24;
+        TEST_ASSERT_EQUAL_INT32(expected_value, code);
+        break;
+      }
+      case mcp356x_data_format::data32_left: {
+        TEST_ASSERT_EQUAL_HEX8(0u, raw_word & 0xFFu);
+        const int32_t reconstructed = (int32_t) ((int32_t) raw_word >> 8);
+        TEST_ASSERT_EQUAL_INT32(reconstructed, code);
+        break;
+      }
+      case mcp356x_data_format::data32_signed: {
+        TEST_ASSERT_EQUAL_HEX32((uint32_t) code, raw_word);
+        break;
+      }
+      case mcp356x_data_format::data32_signed_chid: {
+        const int32_t reconstructed = (int32_t) ((int32_t) raw_word >> 8);
+        TEST_ASSERT_EQUAL_INT32(reconstructed, code);
+        break;
+      }
+      default:
+        TEST_FAIL_MESSAGE("Unexpected data format encountered");
+    }
+  }
 }
 
 static void test_osr_helpers_require_initialization(void) {
@@ -628,6 +742,7 @@ void setup() {
   // Step 2. Execute each MCP356x test case in sequence.
   RUN_TEST(test_fast_command_start_status);
   RUN_TEST(test_config0_register_roundtrip);
+  RUN_TEST(test_full_reset_restores_por_defaults);
   RUN_TEST(test_single_ended_ch0_conversion);
   RUN_TEST(test_mux_select_single_channel_writes_mux_register);
   RUN_TEST(test_mux_select_single_channel_rejects_invalid_inputs);
@@ -643,6 +758,8 @@ void setup() {
   RUN_TEST(test_set_conversion_config_rejects_invalid_mode);
   RUN_TEST(test_get_conversion_config_rejects_null_pointers);
   RUN_TEST(test_conversion_config_helpers_require_initialization);
+  RUN_TEST(test_conversion_config_updates_cached_data_format);
+  RUN_TEST(test_read_single_ended_respects_all_data_formats);
   RUN_TEST(test_osr_helpers_require_initialization);
   RUN_TEST(test_set_osr_rejects_invalid_enums);
   RUN_TEST(test_set_prescaler_updates_config1_bits);
