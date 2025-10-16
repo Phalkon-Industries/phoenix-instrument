@@ -11,9 +11,9 @@ struct PhoenixBenchmarkAdcSpeedOptions {
 };
 
 struct PhoenixBenchmarkAdcSpeedParseOutcome {
-  bool        success;
+  bool                            success;
   PhoenixBenchmarkAdcSpeedOptions options;
-  const char* error_message;
+  const char*                     error_message;
 };
 
 constexpr const char k_phoenix_benchmark_adc_speed_error_invalid_command[] = "adc_speed_invalid_command";

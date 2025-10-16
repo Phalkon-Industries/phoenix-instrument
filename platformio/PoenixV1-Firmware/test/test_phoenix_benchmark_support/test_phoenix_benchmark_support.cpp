@@ -177,20 +177,18 @@ static void test_adc_speed_format_summary_header_renders_expected_columns(void) 
   TEST_ASSERT_TRUE(phoenix_benchmark_adc_speed_format_summary_header(buffer, sizeof(buffer)));
 
   // Step 2. Ensure the header uses the agreed column labels and alignment spacing.
-  TEST_ASSERT_EQUAL_STRING(
-    "Mode          Samples_per_s        Loop_us     Errors Notes",
-    buffer);
+  TEST_ASSERT_EQUAL_STRING("Mode          Samples_per_s        Loop_us     Errors Notes", buffer);
 }
 
 static void test_adc_speed_format_summary_row_formats_metrics(void) {
   // Step 1. Format a row with populated metrics so numeric alignment can be asserted.
   PhoenixBenchmarkAdcSpeedSummaryRowValues values = {
-      .mode_label          = "Blocking",
-      .samples_per_second  = 12345.678,
-      .loop_microseconds   = 42.5,
-      .error_count         = 3u,
-      .notes               = "ok",
-      .has_metrics         = true,
+      .mode_label         = "Blocking",
+      .samples_per_second = 12345.678,
+      .loop_microseconds  = 42.5,
+      .error_count        = 3u,
+      .notes              = "ok",
+      .has_metrics        = true,
   };
 
   char buffer[k_phoenix_benchmark_adc_speed_summary_buffer_bytes] = {};
@@ -207,12 +205,12 @@ static void test_adc_speed_format_summary_row_formats_metrics(void) {
 static void test_adc_speed_format_summary_row_uses_placeholders_without_metrics(void) {
   // Step 1. Produce a row where metrics are absent so placeholders should appear.
   PhoenixBenchmarkAdcSpeedSummaryRowValues values = {
-      .mode_label          = "IRQ",
-      .samples_per_second  = 0.0,
-      .loop_microseconds   = 0.0,
-      .error_count         = 0u,
-      .notes               = nullptr,
-      .has_metrics         = false,
+      .mode_label         = "IRQ",
+      .samples_per_second = 0.0,
+      .loop_microseconds  = 0.0,
+      .error_count        = 0u,
+      .notes              = nullptr,
+      .has_metrics        = false,
   };
 
   char buffer[k_phoenix_benchmark_adc_speed_summary_buffer_bytes] = {};
@@ -228,8 +226,7 @@ static void test_adc_speed_parse_command_line_accepts_json_payload(void) {
   const char* command_line =
       "{\"command\":\"adc_speed\",\"parameters\":{\"duration_ms\":1500,\"enable_blocking\":true,\"enable_irq\":true}}";
 
-  const PhoenixBenchmarkAdcSpeedParseOutcome outcome =
-      phoenix_benchmark_adc_speed_parse_command_line(command_line);
+  const PhoenixBenchmarkAdcSpeedParseOutcome outcome = phoenix_benchmark_adc_speed_parse_command_line(command_line);
 
   // Step 2. Expect the parser to accept the payload and surface the supplied configuration.
   TEST_ASSERT_TRUE(outcome.success);
@@ -241,11 +238,9 @@ static void test_adc_speed_parse_command_line_accepts_json_payload(void) {
 
 static void test_adc_speed_parse_command_line_rejects_invalid_duration(void) {
   // Step 1. Attempt to parse an invalid payload with a zero duration value.
-  const char* command_line =
-      "{\"command\":\"adc_speed\",\"parameters\":{\"duration_ms\":0}}";
+  const char* command_line = "{\"command\":\"adc_speed\",\"parameters\":{\"duration_ms\":0}}";
 
-  const PhoenixBenchmarkAdcSpeedParseOutcome outcome =
-      phoenix_benchmark_adc_speed_parse_command_line(command_line);
+  const PhoenixBenchmarkAdcSpeedParseOutcome outcome = phoenix_benchmark_adc_speed_parse_command_line(command_line);
 
   // Step 2. The parser should reject the command and surface an invalid value error.
   TEST_ASSERT_FALSE(outcome.success);

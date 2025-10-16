@@ -225,8 +225,7 @@ bool handle_key_value(const char* key_buffer, const char** cursor, PhoenixBenchm
     return true;
   }
 
-  if ((std::strcmp(key_buffer, "enable_blocking") == 0) ||
-      (std::strcmp(key_buffer, "enable_blocking_mode") == 0)) {
+  if ((std::strcmp(key_buffer, "enable_blocking") == 0) || (std::strcmp(key_buffer, "enable_blocking_mode") == 0)) {
     bool flag_value = true;
     if (!parse_boolean_value(*cursor, &flag_value, cursor)) {
       if (error != nullptr) {

@@ -135,8 +135,7 @@ bool phoenix_benchmark_adc_speed_format_summary_header(char* buffer, std::size_t
                            k_phoenix_benchmark_adc_speed_summary_error_width)) {
     return false;
   }
-  if (!append_column_left(buffer, buffer_length, &offset, "Notes",
-                          k_phoenix_benchmark_adc_speed_summary_notes_width)) {
+  if (!append_column_left(buffer, buffer_length, &offset, "Notes", k_phoenix_benchmark_adc_speed_summary_notes_width)) {
     return false;
   }
 
@@ -162,8 +161,7 @@ bool phoenix_benchmark_adc_speed_format_summary_row(const PhoenixBenchmarkAdcSpe
                        2u)) {
       return false;
     }
-    if (!append_column_right(buffer, buffer_length, &offset, temp,
-                             k_phoenix_benchmark_adc_speed_summary_rate_width)) {
+    if (!append_column_right(buffer, buffer_length, &offset, temp, k_phoenix_benchmark_adc_speed_summary_rate_width)) {
       return false;
     }
 
@@ -171,16 +169,14 @@ bool phoenix_benchmark_adc_speed_format_summary_row(const PhoenixBenchmarkAdcSpe
                        3u)) {
       return false;
     }
-    if (!append_column_right(buffer, buffer_length, &offset, temp,
-                             k_phoenix_benchmark_adc_speed_summary_loop_width)) {
+    if (!append_column_right(buffer, buffer_length, &offset, temp, k_phoenix_benchmark_adc_speed_summary_loop_width)) {
       return false;
     }
 
     if (!format_uint32(temp, sizeof(temp), values.error_count, k_phoenix_benchmark_adc_speed_summary_error_width)) {
       return false;
     }
-    if (!append_column_right(buffer, buffer_length, &offset, temp,
-                             k_phoenix_benchmark_adc_speed_summary_error_width)) {
+    if (!append_column_right(buffer, buffer_length, &offset, temp, k_phoenix_benchmark_adc_speed_summary_error_width)) {
       return false;
     }
   }

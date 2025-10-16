@@ -4,12 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 
-static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_mode_width    = 10u;
-static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_rate_width    = 16u;
-static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_loop_width    = 14u;
-static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_error_width   = 10u;
-static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_notes_width   = 18u;
-static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_buffer_bytes  = 160u;
+static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_mode_width   = 10u;
+static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_rate_width   = 16u;
+static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_loop_width   = 14u;
+static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_error_width  = 10u;
+static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_notes_width  = 18u;
+static constexpr std::size_t k_phoenix_benchmark_adc_speed_summary_buffer_bytes = 160u;
 
 struct PhoenixBenchmarkAdcSpeedSummaryRowValues {
   const char* mode_label;

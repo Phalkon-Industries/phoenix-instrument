@@ -4,7 +4,6 @@
 #include "adc_speed_command_parser.hpp"
 #include "adc_speed_formatter.hpp"
 #include "core/phoenix_benchmark_core.hpp"
-
 #include <cstddef>
 #include <cstdint>
 
@@ -33,7 +32,7 @@ void phoenix_benchmark_adc_speed_reset_state(void);
 PhoenixBenchmarkAdcSpeedOptions phoenix_benchmark_adc_speed_defaults(void);
 
 PhoenixBenchmarkAdcSpeedExecutionStatus phoenix_benchmark_adc_speed_run(const PhoenixBenchmarkAdcSpeedOptions& options,
-                                                                         PhoenixBenchmarkStateAccumulator* accumulators,
-                                                                         std::size_t accumulator_count);
+                                                                        PhoenixBenchmarkStateAccumulator* accumulators,
+                                                                        std::size_t accumulator_count);
 
 #endif  // PHOENIX_BENCHMARK_ADC_SPEED_HPP
