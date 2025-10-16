@@ -1,7 +1,13 @@
 #include "adc_hal.hpp"
+#include "adc_speed/adc_speed.hpp"
+#include "adc_speed/adc_speed_command_parser.hpp"
+#include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map.hpp"
 #include <Arduino.h>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 // This sketch forwards all benchmark orchestration to the phoenix benchmark
 // library in lib/phoenix_benchmark/channel_map so other firmware
@@ -9,9 +15,11 @@
 
 namespace {
 
-constexpr double        k_channel_min_drain_delta = 5.0;
-constexpr unsigned long k_serial_baud_rate        = 115200UL;
-constexpr size_t        k_command_buffer_bytes    = 160u;
+constexpr double        k_channel_min_drain_delta        = 5.0;
+constexpr unsigned long k_serial_baud_rate               = 115200UL;
+constexpr size_t        k_command_buffer_bytes           = 160u;
+constexpr size_t        k_adc_speed_command_buffer_bytes = 160u;
+constexpr char          k_whitespace_tokens[]            = " \t\r\n";
 
 constexpr AdcHalChannel k_channel_a = AdcHalChannel::ADC_HAL_CHANNEL_4;
 constexpr AdcHalChannel k_channel_b = AdcHalChannel::ADC_HAL_CHANNEL_5;
@@ -20,6 +28,12 @@ const PhoenixBenchmarkChannelMapDefaults k_channel_map_defaults = {
     .sweep_count = 100u,
     .dwell_us    = 100u,
     .wiper_code  = 0x00u,
+};
+
+const PhoenixBenchmarkAdcSpeedDefaults k_adc_speed_defaults = {
+    .duration_ms     = 1000u,
+    .enable_blocking = true,
+    .enable_irq      = true,
 };
 
 PhoenixBenchmarkStateAccumulator g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
@@ -176,6 +190,288 @@ void print_summary_table(void) {
   Serial.println();
 }
 
+const char* skip_leading_whitespace(const char* text) {
+  if (text == nullptr) {
+    return nullptr;
+  }
+  while ((*text != '\0') && std::isspace(static_cast<unsigned char>(*text))) {
+    ++text;
+  }
+  return text;
+}
+
+bool extract_command_identifier(const char* line, char* buffer, std::size_t buffer_length) {
+  if ((line == nullptr) || (buffer == nullptr) || (buffer_length == 0u)) {
+    return false;
+  }
+
+  const char* command_token = std::strstr(line, "\"command\"");
+  if (command_token == nullptr) {
+    return false;
+  }
+
+  const char* colon = std::strchr(command_token, ':');
+  if (colon == nullptr) {
+    return false;
+  }
+
+  const char* cursor = colon + 1;
+  while ((*cursor != '\0') && std::isspace(static_cast<unsigned char>(*cursor))) {
+    ++cursor;
+  }
+
+  if (*cursor != '"') {
+    return false;
+  }
+  ++cursor;
+
+  const char* value_start = cursor;
+  while ((*cursor != '\0') && (*cursor != '"')) {
+    ++cursor;
+  }
+  if (*cursor != '"') {
+    return false;
+  }
+
+  const std::size_t token_length = static_cast<std::size_t>(cursor - value_start);
+  if ((token_length == 0u) || (token_length >= buffer_length)) {
+    return false;
+  }
+
+  std::memcpy(buffer, value_start, token_length);
+  buffer[token_length] = '\0';
+  return true;
+}
+
+bool parse_boolean_flag(const char* value, bool* out_flag) {
+  if ((value == nullptr) || (out_flag == nullptr)) {
+    return false;
+  }
+
+  if ((std::strcmp(value, "true") == 0) || (std::strcmp(value, "1") == 0)) {
+    *out_flag = true;
+    return true;
+  }
+
+  if ((std::strcmp(value, "false") == 0) || (std::strcmp(value, "0") == 0)) {
+    *out_flag = false;
+    return true;
+  }
+
+  return false;
+}
+
+bool parse_adc_speed_plain_command(const char* line, PhoenixBenchmarkAdcSpeedOptions* options,
+                                   const char** error_message) {
+  if ((line == nullptr) || (options == nullptr)) {
+    if (error_message != nullptr) {
+      *error_message = k_phoenix_benchmark_adc_speed_error_invalid_command;
+    }
+    return false;
+  }
+
+  char        buffer[k_adc_speed_command_buffer_bytes] = {};
+  std::size_t length                                   = 0u;
+  while ((length < (sizeof(buffer) - 1u)) && (line[length] != '\0')) {
+    ++length;
+  }
+  if (line[length] != '\0') {
+    if (error_message != nullptr) {
+      *error_message = k_phoenix_benchmark_adc_speed_error_invalid_command;
+    }
+    return false;
+  }
+
+  std::memcpy(buffer, line, length);
+  buffer[length] = '\0';
+
+  char* token = std::strtok(buffer, k_whitespace_tokens);
+  if ((token == nullptr) || (std::strcmp(token, "adc_speed") != 0)) {
+    if (error_message != nullptr) {
+      *error_message = k_phoenix_benchmark_adc_speed_error_invalid_command;
+    }
+    return false;
+  }
+
+  PhoenixBenchmarkAdcSpeedOptions parsed_options = phoenix_benchmark_adc_speed_defaults();
+
+  while (true) {
+    token = std::strtok(nullptr, k_whitespace_tokens);
+    if (token == nullptr) {
+      break;
+    }
+
+    char* equals = std::strchr(token, '=');
+    if (equals == nullptr) {
+      if (error_message != nullptr) {
+        *error_message = k_phoenix_benchmark_adc_speed_error_invalid_command;
+      }
+      return false;
+    }
+
+    *equals           = '\0';
+    const char* key   = token;
+    const char* value = equals + 1;
+    if ((key == nullptr) || (value == nullptr) || (key[0] == '\0') || (value[0] == '\0')) {
+      if (error_message != nullptr) {
+        *error_message = k_phoenix_benchmark_adc_speed_error_invalid_value;
+      }
+      return false;
+    }
+
+    if (std::strcmp(key, "duration_ms") == 0) {
+      char*               parse_end = nullptr;
+      const unsigned long parsed    = std::strtoul(value, &parse_end, 10);
+      const bool invalid = (parse_end == value) || (*parse_end != '\0') || (parsed == 0UL) || (parsed > 0xFFFFFFFFUL);
+      if (invalid) {
+        if (error_message != nullptr) {
+          *error_message = k_phoenix_benchmark_adc_speed_error_invalid_value;
+        }
+        return false;
+      }
+      parsed_options.duration_ms           = static_cast<uint32_t>(parsed);
+      parsed_options.has_duration_override = true;
+      continue;
+    }
+
+    if ((std::strcmp(key, "enable_blocking") == 0) || (std::strcmp(key, "blocking") == 0)) {
+      bool flag_value = true;
+      if (!parse_boolean_flag(value, &flag_value)) {
+        if (error_message != nullptr) {
+          *error_message = k_phoenix_benchmark_adc_speed_error_invalid_value;
+        }
+        return false;
+      }
+      parsed_options.enable_blocking       = flag_value;
+      parsed_options.has_blocking_override = true;
+      continue;
+    }
+
+    if ((std::strcmp(key, "enable_irq") == 0) || (std::strcmp(key, "irq") == 0)) {
+      bool flag_value = true;
+      if (!parse_boolean_flag(value, &flag_value)) {
+        if (error_message != nullptr) {
+          *error_message = k_phoenix_benchmark_adc_speed_error_invalid_value;
+        }
+        return false;
+      }
+      parsed_options.enable_irq       = flag_value;
+      parsed_options.has_irq_override = true;
+      continue;
+    }
+
+    if (error_message != nullptr) {
+      *error_message = k_phoenix_benchmark_adc_speed_error_invalid_command;
+    }
+    return false;
+  }
+
+  const char* validation_error = nullptr;
+  if (!phoenix_benchmark_adc_speed_validate_options(parsed_options, &validation_error)) {
+    if (error_message != nullptr) {
+      *error_message =
+          (validation_error != nullptr) ? validation_error : k_phoenix_benchmark_adc_speed_error_invalid_value;
+    }
+    return false;
+  }
+
+  *options = parsed_options;
+  if (error_message != nullptr) {
+    *error_message = nullptr;
+  }
+  return true;
+}
+
+bool determine_command_identifier(const char* line, char* buffer, std::size_t buffer_length, bool* parsing_json_out) {
+  if ((line == nullptr) || (buffer == nullptr) || (buffer_length == 0u)) {
+    return false;
+  }
+
+  const char* trimmed = skip_leading_whitespace(line);
+  if ((trimmed == nullptr) || (*trimmed == '\0')) {
+    return false;
+  }
+
+  const bool parsing_json = (*trimmed == '{');
+  if (parsing_json_out != nullptr) {
+    *parsing_json_out = parsing_json;
+  }
+
+  if (parsing_json) {
+    return extract_command_identifier(trimmed, buffer, buffer_length);
+  }
+
+  std::size_t index = 0u;
+  while ((trimmed[index] != '\0') && !std::isspace(static_cast<unsigned char>(trimmed[index]))) {
+    if (index >= (buffer_length - 1u)) {
+      return false;
+    }
+    buffer[index] = trimmed[index];
+    ++index;
+  }
+
+  if (index == 0u) {
+    return false;
+  }
+
+  buffer[index] = '\0';
+  return true;
+}
+
+void print_adc_speed_summary(const PhoenixBenchmarkAdcSpeedExecutionStatus& status) {
+  Serial.println();
+  Serial.println(F("# summary_table"));
+
+  char line_buffer[k_phoenix_benchmark_adc_speed_summary_buffer_bytes] = {};
+  if (!phoenix_benchmark_adc_speed_format_summary_header(line_buffer, sizeof(line_buffer))) {
+    Serial.println(F("# summary_table_format_failed"));
+    return;
+  }
+  Serial.println(line_buffer);
+
+  PhoenixBenchmarkAdcSpeedSummaryRowValues blocking_row = {
+      .mode_label         = "Blocking",
+      .samples_per_second = status.blocking_samples_per_second,
+      .loop_microseconds  = status.blocking_loop_microseconds,
+      .error_count        = status.blocking_error_count,
+      .notes              = status.blocking_note,
+      .has_metrics        = status.blocking_executed,
+  };
+  if (!status.blocking_executed) {
+    blocking_row.has_metrics = false;
+    blocking_row.notes       = "disabled";
+  }
+
+  if (phoenix_benchmark_adc_speed_format_summary_row(blocking_row, line_buffer, sizeof(line_buffer))) {
+    Serial.println(line_buffer);
+  }
+  else {
+    Serial.println(F("# summary_table_row_format_failed"));
+  }
+
+  PhoenixBenchmarkAdcSpeedSummaryRowValues irq_row = {
+      .mode_label         = "IRQ",
+      .samples_per_second = status.irq_samples_per_second,
+      .loop_microseconds  = status.irq_loop_microseconds,
+      .error_count        = status.irq_error_count,
+      .notes              = status.irq_note,
+      .has_metrics        = status.irq_executed,
+  };
+  if (!status.irq_executed) {
+    irq_row.has_metrics = false;
+    irq_row.notes       = "disabled";
+  }
+
+  if (phoenix_benchmark_adc_speed_format_summary_row(irq_row, line_buffer, sizeof(line_buffer))) {
+    Serial.println(line_buffer);
+  }
+  else {
+    Serial.println(F("# summary_table_row_format_failed"));
+  }
+
+  Serial.println();
+}
+
 bool execute_channel_map_command(const PhoenixBenchmarkChannelMapOptions& options) {
   // Step 1: Log the invocation so host tooling can correlate outputs.
   Serial.print(F("# running,scenario=channel_map,sweeps="));
@@ -217,6 +513,46 @@ bool execute_channel_map_command(const PhoenixBenchmarkChannelMapOptions& option
   return true;
 }
 
+bool execute_adc_speed_command(const PhoenixBenchmarkAdcSpeedOptions& options) {
+  Serial.print(F("# running,scenario=adc_speed,duration_ms="));
+  Serial.print(options.duration_ms);
+  Serial.print(F(",modes="));
+  bool printed_mode = false;
+  if (options.enable_blocking) {
+    Serial.print(F("blocking"));
+    printed_mode = true;
+  }
+  if (options.enable_irq) {
+    if (printed_mode) {
+      Serial.print('|');
+    }
+    Serial.print(F("irq"));
+  }
+  if (!printed_mode && !options.enable_irq) {
+    Serial.print(F("none"));
+  }
+  Serial.println();
+
+  const PhoenixBenchmarkAdcSpeedExecutionStatus status = phoenix_benchmark_adc_speed_run(options, nullptr, 0u);
+
+  if (!status.success) {
+    Serial.print(F("# error,adc_speed_failed"));
+    if (status.message != nullptr) {
+      Serial.print(F(",reason="));
+      Serial.print(status.message);
+    }
+    Serial.println();
+    return false;
+  }
+
+  print_adc_speed_summary(status);
+  if (status.has_warnings) {
+    Serial.println(F("# adc_speed_warnings,reason=adc_errors"));
+  }
+  Serial.println(F("# benchmark_complete"));
+  return true;
+}
+
 void handle_command_line(const char* line) {
   // Step 1: Reject null commands and restore the ready banner.
   if (line == nullptr) {
@@ -231,21 +567,72 @@ void handle_command_line(const char* line) {
     return;
   }
 
-  // Step 3: Parse the channel map command into options the driver can consume.
-  const PhoenixBenchmarkChannelMapParseResult parse_result = phoenix_benchmark_channel_map_parse_command(line);
-  if (!parse_result.success) {
-    Serial.print(F("# error,channel_map_parse_failed"));
-    if (parse_result.error_message != nullptr) {
-      Serial.print(F(",reason="));
-      Serial.print(parse_result.error_message);
-    }
-    Serial.println();
+  // Step 3: Determine the command identifier so we can dispatch to the proper handler.
+  char command_identifier[32] = {};
+  bool parsing_json           = false;
+  if (!determine_command_identifier(line, command_identifier, sizeof(command_identifier), &parsing_json)) {
+    Serial.println(F("# error,missing_command_field"));
     Serial.println(F("# ready"));
     return;
   }
 
-  // Step 4: Execute the scenario and, regardless of outcome, restore the ready prompt.
-  if (!execute_channel_map_command(parse_result.options)) {
+  bool handled = false;
+  if (std::strcmp(command_identifier, "channel_map") == 0) {
+    const PhoenixBenchmarkChannelMapParseResult parse_result = phoenix_benchmark_channel_map_parse_command(line);
+    if (!parse_result.success) {
+      Serial.print(F("# error,channel_map_parse_failed"));
+      if (parse_result.error_message != nullptr) {
+        Serial.print(F(",reason="));
+        Serial.print(parse_result.error_message);
+      }
+      Serial.println();
+      Serial.println(F("# ready"));
+      return;
+    }
+
+    handled = execute_channel_map_command(parse_result.options);
+  }
+  else if (std::strcmp(command_identifier, "adc_speed") == 0) {
+    PhoenixBenchmarkAdcSpeedOptions adc_speed_options = {};
+    if (parsing_json) {
+      const PhoenixBenchmarkAdcSpeedParseResult parse_result = phoenix_benchmark_adc_speed_parse_command(line);
+      if (!parse_result.success) {
+        Serial.print(F("# error,adc_speed_parse_failed"));
+        if (parse_result.error_message != nullptr) {
+          Serial.print(F(",reason="));
+          Serial.print(parse_result.error_message);
+        }
+        Serial.println();
+        Serial.println(F("# ready"));
+        return;
+      }
+      adc_speed_options = parse_result.options;
+    }
+    else {
+      const char* parse_error = nullptr;
+      if (!parse_adc_speed_plain_command(line, &adc_speed_options, &parse_error)) {
+        Serial.print(F("# error,adc_speed_parse_failed"));
+        if (parse_error != nullptr) {
+          Serial.print(F(",reason="));
+          Serial.print(parse_error);
+        }
+        Serial.println();
+        Serial.println(F("# ready"));
+        return;
+      }
+    }
+
+    handled = execute_adc_speed_command(adc_speed_options);
+  }
+  else {
+    Serial.print(F("# error,unknown_command"));
+    Serial.print(F(",command="));
+    Serial.println(command_identifier);
+    Serial.println(F("# ready"));
+    return;
+  }
+
+  if (!handled) {
     Serial.println(F("# ready"));
     return;
   }
@@ -263,6 +650,8 @@ void setup() {
   // Step 2: Reset cached driver state and seed baseline defaults.
   phoenix_benchmark_channel_map_reset_state();
   phoenix_benchmark_channel_map_initialise(k_channel_map_defaults);
+  phoenix_benchmark_adc_speed_reset_state();
+  phoenix_benchmark_adc_speed_initialise(k_adc_speed_defaults);
 
   // Step 3: Clear previous measurements and present the ready prompt.
   reset_accumulators();

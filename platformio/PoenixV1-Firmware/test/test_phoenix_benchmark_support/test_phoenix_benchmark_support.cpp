@@ -1,3 +1,4 @@
+#include "adc_speed/adc_speed.hpp"
 #include "adc_speed/adc_speed_command_parser.hpp"
 #include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map_formatter.hpp"
@@ -233,6 +234,9 @@ static void test_adc_speed_parse_command_line_accepts_json_payload(void) {
   TEST_ASSERT_EQUAL_UINT32(1500u, outcome.options.duration_ms);
   TEST_ASSERT_TRUE(outcome.options.enable_blocking);
   TEST_ASSERT_TRUE(outcome.options.enable_irq);
+  TEST_ASSERT_TRUE(outcome.options.has_duration_override);
+  TEST_ASSERT_TRUE(outcome.options.has_blocking_override);
+  TEST_ASSERT_TRUE(outcome.options.has_irq_override);
   TEST_ASSERT_NULL(outcome.error_message);
 }
 
@@ -245,6 +249,148 @@ static void test_adc_speed_parse_command_line_rejects_invalid_duration(void) {
   // Step 2. The parser should reject the command and surface an invalid value error.
   TEST_ASSERT_FALSE(outcome.success);
   TEST_ASSERT_EQUAL_STRING(k_phoenix_benchmark_adc_speed_error_invalid_value, outcome.error_message);
+}
+
+static void test_adc_speed_parse_command_uses_initialised_defaults(void) {
+  // Step 1. Seed the adc speed module with non-default values.
+  phoenix_benchmark_adc_speed_reset_state();
+  const PhoenixBenchmarkAdcSpeedDefaults defaults = {
+      .duration_ms     = 2500u,
+      .enable_blocking = false,
+      .enable_irq      = true,
+  };
+  phoenix_benchmark_adc_speed_initialise(defaults);
+
+  // Step 2. Parse a minimal command and confirm defaults were applied to options.
+  const PhoenixBenchmarkAdcSpeedParseResult result =
+      phoenix_benchmark_adc_speed_parse_command("{\"command\":\"adc_speed\"}");
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_EQUAL_UINT32(defaults.duration_ms, result.options.duration_ms);
+  TEST_ASSERT_EQUAL(defaults.enable_blocking, result.options.enable_blocking);
+  TEST_ASSERT_EQUAL(defaults.enable_irq, result.options.enable_irq);
+  TEST_ASSERT_FALSE(result.options.has_duration_override);
+  TEST_ASSERT_FALSE(result.options.has_blocking_override);
+  TEST_ASSERT_FALSE(result.options.has_irq_override);
+}
+
+static void test_adc_speed_parse_command_overrides_defaults(void) {
+  // Step 1. Seed defaults and provide overrides for duration and mode flags.
+  phoenix_benchmark_adc_speed_reset_state();
+  const PhoenixBenchmarkAdcSpeedDefaults defaults = {
+      .duration_ms     = 500u,
+      .enable_blocking = true,
+      .enable_irq      = false,
+  };
+  phoenix_benchmark_adc_speed_initialise(defaults);
+
+  const char* command_line =
+      "{\"command\":\"adc_speed\",\"parameters\":{\"duration_ms\":1500,\"enable_blocking\":false,\"enable_irq\":true}}";
+
+  // Step 2. Parse and confirm overrides win over defaults.
+  const PhoenixBenchmarkAdcSpeedParseResult result = phoenix_benchmark_adc_speed_parse_command(command_line);
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_EQUAL_UINT32(1500u, result.options.duration_ms);
+  TEST_ASSERT_FALSE(result.options.enable_blocking);
+  TEST_ASSERT_TRUE(result.options.enable_irq);
+  TEST_ASSERT_TRUE(result.options.has_duration_override);
+  TEST_ASSERT_TRUE(result.options.has_blocking_override);
+  TEST_ASSERT_TRUE(result.options.has_irq_override);
+}
+
+static uint32_t g_adc_speed_fake_micros = 0u;
+
+static uint32_t adc_speed_fake_micros_provider(void) {
+  return g_adc_speed_fake_micros;
+}
+
+static bool adc_speed_blocking_only_provider(PhoenixBenchmarkAdcSpeedTestMode mode, uint32_t iteration,
+                                             int32_t* out_sample) {
+  (void) iteration;
+  if (out_sample != nullptr) {
+    *out_sample = 0;
+  }
+  if (mode != PhoenixBenchmarkAdcSpeedTestMode::kBlocking) {
+    return false;
+  }
+  g_adc_speed_fake_micros += 1000u;
+  return true;
+}
+
+static bool adc_speed_dual_mode_provider(PhoenixBenchmarkAdcSpeedTestMode mode, uint32_t iteration,
+                                         int32_t* out_sample) {
+  if (out_sample != nullptr) {
+    *out_sample = static_cast<int32_t>(iteration);
+  }
+  if (mode == PhoenixBenchmarkAdcSpeedTestMode::kBlocking) {
+    g_adc_speed_fake_micros += 750u;
+    return true;
+  }
+  g_adc_speed_fake_micros += 1500u;
+  return iteration != 2u;
+}
+
+static void adc_speed_reset_test_hooks(void) {
+  phoenix_benchmark_adc_speed_clear_sample_provider_for_test();
+  phoenix_benchmark_adc_speed_clear_micros_provider_for_test();
+  g_adc_speed_fake_micros = 0u;
+}
+
+static void test_adc_speed_run_collects_blocking_metrics(void) {
+  // Step 1. Install deterministic hooks so the run executes without hardware dependencies.
+  adc_speed_reset_test_hooks();
+  phoenix_benchmark_adc_speed_set_sample_provider_for_test(adc_speed_blocking_only_provider);
+  phoenix_benchmark_adc_speed_set_micros_provider_for_test(adc_speed_fake_micros_provider);
+
+  PhoenixBenchmarkAdcSpeedOptions options = {
+      .duration_ms           = 5u,
+      .enable_blocking       = true,
+      .enable_irq            = false,
+      .has_duration_override = true,
+      .has_blocking_override = true,
+      .has_irq_override      = true,
+  };
+
+  const PhoenixBenchmarkAdcSpeedExecutionStatus status = phoenix_benchmark_adc_speed_run(options, nullptr, 0u);
+
+  adc_speed_reset_test_hooks();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_FALSE(status.has_warnings);
+  TEST_ASSERT_NULL(status.message);
+  TEST_ASSERT_TRUE(status.blocking_executed);
+  TEST_ASSERT_FALSE(status.irq_executed);
+  TEST_ASSERT_FLOAT_WITHIN(0.1, 1000.0, status.blocking_samples_per_second);
+  TEST_ASSERT_FLOAT_WITHIN(0.1, 1000.0, status.blocking_loop_microseconds);
+  TEST_ASSERT_EQUAL_UINT32(0u, status.blocking_error_count);
+}
+
+static void test_adc_speed_run_collects_dual_mode_metrics(void) {
+  // Step 1. Exercise both blocking and IRQ paths with scripted timing.
+  adc_speed_reset_test_hooks();
+  phoenix_benchmark_adc_speed_set_sample_provider_for_test(adc_speed_dual_mode_provider);
+  phoenix_benchmark_adc_speed_set_micros_provider_for_test(adc_speed_fake_micros_provider);
+
+  PhoenixBenchmarkAdcSpeedOptions options = {
+      .duration_ms           = 9u,
+      .enable_blocking       = true,
+      .enable_irq            = true,
+      .has_duration_override = true,
+      .has_blocking_override = true,
+      .has_irq_override      = true,
+  };
+
+  const PhoenixBenchmarkAdcSpeedExecutionStatus status = phoenix_benchmark_adc_speed_run(options, nullptr, 0u);
+
+  adc_speed_reset_test_hooks();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(status.has_warnings);
+  TEST_ASSERT_TRUE(status.blocking_executed);
+  TEST_ASSERT_TRUE(status.irq_executed);
+  TEST_ASSERT_TRUE(status.blocking_samples_per_second > 0.0);
+  TEST_ASSERT_TRUE(status.irq_samples_per_second > 0.0);
+  TEST_ASSERT_EQUAL_UINT32(0u, status.blocking_error_count);
+  TEST_ASSERT_EQUAL_UINT32(1u, status.irq_error_count);
 }
 
 void setup() {
@@ -268,6 +414,10 @@ void setup() {
   RUN_TEST(test_adc_speed_format_summary_row_uses_placeholders_without_metrics);
   RUN_TEST(test_adc_speed_parse_command_line_accepts_json_payload);
   RUN_TEST(test_adc_speed_parse_command_line_rejects_invalid_duration);
+  RUN_TEST(test_adc_speed_parse_command_uses_initialised_defaults);
+  RUN_TEST(test_adc_speed_parse_command_overrides_defaults);
+  RUN_TEST(test_adc_speed_run_collects_blocking_metrics);
+  RUN_TEST(test_adc_speed_run_collects_dual_mode_metrics);
   // Step 3. Finalise Unity before idling in loop().
   UNITY_END();
 }

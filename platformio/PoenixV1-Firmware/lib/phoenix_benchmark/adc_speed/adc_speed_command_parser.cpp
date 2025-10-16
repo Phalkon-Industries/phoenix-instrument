@@ -152,7 +152,8 @@ bool parse_parameters_object(const char** cursor, PhoenixBenchmarkAdcSpeedOption
         }
         return false;
       }
-      options->duration_ms = parsed_value;
+      options->duration_ms           = parsed_value;
+      options->has_duration_override = true;
     }
     else if ((std::strcmp(key_buffer, "enable_blocking") == 0) ||
              (std::strcmp(key_buffer, "enable_blocking_mode") == 0)) {
@@ -163,7 +164,8 @@ bool parse_parameters_object(const char** cursor, PhoenixBenchmarkAdcSpeedOption
         }
         return false;
       }
-      options->enable_blocking = flag_value;
+      options->enable_blocking       = flag_value;
+      options->has_blocking_override = true;
     }
     else if ((std::strcmp(key_buffer, "enable_irq") == 0) || (std::strcmp(key_buffer, "enable_irq_mode") == 0)) {
       bool flag_value = true;
@@ -173,7 +175,8 @@ bool parse_parameters_object(const char** cursor, PhoenixBenchmarkAdcSpeedOption
         }
         return false;
       }
-      options->enable_irq = flag_value;
+      options->enable_irq       = flag_value;
+      options->has_irq_override = true;
     }
     else {
       if (error != nullptr) {
@@ -221,7 +224,8 @@ bool handle_key_value(const char* key_buffer, const char** cursor, PhoenixBenchm
       }
       return false;
     }
-    options->duration_ms = parsed_value;
+    options->duration_ms           = parsed_value;
+    options->has_duration_override = true;
     return true;
   }
 
@@ -233,7 +237,8 @@ bool handle_key_value(const char* key_buffer, const char** cursor, PhoenixBenchm
       }
       return false;
     }
-    options->enable_blocking = flag_value;
+    options->enable_blocking       = flag_value;
+    options->has_blocking_override = true;
     return true;
   }
 
@@ -245,7 +250,8 @@ bool handle_key_value(const char* key_buffer, const char** cursor, PhoenixBenchm
       }
       return false;
     }
-    options->enable_irq = flag_value;
+    options->enable_irq       = flag_value;
+    options->has_irq_override = true;
     return true;
   }
 
@@ -258,7 +264,7 @@ bool handle_key_value(const char* key_buffer, const char** cursor, PhoenixBenchm
 }  // namespace
 
 PhoenixBenchmarkAdcSpeedParseOutcome phoenix_benchmark_adc_speed_parse_command_line(const char* line) {
-  PhoenixBenchmarkAdcSpeedOptions options = {1000u, true, true};
+  PhoenixBenchmarkAdcSpeedOptions options = {1000u, true, true, false, false, false};
   const char*                     error   = nullptr;
 
   if (line == nullptr) {

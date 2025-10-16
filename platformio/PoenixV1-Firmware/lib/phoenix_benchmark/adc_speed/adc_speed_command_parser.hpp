@@ -1,14 +1,9 @@
 #ifndef PHOENIX_BENCHMARK_ADC_SPEED_COMMAND_PARSER_HPP
 #define PHOENIX_BENCHMARK_ADC_SPEED_COMMAND_PARSER_HPP
 
+#include "adc_speed.hpp"
 #include <cstddef>
 #include <cstdint>
-
-struct PhoenixBenchmarkAdcSpeedOptions {
-  uint32_t duration_ms;
-  bool     enable_blocking;
-  bool     enable_irq;
-};
 
 struct PhoenixBenchmarkAdcSpeedParseOutcome {
   bool                            success;
