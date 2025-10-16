@@ -17,6 +17,7 @@ application code stays free of device-specific helpers. The key workflow is:
 static const AdcHalConfig k_adc_config = {
     .chip_select_pin = PIN_ADC_CS,
   .spi_clock_hz    = 500000UL,
+  .irq_pin         = PIN_ADC_IRQ,
 };
 
 void example(void) {
@@ -33,6 +34,10 @@ void example(void) {
   int32_t code = 0;
   if (adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_4, 1000000u, &code) == ADC_HAL_OK) {
     // Use conversion result
+  }
+
+  if (adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_4, 250000u, &code) == ADC_HAL_OK) {
+    // Use interrupt-synchronised result
   }
 
   (void) adc_hal_enter_standby();

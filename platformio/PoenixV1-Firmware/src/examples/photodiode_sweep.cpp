@@ -112,6 +112,7 @@ static bool initialise_adc_hal(void) {
   const AdcHalConfig config = {
       .chip_select_pin = PIN_ADC_CS,
       .spi_clock_hz    = k_spi_clock_hz,
+      .irq_pin         = PIN_ADC_IRQ,  // DRDY routed to this pin on Phoenix mainboard.
   };
 
   // Step 2: Initialize the ADC and log configuration failures.

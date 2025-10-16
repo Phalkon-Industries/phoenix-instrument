@@ -11,6 +11,7 @@
 #define ADC_HAL_ERR_NOT_INITIALIZED -2
 #define ADC_HAL_ERR_BACKEND_FAILURE -3
 #define ADC_HAL_ERR_NOT_IMPLEMENTED -4
+#define ADC_HAL_ERR_TIMEOUT -5
 
 /**
  * @brief Logical ADC channels supported by the abstraction.
@@ -34,6 +35,7 @@ enum class AdcHalChannel : uint8_t {
 struct AdcHalConfig {
   int      chip_select_pin; /**< Chip select GPIO for the active ADC backend. */
   uint32_t spi_clock_hz;    /**< Desired SPI clock in Hertz. */
+  int      irq_pin;         /**< Interrupt pin wired to the ADC's DRDY output. */
 };
 
 /**
@@ -60,6 +62,11 @@ int adc_hal_apply_default_configuration(void);
  * @return ADC_HAL_OK on success, ADC_HAL_ERR_INVALID_ARG for null pointers, or backend error codes.
  */
 int adc_hal_read_single_ended(AdcHalChannel channel, uint32_t timeout_us, int32_t* code_out);
+
+/**
+ * @brief Read a single-ended channel using the interrupt-driven flow.
+ */
+int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t* code_out);
 
 /**
  * @brief Place the backend into a low-power standby state.
@@ -89,5 +96,15 @@ uint32_t adc_hal_test_default_config_call_count(void);
  * @brief Inspect the last channel passed through to the backend during a single-ended read.
  */
 AdcHalChannel adc_hal_test_last_channel_requested(void);
+
+typedef void (*adc_hal_irq_wait_hook_t)(void);
+
+void     adc_hal_test_set_irq_wait_hook(adc_hal_irq_wait_hook_t hook);
+void     adc_hal_test_stage_irq_sample(int32_t sample_code, uint8_t status_byte);
+void     adc_hal_test_fire_staged_irq(void);
+uint32_t adc_hal_test_attach_interrupt_call_count(void);
+uint32_t adc_hal_test_detach_interrupt_call_count(void);
+bool     adc_hal_test_interrupt_attached(void);
+void     adc_hal_test_reset_irq_state(void);
 
 #endif  // ADC_HAL_HPP

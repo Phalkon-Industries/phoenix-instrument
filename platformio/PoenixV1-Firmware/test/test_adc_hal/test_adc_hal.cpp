@@ -7,7 +7,13 @@
 static const AdcHalConfig k_valid_config = {
     .chip_select_pin = PIN_ADC_CS,
     .spi_clock_hz    = 500000UL,
+    .irq_pin         = PIN_ADC_IRQ,
 };
+
+static void adc_hal_irq_wait_hook_fire_once(void) {
+  // Arrange for the ISR to fire once the HAL enters its wait loop.
+  adc_hal_test_fire_staged_irq();
+}
 
 void setUp(void) {
   // Step 1. Clear any prior driver state so tests remain isolated.
@@ -33,6 +39,12 @@ static void test_adc_hal_read_requires_initialisation(void) {
   // Step 1. Attempt a conversion before calling initialise to confirm the guard.
   int32_t   sample_code = 0;
   const int return_code = adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_4, 200u, &sample_code);
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_ERR_NOT_INITIALIZED, return_code);
+}
+
+static void test_adc_hal_read_channel_irq_requires_initialisation(void) {
+  int32_t   sample_code = 0;
+  const int return_code = adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_1, 200u, &sample_code);
   TEST_ASSERT_EQUAL_INT(ADC_HAL_ERR_NOT_INITIALIZED, return_code);
 }
 
@@ -70,6 +82,54 @@ static void test_adc_hal_read_single_ended_tracks_last_channel(void) {
                           static_cast<uint8_t>(adc_hal_test_last_channel_requested()));
 }
 
+static void test_adc_hal_read_channel_irq_times_out_without_interrupt(void) {
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&k_valid_config));
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
+
+  int32_t sample_code = 0;
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_ERR_TIMEOUT,
+                        adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_3, 1000u, &sample_code));
+
+  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_attach_interrupt_call_count());
+  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_detach_interrupt_call_count());
+  TEST_ASSERT_FALSE(adc_hal_test_interrupt_attached());
+}
+
+static void test_adc_hal_read_channel_irq_returns_sample_when_isr_fires(void) {
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&k_valid_config));
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
+
+  adc_hal_test_stage_irq_sample(0x0055AA, 0u);
+  adc_hal_test_set_irq_wait_hook(adc_hal_irq_wait_hook_fire_once);
+
+  int32_t sample_code = 0;
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_2, 5000u, &sample_code));
+  TEST_ASSERT_EQUAL_INT32(0x0055AA, sample_code);
+
+  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_attach_interrupt_call_count());
+  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_detach_interrupt_call_count());
+  TEST_ASSERT_FALSE(adc_hal_test_interrupt_attached());
+
+  adc_hal_test_set_irq_wait_hook(NULL);
+}
+
+static void test_adc_hal_read_channel_irq_returns_sample_from_hardware(void) {
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&k_valid_config));
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
+
+  adc_hal_test_set_irq_wait_hook(NULL);
+
+  int32_t sample_code = 0;
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_1, 5000u, &sample_code));
+
+  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_attach_interrupt_call_count());
+  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_detach_interrupt_call_count());
+  TEST_ASSERT_FALSE(adc_hal_test_interrupt_attached());
+
+  TEST_ASSERT_GREATER_OR_EQUAL_INT32(-0x800000, sample_code);
+  TEST_ASSERT_LESS_OR_EQUAL_INT32(0x7FFFFF, sample_code);
+}
+
 void setup() {
   // Step 1. Prepare the Unity serial transport shared across firmware tests.
   UNITY_SETUP_SERIAL_DEFAULT();
@@ -78,9 +138,13 @@ void setup() {
   RUN_TEST(test_adc_hal_initialize_rejects_null_config);
   RUN_TEST(test_adc_hal_initialize_programs_backend_defaults);
   RUN_TEST(test_adc_hal_read_requires_initialisation);
+  RUN_TEST(test_adc_hal_read_channel_irq_requires_initialisation);
   RUN_TEST(test_adc_hal_enter_standby_succeeds_post_initialise);
   RUN_TEST(test_adc_hal_apply_default_configuration_is_idempotent);
   RUN_TEST(test_adc_hal_read_single_ended_tracks_last_channel);
+  RUN_TEST(test_adc_hal_read_channel_irq_times_out_without_interrupt);
+  RUN_TEST(test_adc_hal_read_channel_irq_returns_sample_when_isr_fires);
+  RUN_TEST(test_adc_hal_read_channel_irq_returns_sample_from_hardware);
   // Step 3. Signal Unity to flush results before yielding to loop().
   UNITY_END();
 }
