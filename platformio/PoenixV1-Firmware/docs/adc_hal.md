@@ -16,8 +16,8 @@ application code stays free of device-specific helpers. The key workflow is:
 
 static const AdcHalConfig k_adc_config = {
     .chip_select_pin = PIN_ADC_CS,
-    .spi_clock_hz    = 500000UL,
-    .default_gain    = AdcHalGain::ADC_HAL_GAIN_1,
+  .spi_clock_hz    = 500000UL,
+  .irq_pin         = PIN_ADC_IRQ,
 };
 
 void example(void) {
@@ -36,6 +36,10 @@ void example(void) {
     // Use conversion result
   }
 
+  if (adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_4, 250000u, &code) == ADC_HAL_OK) {
+    // Use interrupt-synchronised result
+  }
+
   (void) adc_hal_enter_standby();
   (void) adc_hal_shutdown();
 }
@@ -48,8 +52,6 @@ assertions without stubbing the MCP356x layer:
 
 - `adc_hal_test_default_config_call_count()` returns how many times the backend
   default configuration helper ran.
-- `adc_hal_test_last_gain_requested()` reveals the most recent gain forwarded to
-  the MCP356x driver.
 - `adc_hal_test_last_channel_requested()` records the most recent single-ended
   channel passed to the backend.
 

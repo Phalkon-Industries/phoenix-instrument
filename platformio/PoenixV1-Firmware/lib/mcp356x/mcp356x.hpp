@@ -28,6 +28,13 @@
 #define MCP356X_REG_RESERVED_E 0x0E
 #define MCP356X_REG_CRCREG 0x0F  // 16-bit (read only)
 
+// ===================== IRQ Bit Masks ========================================
+#define MCP356X_IRQ_DRDY_MASK 0x40u
+#define MCP356X_IRQ_POR_MASK 0x01u
+#define MCP356X_IRQ_MODE_MASK 0x0Cu
+#define MCP356X_IRQ_EN_FASTCMD_MASK 0x02u
+#define MCP356X_IRQ_EN_CONV_START_MASK 0x01u
+
 // ===================== Fast Command Encodings (CMD[5:2]) =======================
 // When Type bits (CMD[1:0]) = 00 (Fast Command)
 #define MCP356X_FASTCMD_START 0b1010
@@ -127,11 +134,17 @@ int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t leng
  */
 int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size_t length, uint8_t* status_byte);
 
-// ===================== Default Config Preset ==================================
-#define MCP356X_CONFIG0_DEFAULT 0b10110011  // Internal REF, continuous conversion, standby disabled
-#define MCP356X_CONFIG1_DEFAULT 0b00001100  // OSR=4096, boost off (high-resolution mode)
-#define MCP356X_CONFIG2_DEFAULT 0b10001011  // BOOST=10b, gain=1 (001b), AZ_MUX/AZ_REF enabled, LSB must stay 1
-#define MCP356X_CONFIG3_DEFAULT 0b00000000  // No auto-sequence, default conversion delay
+// ===================== Power-On Reset Register Images ==================================
+#define MCP356X_CONFIG0_POR 0b11000000  // Datasheet POR CONFIG0 value (confirmed on Phoenix hardware)
+#define MCP356X_CONFIG1_POR 0b00001100  // Datasheet POR CONFIG1 value (OSR=256, PRE=1)
+#define MCP356X_CONFIG2_POR 0b10001011  // Datasheet POR CONFIG2 value
+#define MCP356X_CONFIG3_POR 0b00000000  // Datasheet POR CONFIG3 value
+
+// ===================== Library Default Config Preset ==================================
+#define MCP356X_CONFIG0_DEFAULT 0b10110011  // Phoenix baseline CONFIG0 (internal reference, standby disabled)
+#define MCP356X_CONFIG1_DEFAULT 0b00011100  // Phoenix baseline CONFIG1 (OSR 4096, AMCLK=MCLK)
+#define MCP356X_CONFIG2_DEFAULT 0b10001011  // Phoenix baseline CONFIG2 (BOOST=10b, gain=1, auto-zero enabled)
+#define MCP356X_CONFIG3_DEFAULT 0b00000000  // Phoenix baseline CONFIG3 (no auto-sequence, default delay)
 
 // Gain control resides in CONFIG2.GAIN[2:0]. Provide a typed enum so callers cannot
 // pass arbitrary bit patterns. The hardware exposes a 1/3x mode alongside the usual
@@ -147,6 +160,74 @@ enum class mcp356x_gain : uint8_t {
   gain_x64  = 0b111,
 };
 
+// Oversampling ratio encodings map directly to CONFIG1.OSR[3:0]. Values follow
+// datasheet Table 8-3 ordering so callers cannot accidentally write reserved
+// bit patterns into CONFIG1.
+enum class mcp356x_osr : uint8_t {
+  osr_32    = 0b0000,
+  osr_64    = 0b0001,
+  osr_128   = 0b0010,
+  osr_256   = 0b0011,  // (POR default))
+  osr_512   = 0b0100,
+  osr_1024  = 0b0101,
+  osr_2048  = 0b0110,
+  osr_4096  = 0b0111,
+  osr_8192  = 0b1000,
+  osr_16384 = 0b1001,
+  osr_20480 = 0b1010,
+  osr_24576 = 0b1011,
+  osr_40960 = 0b1100,
+  osr_49152 = 0b1101,
+  osr_81920 = 0b1110,
+  osr_98304 = 0b1111,
+};
+
+// Prescaler encodings map to CONFIG1.PRE[1:0] and control the analog master clock.
+enum class mcp356x_prescaler : uint8_t {
+  mclk_div1 = 0b00,
+  mclk_div2 = 0b01,
+  mclk_div4 = 0b10,
+  mclk_div8 = 0b11,
+};
+
+// Conversion mode encodings map to CONFIG3.CONV_MODE[1:0]. 0b11 is reserved per
+// the datasheet, so callers must never request it.
+enum class mcp356x_conversion_mode : uint8_t {
+  continuous       = 0b00,
+  oneshot_standby  = 0b01,
+  oneshot_shutdown = 0b10,
+};
+
+// Data format encodings map to CONFIG3.DATA_FORMAT[1:0] and control how the ADC
+// presents conversion results on the SPI bus.
+enum class mcp356x_data_format : uint8_t {
+  data24             = 0b00,
+  data32_left        = 0b01,
+  data32_signed      = 0b10,
+  data32_signed_chid = 0b11,
+};
+
+// IRQ mode encodings map to IRQ_MODE[1:0] and select between IRQ/MDAT output
+// behaviour and inactive-state polarity.
+enum class mcp356x_irq_mode : uint8_t {
+  irq_high_z     = 0b00,  // IRQ output, inactive high-Z (requires pull-up).
+  irq_push_pull  = 0b01,  // IRQ output, inactive driven high.
+  mdat_high_z    = 0b10,  // MDAT output with POR/CRC interrupts.
+  mdat_push_pull = 0b11,  // MDAT output, inactive driven high.
+};
+
+// Aggregated configuration payload used by the unified initialisation helper.
+struct mcp356x_settings {
+  mcp356x_gain            gain;
+  mcp356x_osr             osr;
+  mcp356x_prescaler       prescaler;
+  mcp356x_conversion_mode conversion_mode;
+  mcp356x_data_format     data_format;
+  mcp356x_irq_mode        irq_mode;
+  bool                    irq_fastcmd_enabled;
+  bool                    irq_conversion_start_interrupt_enabled;
+};
+
 /**
  * @brief Update CONFIG2.GAIN[2:0] while keeping other CONFIG2 fields intact.
  *
@@ -154,7 +235,7 @@ enum class mcp356x_gain : uint8_t {
  * AZ_MUX, AZ_REF, and the mandatory bit0=1 remain untouched. The device must be
  * initialised before use.
  *
- * @param gain           Desired hardware gain (1/3× through 64×).
+ * @param gain Desired hardware gain (1/3× through 64×).
  * @return MCP356X_OK on success, or a negative error propagated from register
  *         read/write helpers.
  */
@@ -170,6 +251,120 @@ int mcp356x_set_gain(mcp356x_gain gain);
 int mcp356x_get_gain(mcp356x_gain* out_gain);
 
 /**
+ * @brief Toggle CONFIG2.AZ_MUX while preserving BOOST/GAIN fields.
+ */
+int mcp356x_set_auto_zero_mux(bool enable);
+
+/**
+ * @brief Read CONFIG2.AZ_MUX and report whether input auto-zero is enabled.
+ */
+int mcp356x_get_auto_zero_mux(bool* out_enable);
+
+/**
+ * @brief Toggle CONFIG2.AZ_REF while preserving BOOST/GAIN fields.
+ */
+int mcp356x_set_auto_zero_reference(bool enable);
+
+/**
+ * @brief Read CONFIG2.AZ_REF and report the reference auto-zero state.
+ */
+int mcp356x_get_auto_zero_reference(bool* out_enable);
+
+/**
+ * @brief Configure IRQ_MODE[1:0] to select IRQ/MDAT behaviour and polarity.
+ */
+int mcp356x_set_irq_mode(mcp356x_irq_mode mode);
+
+/**
+ * @brief Read IRQ_MODE[1:0] and decode it into the IRQ mode enum.
+ */
+int mcp356x_get_irq_mode(mcp356x_irq_mode* out_mode);
+
+/**
+ * @brief Enable or disable fast-command support via IRQ.EN_FASTCMD.
+ */
+int mcp356x_set_irq_fastcmd_enabled(bool enable);
+
+/**
+ * @brief Report the current setting of IRQ.EN_FASTCMD.
+ */
+int mcp356x_get_irq_fastcmd_enabled(bool* out_enable);
+
+/**
+ * @brief Enable or disable conversion-start interrupts via IRQ.EN_STP.
+ */
+int mcp356x_set_irq_conversion_start_interrupt_enabled(bool enable);
+
+/**
+ * @brief Report the current state of IRQ.EN_STP.
+ */
+int mcp356x_get_irq_conversion_start_interrupt_enabled(bool* out_enable);
+
+/**
+ * @brief Update CONFIG1.OSR[3:0] while keeping prescaler and reserved bits intact.
+ *
+ * Performs a read-modify-write of CONFIG1 so the prescaler (PRE[1:0]) remains
+ * untouched and the reserved bits [1:0] stay cleared. The driver must be
+ * initialised before use.
+ *
+ * @param osr Requested oversampling ratio.
+ * @return MCP356X_OK on success or a negative error propagated from register
+ *         helpers.
+ */
+int mcp356x_set_osr(mcp356x_osr osr);
+
+/**
+ * @brief Read CONFIG1.OSR[3:0] and decode it into the OSR enum.
+ *
+ * @param out_osr Pointer receiving the decoded oversampling ratio.
+ * @return MCP356X_OK on success, MCP356X_ERR_INVALID_ARG when @p out_osr is
+ *         NULL, or a propagated error from mcp356x_read_register.
+ */
+int mcp356x_get_osr(mcp356x_osr* out_osr);
+
+/**
+ * @brief Update CONFIG1.PRE[1:0] while preserving OSR and reserved bits.
+ *
+ * Executes a read-modify-write of CONFIG1 so OSR[3:0] and the reserved LSBs
+ * remain untouched. Rejects invalid enum values before touching hardware.
+ *
+ * @param prescaler Requested prescaler selection (MCLK/1 through MCLK/8).
+ * @return MCP356X_OK on success or a negative driver error code.
+ */
+int mcp356x_set_prescaler(mcp356x_prescaler prescaler);
+
+/**
+ * @brief Read CONFIG1.PRE[1:0] and decode it into the prescaler enum.
+ *
+ * @param out_prescaler Pointer receiving the decoded prescaler value.
+ * @return MCP356X_OK on success, MCP356X_ERR_INVALID_ARG when @p out_prescaler is
+ *         NULL, or a propagated register access error.
+ */
+int mcp356x_get_prescaler(mcp356x_prescaler* out_prescaler);
+
+/**
+ * @brief Update CONFIG3 conversion mode and data format selections.
+ *
+ * Applies the requested conversion sequencing mode and SPI output width while
+ * preserving CRC-related bits. The helper rejects reserved conversion-mode
+ * encodings before touching hardware and requires prior initialisation.
+ */
+int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_format format);
+
+/**
+ * @brief Read CONFIG3 and decode the current conversion mode/data format pair.
+ *
+ * Populates the caller-provided storage with the decoded enums. Requires
+ * driver initialisation and validates the output pointers before use.
+ */
+int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_data_format* out_format);
+
+mcp356x_data_format mcp356x_test_cached_data_format(void);
+uint8_t             mcp356x_test_last_data_length(void);
+void                mcp356x_test_reset_diagnostics(void);
+uint32_t            mcp356x_test_last_raw_word(void);
+
+/**
  * @brief Configure the ADC MUX for a single-ended channel relative to AGND.
  *
  * Helps application code quickly select a channel without exposing raw register
@@ -182,27 +377,35 @@ int mcp356x_get_gain(mcp356x_gain* out_gain);
 int mcp356x_select_single_ended_channel(uint8_t channel_index);
 
 /**
- * @brief Write a curated default configuration into CONFIG0-3 registers.
+ * @brief Apply the curated default configuration to CONFIG0-3 registers.
  *
- * Centralises the "golden" register image used during application bring-up so
- * firmware and tests share a consistent baseline. This helper preserves the
- * legacy behaviour of programming CONFIG2 with gain=1×.
+ * Convenience wrapper that programmes the Phoenix baseline register image:
+ * gain = 1×, OSR = 4096, prescaler = MCLK/1.
  *
- * @return MCP356X_OK if all four writes succeed, otherwise propagates the first error encountered.
+ * @return MCP356X_OK if all writes succeed, otherwise propagates the first error encountered.
  */
 int mcp356x_apply_default_config(void);
 
 /**
- * @brief Apply the default configuration while overriding CONFIG2.GAIN[2:0].
+ * @brief Configure CONFIG0-3 using a caller-specified settings struct.
  *
- * Allows firmware to bootstrap the ADC into the standard Phoenix baseline but
- * with a caller-specified PGA gain. BOOST, AZ_MUX, AZ_REF, and the reserved LSB
- * remain fixed to their datasheet defaults.
+ * Applies the standard Phoenix defaults for CONFIG0/CONFIG3 while populating
+ * CONFIG1/CONFIG2 from the provided gain, OSR, and prescaler selections.
+ * The driver must be initialised beforehand.
  *
- * @param gain Desired hardware gain (1/3× through 64×).
- * @return MCP356X_OK if all four writes succeed, otherwise propagates the first error encountered.
+ * @param settings Pointer to the desired configuration payload.
+ * @return MCP356X_OK on success, a negative driver error on failure, or
+ *         MCP356X_ERR_INVALID_ARG when @p settings is NULL or contains invalid values.
  */
-int mcp356x_apply_default_config_with_gain(mcp356x_gain gain);
+int mcp356x_apply_settings(const mcp356x_settings* settings);
+
+int mcp356x_set_offset_calibration(int32_t code);
+
+int mcp356x_get_offset_calibration(int32_t* out_code);
+
+int mcp356x_set_gain_calibration(uint32_t code);
+
+int mcp356x_get_gain_calibration(uint32_t* out_code);
 
 /**
  * @brief Test-only hook to clear the driver's initialisation flag.

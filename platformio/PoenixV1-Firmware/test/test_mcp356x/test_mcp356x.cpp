@@ -9,7 +9,10 @@
 // Expected status byte when issuing FAST START command (device address bits = 0b01)
 #define MCP356X_EXPECTED_STATUS_START 0x17u
 
-static const uint32_t k_spi_clock_hz = 500000UL;
+static const uint32_t k_spi_clock_hz           = 500000UL;
+static const uint8_t  k_config1_prescaler_mask = 0xC0u;
+static const uint8_t  k_config2_az_mux_mask    = 0x04u;
+static const uint8_t  k_config2_az_ref_mask    = 0x02u;
 
 static void test_fast_command_start_status(void) {
   // Step 1. Trigger a full reset so the ADC starts from power-on defaults.
@@ -32,7 +35,7 @@ static void test_config0_register_roundtrip(void) {
 
   // Step 2. Flip a safe OSR bit to guarantee the register value changes.
   const uint8_t config0_flip_mask = 0x04u;
-  uint8_t       config0_modified  = (uint8_t)(config0_before ^ config0_flip_mask);
+  uint8_t       config0_modified  = (uint8_t) (config0_before ^ config0_flip_mask);
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG0, &config0_modified, 1u, NULL));
 
   // Step 3. Read the register back to verify the write took effect.
@@ -43,6 +46,26 @@ static void test_config0_register_roundtrip(void) {
 
   // Step 4. Restore the original value so later tests see the baseline configuration.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG0, &config0_before, 1u, NULL));
+}
+
+static void test_full_reset_restores_por_defaults(void) {
+  // Step 1. Assert a full reset to force the ADC back to its POR image.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+
+  // Step 2. Verify CONFIG0-3 match the documented power-on reset values.
+  uint8_t config_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG0, &config_value, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG0_POR, config_value);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config_value, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG1_POR, config_value);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config_value, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG2_POR, config_value);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config_value, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_POR, config_value);
 }
 
 static void test_single_ended_ch0_conversion(void) {
@@ -61,7 +84,7 @@ static void test_single_ended_ch0_conversion(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG3, &config3, 1u, NULL));
 
   // Step 3. Route channel 0 against AGND via the MUX register.
-  const uint8_t mux_single_ch0 = (uint8_t)((MCP356X_MUX_CH0 << 4) | MCP356X_MUX_AGND);
+  const uint8_t mux_single_ch0 = (uint8_t) ((MCP356X_MUX_CH0 << 4) | MCP356X_MUX_AGND);
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_MUX, &mux_single_ch0, 1u, NULL));
 
   // Step 4. Kick off a conversion and poll the data register for fresh data.
@@ -85,7 +108,7 @@ static void test_single_ended_ch0_conversion(void) {
   TEST_ASSERT_TRUE_MESSAGE(read_back_nonzero, "ADC data register remained zero; conversion likely failed");
 
   // Step 6. Sign-extend the 24-bit result and validate it sits within the expected range.
-  int32_t raw_value = (int32_t)((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
+  int32_t raw_value = (int32_t) ((adc_bytes[0] << 16) | (adc_bytes[1] << 8) | adc_bytes[2]);
   if (raw_value & 0x800000) {
     raw_value |= 0xFF000000;
   }
@@ -121,32 +144,116 @@ static void test_apply_default_config_writes_expected_values(void) {
   TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG2_DEFAULT, config_value);
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config_value, 1u, NULL));
-  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_DEFAULT, config_value);
+  const uint8_t expected_config3 =
+      (uint8_t) (((static_cast<uint8_t>(mcp356x_conversion_mode::oneshot_shutdown) & 0x03u) << 6) |
+                 ((static_cast<uint8_t>(mcp356x_data_format::data24) & 0x03u) << 4) |
+                 (MCP356X_CONFIG3_DEFAULT & 0x0Fu));
+  TEST_ASSERT_EQUAL_HEX8(expected_config3, config_value);
 }
 
-static void test_apply_default_config_with_gain_overrides_pga(void) {
-  // Step 1. Apply the default configuration while requesting a 32× PGA gain.
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config_with_gain(mcp356x_gain::gain_x32));
+static void test_apply_default_config_programs_irq_defaults(void) {
+  // Step 1. Apply the baseline configuration helper.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
 
-  // Step 2. Confirm the CONFIG registers match the expected bit patterns with the gain override.
+  // Step 2. Inspect the IRQ register to ensure mode and enables match expectations.
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  const uint8_t expected_lower_bits =
+      (uint8_t) ((static_cast<uint8_t>(mcp356x_irq_mode::irq_push_pull) << 2) | MCP356X_IRQ_EN_FASTCMD_MASK);
+  const uint8_t inspect_mask =
+      (uint8_t) (MCP356X_IRQ_MODE_MASK | MCP356X_IRQ_EN_FASTCMD_MASK | MCP356X_IRQ_EN_CONV_START_MASK);
+  TEST_ASSERT_BITS(inspect_mask, expected_lower_bits, irq_value);
+
+  // Step 3. Cross-check the public getters mirror the programmed state.
+  mcp356x_irq_mode reported_mode = mcp356x_irq_mode::irq_high_z;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_mode(&reported_mode));
+  TEST_ASSERT_EQUAL(mcp356x_irq_mode::irq_push_pull, reported_mode);
+
+  bool fastcmd_enabled = false;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_fastcmd_enabled(&fastcmd_enabled));
+  TEST_ASSERT_TRUE(fastcmd_enabled);
+
+  bool start_interrupt_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_conversion_start_interrupt_enabled(&start_interrupt_enabled));
+  TEST_ASSERT_FALSE(start_interrupt_enabled);
+}
+
+static void test_apply_settings_programs_requested_fields(void) {
+  // Step 0. Reset to the default configuration to ensure a known baseline.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 1. Apply the configuration using the unified helper.
+  const mcp356x_settings settings = {
+      mcp356x_gain::gain_x32,
+      mcp356x_osr::osr_2048,
+      mcp356x_prescaler::mclk_div4,
+      mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data32_signed,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_settings(&settings));
+
+  // Step 2. Verify CONFIG0-3 reflect the requested combination.
   uint8_t config_value = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG0, &config_value, 1u, NULL));
   TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG0_DEFAULT, config_value);
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config_value, 1u, NULL));
-  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG1_DEFAULT, config_value);
+  const uint8_t expected_config1 = (uint8_t) (((static_cast<uint8_t>(mcp356x_prescaler::mclk_div4) & 0x03u) << 6) |
+                                              (static_cast<uint8_t>(mcp356x_osr::osr_2048) << 2));
+  TEST_ASSERT_EQUAL_HEX8(expected_config1, config_value);
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config_value, 1u, NULL));
-  const uint8_t expected_config2 = (uint8_t)((MCP356X_CONFIG2_DEFAULT & 0xC7u) | (0b110u << 3) | 0x01u);
+  const uint8_t expected_config2 = (uint8_t) ((MCP356X_CONFIG2_DEFAULT & 0xC7u) | (0b110u << 3) | 0x01u);
   TEST_ASSERT_EQUAL_HEX8(expected_config2, config_value);
 
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config_value, 1u, NULL));
-  TEST_ASSERT_EQUAL_HEX8(MCP356X_CONFIG3_DEFAULT, config_value);
+  const uint8_t expected_config3 =
+      (uint8_t) (((static_cast<uint8_t>(mcp356x_conversion_mode::continuous) & 0x03u) << 6) |
+                 ((static_cast<uint8_t>(mcp356x_data_format::data32_signed) & 0x03u) << 4) |
+                 (MCP356X_CONFIG3_DEFAULT & 0x0Fu));
+  TEST_ASSERT_EQUAL_HEX8(expected_config3, config_value);
+}
 
-  // Step 3. Use the getter to confirm the runtime gain matches the requested level.
-  mcp356x_gain reported_gain = mcp356x_gain::gain_x1;
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_gain(&reported_gain));
-  TEST_ASSERT_EQUAL(mcp356x_gain::gain_x32, reported_gain);
+static void test_apply_settings_programs_irq_fields(void) {
+  // Step 0. Apply defaults to guarantee a known register image.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 1. Request a custom IRQ configuration through the shared settings helper.
+  const mcp356x_settings settings = {
+      mcp356x_gain::gain_x2,
+      mcp356x_osr::osr_1024,
+      mcp356x_prescaler::mclk_div2,
+      mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data24,
+      mcp356x_irq_mode::mdat_high_z,
+      false,
+      true,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_settings(&settings));
+
+  // Step 2. Inspect the IRQ register to confirm the mode and enable bits match the request.
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  const uint8_t expected_lower_bits =
+      (uint8_t) ((static_cast<uint8_t>(settings.irq_mode) << 2) |
+                 (settings.irq_fastcmd_enabled ? MCP356X_IRQ_EN_FASTCMD_MASK : 0u) |
+                 (settings.irq_conversion_start_interrupt_enabled ? MCP356X_IRQ_EN_CONV_START_MASK : 0u));
+  const uint8_t inspect_mask =
+      (uint8_t) (MCP356X_IRQ_MODE_MASK | MCP356X_IRQ_EN_FASTCMD_MASK | MCP356X_IRQ_EN_CONV_START_MASK);
+  TEST_ASSERT_BITS(inspect_mask, expected_lower_bits, irq_value);
+
+  // Step 3. Validate the getters decode the stored configuration correctly.
+  mcp356x_irq_mode reported_mode = mcp356x_irq_mode::irq_push_pull;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_mode(&reported_mode));
+  TEST_ASSERT_EQUAL(settings.irq_mode, reported_mode);
+
+  bool fastcmd_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_fastcmd_enabled(&fastcmd_enabled));
+  TEST_ASSERT_EQUAL(settings.irq_fastcmd_enabled, fastcmd_enabled);
+
+  bool start_interrupt_enabled = false;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_conversion_start_interrupt_enabled(&start_interrupt_enabled));
+  TEST_ASSERT_EQUAL(settings.irq_conversion_start_interrupt_enabled, start_interrupt_enabled);
 }
 
 static void test_set_gain_updates_config2_gain_bits(void) {
@@ -163,13 +270,617 @@ static void test_set_gain_updates_config2_gain_bits(void) {
 
   uint8_t config2_after = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_after, 1u, NULL));
-  const uint8_t expected_config2 = (uint8_t)((config2_before & 0xC7u) | (0b100u << 3) | 0x01u);
+  const uint8_t expected_config2 = (uint8_t) ((config2_before & 0xC7u) | (0b100u << 3) | 0x01u);
   TEST_ASSERT_EQUAL_HEX8(expected_config2, config2_after);
 
   // Step 4. Ensure the helper also updates the cached gain value.
   mcp356x_gain reported_gain = mcp356x_gain::gain_x1;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_gain(&reported_gain));
   TEST_ASSERT_EQUAL(mcp356x_gain::gain_x8, reported_gain);
+}
+
+static void test_set_auto_zero_mux_updates_config2_bit(void) {
+  // Step 1. Apply the default configuration to start from a known baseline.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Capture CONFIG2 before toggling the mux auto-zero bit.
+  uint8_t config2_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_before, 1u, NULL));
+
+  // Step 3. Enable the MUX auto-zero path and confirm CONFIG2 reflects the change.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_mux(true));
+  uint8_t config2_enabled = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_enabled, 1u, NULL));
+  const uint8_t expected_enabled = (uint8_t) ((config2_before | k_config2_az_mux_mask) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_enabled, config2_enabled);
+
+  // Step 4. Disable the path again and ensure the bit clears without disturbing others.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_mux(false));
+  uint8_t config2_disabled = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_disabled, 1u, NULL));
+  const uint8_t expected_disabled = (uint8_t) ((config2_enabled & (uint8_t) (~k_config2_az_mux_mask)) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_disabled, config2_disabled);
+}
+
+static void test_set_auto_zero_reference_updates_config2_bit(void) {
+  // Step 1. Apply the default configuration to ensure a known CONFIG2 image.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Capture CONFIG2 before altering the reference auto-zero bit.
+  uint8_t config2_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_before, 1u, NULL));
+
+  // Step 3. Disable the reference auto-zero path and verify CONFIG2 updates.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_reference(false));
+  uint8_t config2_disabled = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_disabled, 1u, NULL));
+  const uint8_t expected_disabled = (uint8_t) ((config2_before & (uint8_t) (~k_config2_az_ref_mask)) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_disabled, config2_disabled);
+
+  // Step 4. Re-enable the path and ensure the bit returns high while others remain untouched.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_reference(true));
+  uint8_t config2_enabled = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_enabled, 1u, NULL));
+  const uint8_t expected_enabled = (uint8_t) ((config2_disabled | k_config2_az_ref_mask) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_enabled, config2_enabled);
+}
+
+static void test_get_auto_zero_helpers_read_current_settings(void) {
+  // Step 1. Apply defaults then drive a known auto-zero combination via setters.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_mux(true));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_auto_zero_reference(false));
+
+  // Step 2. Read back each state individually and confirm decoding.
+  bool mux_enabled       = false;
+  bool reference_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_auto_zero_mux(&mux_enabled));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_auto_zero_reference(&reference_enabled));
+  TEST_ASSERT_TRUE(mux_enabled);
+  TEST_ASSERT_FALSE(reference_enabled);
+}
+
+static void test_auto_zero_helpers_validate_inputs(void) {
+  // Step 1. Ensure the driver starts from a known initialised state.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Reject null storage in the getters.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_auto_zero_mux(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_auto_zero_reference(NULL));
+
+  // Step 3. Verify helpers guard against use before initialisation.
+  mcp356x_force_uninitialized_for_test();
+  bool az_state = false;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_auto_zero_mux(true));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_auto_zero_mux(&az_state));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_auto_zero_reference(true));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_auto_zero_reference(&az_state));
+
+  // Step 4. Restore initialised state for subsequent tests.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
+static void test_irq_helpers_validate_inputs(void) {
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_irq_mode(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_irq_fastcmd_enabled(NULL));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_irq_conversion_start_interrupt_enabled(NULL));
+
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_irq_mode(static_cast<mcp356x_irq_mode>(0x04u)));
+
+  mcp356x_force_uninitialized_for_test();
+
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_irq_mode(mcp356x_irq_mode::irq_high_z));
+  mcp356x_irq_mode mode = mcp356x_irq_mode::irq_high_z;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_irq_mode(&mode));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_irq_fastcmd_enabled(true));
+  bool fastcmd_enabled = false;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_irq_fastcmd_enabled(&fastcmd_enabled));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_irq_conversion_start_interrupt_enabled(true));
+  bool start_interrupt_enabled = false;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED,
+                    mcp356x_get_irq_conversion_start_interrupt_enabled(&start_interrupt_enabled));
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
+static void test_irq_mode_roundtrip(void) {
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_mode(mcp356x_irq_mode::irq_push_pull));
+
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  const uint8_t expected_push_pull_bits = (uint8_t) (static_cast<uint8_t>(mcp356x_irq_mode::irq_push_pull) << 2);
+  TEST_ASSERT_BITS(MCP356X_IRQ_MODE_MASK, expected_push_pull_bits, irq_value);
+
+  mcp356x_irq_mode reported_mode = mcp356x_irq_mode::irq_high_z;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_mode(&reported_mode));
+  TEST_ASSERT_EQUAL(mcp356x_irq_mode::irq_push_pull, reported_mode);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_mode(mcp356x_irq_mode::mdat_push_pull));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  const uint8_t expected_mdat_bits = (uint8_t) (static_cast<uint8_t>(mcp356x_irq_mode::mdat_push_pull) << 2);
+  TEST_ASSERT_BITS(MCP356X_IRQ_MODE_MASK, expected_mdat_bits, irq_value);
+}
+
+static void test_irq_fastcmd_flag_roundtrip(void) {
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_fastcmd_enabled(false));
+
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  TEST_ASSERT_BITS(MCP356X_IRQ_EN_FASTCMD_MASK, 0u, irq_value);
+
+  bool fastcmd_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_fastcmd_enabled(&fastcmd_enabled));
+  TEST_ASSERT_FALSE(fastcmd_enabled);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_fastcmd_enabled(true));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  TEST_ASSERT_BITS(MCP356X_IRQ_EN_FASTCMD_MASK, MCP356X_IRQ_EN_FASTCMD_MASK, irq_value);
+}
+
+static void test_irq_conversion_start_interrupt_flag_roundtrip(void) {
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_conversion_start_interrupt_enabled(false));
+
+  uint8_t irq_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  TEST_ASSERT_BITS(MCP356X_IRQ_EN_CONV_START_MASK, 0u, irq_value);
+
+  bool start_interrupt_enabled = true;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_irq_conversion_start_interrupt_enabled(&start_interrupt_enabled));
+  TEST_ASSERT_FALSE(start_interrupt_enabled);
+
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_irq_conversion_start_interrupt_enabled(true));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
+  TEST_ASSERT_BITS(MCP356X_IRQ_EN_CONV_START_MASK, MCP356X_IRQ_EN_CONV_START_MASK, irq_value);
+}
+
+static void test_set_osr_updates_config1_bits(void) {
+  // Step 1. Apply the baseline configuration to establish known CONFIG1 bits.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Snapshot CONFIG1 before toggling the oversampling ratio.
+  uint8_t config1_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_before, 1u, NULL));
+
+  // Step 3. Request a higher OSR level and then read CONFIG1 back.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_osr(mcp356x_osr::osr_8192));
+
+  uint8_t config1_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
+
+  // Step 4. Verify PRE bits are preserved, OSR bits match the request, and reserved bits stay cleared.
+  const uint8_t expected_config1 =
+      (uint8_t) ((config1_before & 0xC0u) | (static_cast<uint8_t>(mcp356x_osr::osr_8192) << 2));
+  TEST_ASSERT_EQUAL_HEX8(expected_config1, config1_after);
+}
+
+static void test_get_osr_reads_current_setting(void) {
+  // Step 1. Load the default configuration and then select an alternate OSR.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_osr(mcp356x_osr::osr_2048));
+
+  // Step 2. Retrieve the cached OSR and confirm it matches the setting.
+  mcp356x_osr reported_osr = mcp356x_osr::osr_4096;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_osr(&reported_osr));
+  TEST_ASSERT_EQUAL(mcp356x_osr::osr_2048, reported_osr);
+}
+
+static void test_default_config_helpers_program_expected_osr(void) {
+  // Step 1. Apply the legacy default configuration and confirm the OSR field is 4096.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  mcp356x_osr default_osr = mcp356x_osr::osr_32;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_osr(&default_osr));
+  TEST_ASSERT_EQUAL(mcp356x_osr::osr_4096, default_osr);
+
+  // Step 2. Apply the settings helper with both gain and OSR overrides and inspect CONFIG1/CONFIG2.
+  const mcp356x_settings settings = {
+      mcp356x_gain::gain_x8,        mcp356x_osr::osr_8192,
+      mcp356x_prescaler::mclk_div1, mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data24,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_settings(&settings));
+
+  uint8_t config1_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL));
+  const uint8_t expected_config1 = (uint8_t) ((static_cast<uint8_t>(mcp356x_prescaler::mclk_div1) << 6) |
+                                              (static_cast<uint8_t>(mcp356x_osr::osr_8192) << 2));
+  TEST_ASSERT_EQUAL_HEX8(expected_config1, config1_value);
+
+  uint8_t config2_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL));
+  const uint8_t expected_config2 = (uint8_t) ((MCP356X_CONFIG2_DEFAULT & 0xC7u) | (0b100u << 3) | 0x01u);
+  TEST_ASSERT_EQUAL_HEX8(expected_config2, config2_value);
+}
+
+static void test_offset_calibration_round_trip(void) {
+  // Step 1. Apply defaults to guarantee deterministic baseline writes.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Program a negative offset code and ensure the register reflects it.
+  const int32_t offset_code = -0x12345;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_offset_calibration(offset_code));
+
+  uint8_t raw_offset[3] = {0u};
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_OFFSETCAL, raw_offset, sizeof(raw_offset), NULL));
+  const uint32_t expected_encoded = (uint32_t) (offset_code & 0xFFFFFF);
+  TEST_ASSERT_EQUAL_HEX8((expected_encoded >> 16) & 0xFFu, raw_offset[0]);
+  TEST_ASSERT_EQUAL_HEX8((expected_encoded >> 8) & 0xFFu, raw_offset[1]);
+  TEST_ASSERT_EQUAL_HEX8(expected_encoded & 0xFFu, raw_offset[2]);
+
+  // Step 3. Read the value back through the helper and assert sign extension.
+  int32_t reported_offset = 0;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_offset_calibration(&reported_offset));
+  TEST_ASSERT_EQUAL(offset_code, reported_offset);
+}
+
+static void test_offset_calibration_rejects_invalid_arguments(void) {
+  // Step 1. Confirm pointer validation rejects null storage.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_offset_calibration(NULL));
+
+  // Step 2. Reject values outside the signed 24-bit range.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_offset_calibration(0x00800000));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_offset_calibration(-0x00800001));
+}
+
+static void test_gain_calibration_round_trip(void) {
+  // Step 1. Apply defaults so writes begin from the POR state.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Program a gain calibration code and verify the register image.
+  const uint32_t gain_code = 0x7F1234u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_gain_calibration(gain_code));
+
+  uint8_t raw_gain[3] = {0u};
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_GAINCAL, raw_gain, sizeof(raw_gain), NULL));
+  TEST_ASSERT_EQUAL_HEX8((gain_code >> 16) & 0xFFu, raw_gain[0]);
+  TEST_ASSERT_EQUAL_HEX8((gain_code >> 8) & 0xFFu, raw_gain[1]);
+  TEST_ASSERT_EQUAL_HEX8(gain_code & 0xFFu, raw_gain[2]);
+
+  // Step 3. Ensure the getter decodes the register image faithfully.
+  uint32_t reported_gain = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_gain_calibration(&reported_gain));
+  TEST_ASSERT_EQUAL_HEX32(gain_code, reported_gain);
+}
+
+static void test_gain_calibration_rejects_invalid_arguments(void) {
+  // Step 1. Reject null output pointers.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_gain_calibration(NULL));
+
+  // Step 2. Reject calibration codes that overflow the 24-bit register width.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_gain_calibration(0x01000000u));
+}
+
+static void test_calibration_helpers_require_initialization(void) {
+  // Step 1. Force the driver into an uninitialised state.
+  mcp356x_force_uninitialized_for_test();
+
+  // Step 2. Ensure each helper reports MCP356X_ERR_NOT_INITIALIZED.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_offset_calibration(0));
+  int32_t  offset_out = 0;
+  uint32_t gain_out   = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_offset_calibration(&offset_out));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_set_gain_calibration(0x800000u));
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_gain_calibration(&gain_out));
+
+  // Step 3. Restore initialisation for subsequent tests.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
+static void test_apply_settings_rejects_invalid_arguments(void) {
+  // Step 0. Ensure a known baseline image before exercising guard rails.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 1. Reject NULL pointers.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(NULL));
+
+  // Step 2. Reject invalid OSR encodings.
+  const mcp356x_settings invalid_osr_settings = {
+      mcp356x_gain::gain_x1,        static_cast<mcp356x_osr>(0x10u),
+      mcp356x_prescaler::mclk_div1, mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data24,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(&invalid_osr_settings));
+
+  // Step 3. Reject invalid prescaler encodings while leaving CONFIG1 unchanged.
+  uint8_t config1_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_before, 1u, NULL));
+
+  const mcp356x_settings invalid_prescaler_settings = {
+      mcp356x_gain::gain_x1,
+      mcp356x_osr::osr_4096,
+      static_cast<mcp356x_prescaler>(0x04u),
+      mcp356x_conversion_mode::continuous,
+      mcp356x_data_format::data24,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(&invalid_prescaler_settings));
+
+  uint8_t config1_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config1_before, config1_after);
+
+  // Step 4. Reject invalid conversion mode encodings and ensure CONFIG3 remains untouched.
+  uint8_t config3_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_before, 1u, NULL));
+
+  const mcp356x_settings invalid_mode_settings = {
+      mcp356x_gain::gain_x1,        mcp356x_osr::osr_4096,
+      mcp356x_prescaler::mclk_div1, static_cast<mcp356x_conversion_mode>(0x03u),
+      mcp356x_data_format::data24,
+  };
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_apply_settings(&invalid_mode_settings));
+
+  uint8_t config3_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config3_before, config3_after);
+}
+
+static void test_set_conversion_config_updates_config3_bits(void) {
+  // Step 1. Apply the baseline configuration so CONFIG3 starts from a known state.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Prime CONFIG3 with CRC enable so we can verify the helper preserves existing flags.
+  const uint8_t config3_seed = 0x04u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG3, &config3_seed, 1u, NULL));
+
+  // Step 3. Request one-shot standby conversions with signed 32-bit data output.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_conversion_config(mcp356x_conversion_mode::oneshot_standby,
+                                                              mcp356x_data_format::data32_signed));
+
+  // Step 4. Read CONFIG3 back and ensure mode/data bits match while lower flags stay intact.
+  uint8_t config3_value = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL));
+  const uint8_t expected_config3 =
+      (uint8_t) (((static_cast<uint8_t>(mcp356x_conversion_mode::oneshot_standby) & 0x03u) << 6) |
+                 ((static_cast<uint8_t>(mcp356x_data_format::data32_signed) & 0x03u) << 4) | (config3_seed & 0x0Fu));
+  TEST_ASSERT_EQUAL_HEX8(expected_config3, config3_value);
+}
+
+static void test_get_conversion_config_reads_current_settings(void) {
+  // Step 1. Apply defaults to guarantee writes below start from POR values.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Program CONFIG3 with an explicit combination of conversion mode and data format.
+  const uint8_t programmed_config3 = (uint8_t) (((uint8_t) 0x02u << 6) | ((uint8_t) 0x03u << 4));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_write_register(MCP356X_REG_CONFIG3, &programmed_config3, 1u, NULL));
+
+  // Step 3. Retrieve the configuration via the helper and confirm enum decoding.
+  mcp356x_conversion_mode reported_mode   = mcp356x_conversion_mode::continuous;
+  mcp356x_data_format     reported_format = mcp356x_data_format::data24;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_conversion_config(&reported_mode, &reported_format));
+  TEST_ASSERT_EQUAL(mcp356x_conversion_mode::oneshot_shutdown, reported_mode);
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data32_signed_chid, reported_format);
+}
+
+static void test_set_conversion_config_rejects_invalid_mode(void) {
+  // Step 1. Capture the CONFIG3 baseline before exercising invalid enums.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  uint8_t config3_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_before, 1u, NULL));
+
+  // Step 2. Pass a reserved CONV_MODE value and expect the helper to reject it without writes.
+  const mcp356x_conversion_mode invalid_mode = static_cast<mcp356x_conversion_mode>(0x03u);
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_conversion_config(invalid_mode, mcp356x_data_format::data24));
+
+  // Step 3. Confirm CONFIG3 remains unchanged after the rejected call.
+  uint8_t config3_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config3_before, config3_after);
+}
+
+static void test_get_conversion_config_rejects_null_pointers(void) {
+  // Step 1. Apply defaults so we can focus on pointer validation paths.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Reject a missing mode pointer while leaving CONFIG3 untouched.
+  mcp356x_data_format format = mcp356x_data_format::data24;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_conversion_config(NULL, &format));
+
+  // Step 3. Reject a missing format pointer as well.
+  mcp356x_conversion_mode mode = mcp356x_conversion_mode::continuous;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_get_conversion_config(&mode, NULL));
+}
+
+static void test_conversion_config_helpers_require_initialization(void) {
+  // Step 1. Force the driver into an uninitialised state to trip guard rails.
+  mcp356x_force_uninitialized_for_test();
+
+  // Step 2. Attempt to set and get the conversion configuration while expecting not-initialised errors.
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED,
+                    mcp356x_set_conversion_config(mcp356x_conversion_mode::continuous, mcp356x_data_format::data24));
+
+  mcp356x_conversion_mode mode   = mcp356x_conversion_mode::continuous;
+  mcp356x_data_format     format = mcp356x_data_format::data24;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_conversion_config(&mode, &format));
+
+  // Step 3. Reinitialise the driver so subsequent tests run under the normal configuration.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
+static void test_conversion_config_updates_cached_data_format(void) {
+  // Step 1. Apply the baseline configuration and confirm the cached format reflects the default.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data24, mcp356x_test_cached_data_format());
+
+  // Step 2. Request a 32-bit signed data format and ensure the cached state tracks the change.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_conversion_config(mcp356x_conversion_mode::continuous,
+                                                              mcp356x_data_format::data32_signed));
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data32_signed, mcp356x_test_cached_data_format());
+}
+
+static void test_read_single_ended_respects_all_data_formats(void) {
+  // Sweep each DATA_FORMAT encoding to ensure both the decoded sample and
+  // captured diagnostic word match the datasheet's on-wire representation.
+  const mcp356x_data_format formats[] = {
+      mcp356x_data_format::data24,
+      mcp356x_data_format::data32_left,
+      mcp356x_data_format::data32_signed,
+      mcp356x_data_format::data32_signed_chid,
+  };
+
+  for (size_t i = 0; i < (sizeof formats / sizeof formats[0]); ++i) {
+    TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+    if (formats[i] != mcp356x_data_format::data24) {
+      TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_conversion_config(mcp356x_conversion_mode::continuous, formats[i]));
+    }
+
+    mcp356x_test_reset_diagnostics();
+
+    int32_t       code    = INT32_MIN;
+    const uint8_t channel = 0u;  // Test board only routes channel 0; reuse it for all format sweeps.
+    TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_single_ended_channel(channel, 200u, &code));
+
+    const uint8_t expected_length = (formats[i] == mcp356x_data_format::data24) ? 3u : 4u;
+    TEST_ASSERT_EQUAL_UINT8(expected_length, mcp356x_test_last_data_length());
+
+    const uint32_t raw_word = mcp356x_test_last_raw_word();
+
+    switch (formats[i]) {
+      case mcp356x_data_format::data24: {
+        const uint32_t raw24          = raw_word & 0xFFFFFFu;
+        const int32_t  expected_value = (raw24 & 0x800000u) ? (int32_t) (raw24 | 0xFF000000u) : (int32_t) raw24;
+        TEST_ASSERT_EQUAL_INT32(expected_value, code);
+        break;
+      }
+      case mcp356x_data_format::data32_left: {
+        TEST_ASSERT_EQUAL_HEX8(0u, raw_word & 0xFFu);
+        const int32_t reconstructed = (int32_t) ((int32_t) raw_word >> 8);
+        TEST_ASSERT_EQUAL_INT32(reconstructed, code);
+        break;
+      }
+      case mcp356x_data_format::data32_signed: {
+        TEST_ASSERT_EQUAL_HEX32((uint32_t) code, raw_word);
+        break;
+      }
+      case mcp356x_data_format::data32_signed_chid: {
+        const int32_t reconstructed = (int32_t) ((int32_t) raw_word >> 8);
+        TEST_ASSERT_EQUAL_INT32(reconstructed, code);
+        break;
+      }
+      default:
+        TEST_FAIL_MESSAGE("Unexpected data format encountered");
+    }
+  }
+}
+
+static void test_osr_helpers_require_initialization(void) {
+  // Step 1. Force the driver into an uninitialised state for guard validation.
+  mcp356x_force_uninitialized_for_test();
+
+  // Step 2. Attempt to set and get the OSR while expecting not-initialised errors.
+  int         return_code = mcp356x_set_osr(mcp356x_osr::osr_512);
+  mcp356x_osr out_osr     = mcp356x_osr::osr_256;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, return_code);
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_osr(&out_osr));
+
+  // Step 3. Reinitialise the driver so subsequent tests observe the normal state.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
+static void test_set_osr_rejects_invalid_enums(void) {
+  // Step 1. Establish the default configuration to snapshot CONFIG1.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  uint8_t config1_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_before, 1u, NULL));
+
+  // Step 2. Pass an invalid enum value and expect an invalid-argument error without altering CONFIG1.
+  const mcp356x_osr invalid_osr = static_cast<mcp356x_osr>(0x10u);
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_osr(invalid_osr));
+
+  uint8_t config1_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config1_before, config1_after);
+}
+
+static void test_set_prescaler_updates_config1_bits(void) {
+  // Step 1. Apply the default configuration to establish the CONFIG1 baseline.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Capture CONFIG1 prior to changing the prescaler.
+  uint8_t config1_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_before, 1u, NULL));
+
+  // Step 3. Request an MCLK/4 prescaler and read CONFIG1 back.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_prescaler(mcp356x_prescaler::mclk_div4));
+
+  uint8_t config1_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
+
+  // Step 4. Verify OSR bits remain untouched and prescaler bits match the request.
+  const uint8_t expected_config1 = (uint8_t) ((config1_before & (uint8_t) (~k_config1_prescaler_mask)) |
+                                              (static_cast<uint8_t>(mcp356x_prescaler::mclk_div4) << 6));
+  TEST_ASSERT_EQUAL_HEX8(expected_config1, config1_after);
+}
+
+static void test_get_prescaler_reads_current_setting(void) {
+  // Step 1. Apply the default configuration then select a new prescaler value.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_prescaler(mcp356x_prescaler::mclk_div8));
+
+  // Step 2. Query the prescaler and confirm it reflects the updated setting.
+  mcp356x_prescaler reported_prescaler = mcp356x_prescaler::mclk_div1;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_prescaler(&reported_prescaler));
+  TEST_ASSERT_EQUAL(mcp356x_prescaler::mclk_div8, reported_prescaler);
+}
+
+static void test_default_config_preserves_por_prescaler(void) {
+  // Step 1. Apply the standard default configuration.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Confirm the prescaler remains at the POR default (MCLK/1).
+  mcp356x_prescaler reported_prescaler = mcp356x_prescaler::mclk_div2;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_get_prescaler(&reported_prescaler));
+  TEST_ASSERT_EQUAL(mcp356x_prescaler::mclk_div1, reported_prescaler);
+}
+
+static void test_prescaler_helpers_require_initialization(void) {
+  // Step 1. Force the driver into an uninitialised state for guard testing.
+  mcp356x_force_uninitialized_for_test();
+
+  // Step 2. Attempt to set and get the prescaler, expecting not-initialised errors.
+  int               return_code      = mcp356x_set_prescaler(mcp356x_prescaler::mclk_div2);
+  mcp356x_prescaler reported_setting = mcp356x_prescaler::mclk_div1;
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, return_code);
+  TEST_ASSERT_EQUAL(MCP356X_ERR_NOT_INITIALIZED, mcp356x_get_prescaler(&reported_setting));
+
+  // Step 3. Reinitialise for downstream tests.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
+  delay(2);
+}
+
+static void test_set_prescaler_rejects_invalid_enums(void) {
+  // Step 1. Capture CONFIG1 before issuing an invalid prescaler request.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  uint8_t config1_before = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_before, 1u, NULL));
+
+  // Step 2. Invoke the setter with an out-of-range enum value and expect rejection.
+  const mcp356x_prescaler invalid_prescaler = static_cast<mcp356x_prescaler>(0x04u);
+  TEST_ASSERT_EQUAL(MCP356X_ERR_INVALID_ARG, mcp356x_set_prescaler(invalid_prescaler));
+
+  // Step 3. Confirm CONFIG1 remains unchanged.
+  uint8_t config1_after = 0u;
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_after, 1u, NULL));
+  TEST_ASSERT_EQUAL_HEX8(config1_before, config1_after);
 }
 
 static void test_get_gain_rejects_null_pointer(void) {
@@ -188,7 +899,7 @@ static void test_gain_set_get_roundtrip_sequence(void) {
 
   uint8_t config2_after_first = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_after_first, 1u, NULL));
-  const uint8_t expected_first = (uint8_t)((config2_snapshot & 0xC7u) | (0b101u << 3) | 0x01u);
+  const uint8_t expected_first = (uint8_t) ((config2_snapshot & 0xC7u) | (0b101u << 3) | 0x01u);
   TEST_ASSERT_EQUAL_HEX8(expected_first, config2_after_first);
 
   mcp356x_gain reported_gain = mcp356x_gain::gain_x1;
@@ -200,7 +911,7 @@ static void test_gain_set_get_roundtrip_sequence(void) {
 
   uint8_t config2_after_second = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_after_second, 1u, NULL));
-  const uint8_t expected_second = (uint8_t)((config2_after_first & 0xC7u) | (0b100u << 3) | 0x01u);
+  const uint8_t expected_second = (uint8_t) ((config2_after_first & 0xC7u) | (0b100u << 3) | 0x01u);
   TEST_ASSERT_EQUAL_HEX8(expected_second, config2_after_second);
 
   reported_gain = mcp356x_gain::gain_x1;  // Reset before reading back.
@@ -287,7 +998,7 @@ static void test_mux_select_single_channel_writes_mux_register(void) {
   // Step 3. Read the MUX register and confirm it matches the expected encoding.
   uint8_t mux_after = 0u;
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_register(MCP356X_REG_MUX, &mux_after, 1u, NULL));
-  const uint8_t expected_mux = (uint8_t)((MCP356X_MUX_CH3 << 4) | MCP356X_MUX_AGND);
+  const uint8_t expected_mux = (uint8_t) ((MCP356X_MUX_CH3 << 4) | MCP356X_MUX_AGND);
   TEST_ASSERT_EQUAL_HEX8(expected_mux, mux_after);
 
   // Step 4. Restore the original value so other tests see the same baseline.
@@ -342,12 +1053,46 @@ void setup() {
   // Step 2. Execute each MCP356x test case in sequence.
   RUN_TEST(test_fast_command_start_status);
   RUN_TEST(test_config0_register_roundtrip);
+  RUN_TEST(test_full_reset_restores_por_defaults);
   RUN_TEST(test_single_ended_ch0_conversion);
   RUN_TEST(test_mux_select_single_channel_writes_mux_register);
   RUN_TEST(test_mux_select_single_channel_rejects_invalid_inputs);
   RUN_TEST(test_apply_default_config_writes_expected_values);
-  RUN_TEST(test_apply_default_config_with_gain_overrides_pga);
+  RUN_TEST(test_apply_default_config_programs_irq_defaults);
+  RUN_TEST(test_apply_settings_programs_requested_fields);
+  RUN_TEST(test_apply_settings_programs_irq_fields);
   RUN_TEST(test_set_gain_updates_config2_gain_bits);
+  RUN_TEST(test_set_auto_zero_mux_updates_config2_bit);
+  RUN_TEST(test_set_auto_zero_reference_updates_config2_bit);
+  RUN_TEST(test_get_auto_zero_helpers_read_current_settings);
+  RUN_TEST(test_auto_zero_helpers_validate_inputs);
+  RUN_TEST(test_irq_helpers_validate_inputs);
+  RUN_TEST(test_irq_mode_roundtrip);
+  RUN_TEST(test_irq_fastcmd_flag_roundtrip);
+  RUN_TEST(test_irq_conversion_start_interrupt_flag_roundtrip);
+  RUN_TEST(test_set_osr_updates_config1_bits);
+  RUN_TEST(test_get_osr_reads_current_setting);
+  RUN_TEST(test_default_config_helpers_program_expected_osr);
+  RUN_TEST(test_offset_calibration_round_trip);
+  RUN_TEST(test_offset_calibration_rejects_invalid_arguments);
+  RUN_TEST(test_gain_calibration_round_trip);
+  RUN_TEST(test_gain_calibration_rejects_invalid_arguments);
+  RUN_TEST(test_calibration_helpers_require_initialization);
+  RUN_TEST(test_apply_settings_rejects_invalid_arguments);
+  RUN_TEST(test_set_conversion_config_updates_config3_bits);
+  RUN_TEST(test_get_conversion_config_reads_current_settings);
+  RUN_TEST(test_set_conversion_config_rejects_invalid_mode);
+  RUN_TEST(test_get_conversion_config_rejects_null_pointers);
+  RUN_TEST(test_conversion_config_helpers_require_initialization);
+  RUN_TEST(test_conversion_config_updates_cached_data_format);
+  RUN_TEST(test_read_single_ended_respects_all_data_formats);
+  RUN_TEST(test_osr_helpers_require_initialization);
+  RUN_TEST(test_set_osr_rejects_invalid_enums);
+  RUN_TEST(test_set_prescaler_updates_config1_bits);
+  RUN_TEST(test_get_prescaler_reads_current_setting);
+  RUN_TEST(test_default_config_preserves_por_prescaler);
+  RUN_TEST(test_prescaler_helpers_require_initialization);
+  RUN_TEST(test_set_prescaler_rejects_invalid_enums);
   RUN_TEST(test_get_gain_rejects_null_pointer);
   RUN_TEST(test_gain_set_get_roundtrip_sequence);
   RUN_TEST(test_gain_helpers_require_initialization);
