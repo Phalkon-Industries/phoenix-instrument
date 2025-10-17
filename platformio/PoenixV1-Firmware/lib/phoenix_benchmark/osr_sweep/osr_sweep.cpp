@@ -12,7 +12,7 @@
 namespace {
 
 constexpr PhoenixBenchmarkOsrSweepDefaults k_default_osr_sweep_defaults = {
-    .sweep_count = 100u,
+    .sweep_count = 10u,
     .dwell_us    = 100u,
     .wiper_code  = 0x00u,
 };
