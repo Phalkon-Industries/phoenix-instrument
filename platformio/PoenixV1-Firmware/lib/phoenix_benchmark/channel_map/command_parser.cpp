@@ -175,6 +175,8 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
   }
   ++cursor;
 
+  const bool allow_optional_arguments = (std::strcmp(expected_command, "osr_sweep") == 0);
+
   bool saw_command = false;
   bool saw_sweeps  = false;
   bool saw_wiper   = false;
@@ -456,18 +458,20 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
     return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
   }
 
-  if (!saw_sweeps) {
-    if (error_message != nullptr) {
-      *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
+  if (!allow_optional_arguments) {
+    if (!saw_sweeps) {
+      if (error_message != nullptr) {
+        *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
+      }
+      return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
     }
-    return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
-  }
 
-  if (!saw_wiper) {
-    if (error_message != nullptr) {
-      *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
+    if (!saw_wiper) {
+      if (error_message != nullptr) {
+        *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
+      }
+      return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
     }
-    return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
   }
 
   if (saw_wiper && (arguments->wiper_code > 0xFFu)) {
