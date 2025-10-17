@@ -7,6 +7,8 @@
 #include "main.hpp"
 #include "osr_sweep/osr_sweep.hpp"
 #include "osr_sweep/osr_sweep_formatter.hpp"
+#include "pot_sweep/pot_sweep.hpp"
+#include "pot_sweep/pot_sweep_formatter.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
 #include <cstring>
@@ -448,6 +450,7 @@ PhoenixBenchmarkChannelMapExecutionStatus g_fake_osr_runner_status = {
 
 static std::size_t g_fake_runner_call_count = 0u;
 static std::size_t g_fake_set_osr_count     = 0u;
+static mcp356x_osr g_fake_last_osr_value    = mcp356x_osr::osr_32;
 static uint32_t    g_fake_micros_now        = 0u;
 
 static PhoenixBenchmarkChannelMapExecutionStatus fake_osr_channel_map_runner(
@@ -489,8 +492,9 @@ static PhoenixBenchmarkChannelMapExecutionStatus fake_osr_channel_map_runner(
   return g_fake_osr_runner_status;
 }
 
-static int fake_set_osr(mcp356x_osr) {
+static int fake_set_osr(mcp356x_osr value) {
   ++g_fake_set_osr_count;
+  g_fake_last_osr_value = value;
   return MCP356X_OK;
 }
 
@@ -518,6 +522,7 @@ static void test_osr_sweep_run_iterates_all_osr_values(void) {
   static PhoenixBenchmarkOsrSweepRowMetrics rows[k_expected_osr_value_count] = {};
   g_fake_runner_call_count                                                   = 0u;
   g_fake_set_osr_count                                                       = 0u;
+  g_fake_last_osr_value                                                      = mcp356x_osr::osr_32;
   g_fake_micros_now                                                          = 1000u;
 
   PhoenixBenchmarkOsrSweepExecutionStatus status =
@@ -527,7 +532,8 @@ static void test_osr_sweep_run_iterates_all_osr_values(void) {
   TEST_ASSERT_TRUE(status.success);
   TEST_ASSERT_EQUAL_UINT32(k_expected_osr_value_count, status.rows_generated);
   TEST_ASSERT_EQUAL_UINT32(k_expected_osr_value_count, g_fake_runner_call_count);
-  TEST_ASSERT_EQUAL_UINT32(k_expected_osr_value_count, g_fake_set_osr_count);
+  TEST_ASSERT_EQUAL_UINT32(k_expected_osr_value_count + 1u, g_fake_set_osr_count);
+  TEST_ASSERT_EQUAL(mcp356x_osr::osr_4096, g_fake_last_osr_value);
 
   // Step 3: Validate captured metrics and elapsed time.
   uint32_t expected_elapsed = 75u;
@@ -595,6 +601,189 @@ static void test_osr_sweep_format_summary_row_uses_placeholders_without_metrics(
   TEST_ASSERT_NOT_NULL(strstr(buffer, "--"));
 }
 
+static void test_pot_sweep_parse_command_applies_defaults(void) {
+  // Step 1: Configure defaults with a distinct dwell override to simplify validation.
+  phoenix_benchmark_pot_sweep_reset_state();
+  const PhoenixBenchmarkPotSweepDefaults defaults = {
+      .sweeps_per_wiper = 5u,
+      .dwell_us         = 100u,
+  };
+  phoenix_benchmark_pot_sweep_initialise(defaults);
+
+  const PhoenixBenchmarkPotSweepParseResult result =
+      phoenix_benchmark_pot_sweep_parse_command("{\"command\":\"pot_sweep\"}");
+
+  // Step 2: Confirm defaults applied when no overrides are provided.
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_NULL(result.error_message);
+  TEST_ASSERT_EQUAL_UINT32(defaults.sweeps_per_wiper, result.options.sweeps_per_wiper);
+  TEST_ASSERT_FALSE(result.options.has_sweeps_override);
+  TEST_ASSERT_EQUAL_UINT32(defaults.dwell_us, result.options.dwell_us);
+  TEST_ASSERT_FALSE(result.options.has_dwell_override);
+}
+
+static void test_pot_sweep_parse_command_accepts_plain_token(void) {
+  // Step 1: Seed defaults so the plain command inherits them directly.
+  phoenix_benchmark_pot_sweep_reset_state();
+  const PhoenixBenchmarkPotSweepDefaults defaults = {
+      .sweeps_per_wiper = 7u,
+      .dwell_us         = 100u,
+  };
+  phoenix_benchmark_pot_sweep_initialise(defaults);
+
+  const PhoenixBenchmarkPotSweepParseResult result = phoenix_benchmark_pot_sweep_parse_command("pot_sweep");
+
+  // Step 2: Ensure the parser accepts the plain token and applies defaults.
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_NULL(result.error_message);
+  TEST_ASSERT_EQUAL_UINT32(defaults.sweeps_per_wiper, result.options.sweeps_per_wiper);
+  TEST_ASSERT_FALSE(result.options.has_sweeps_override);
+  TEST_ASSERT_EQUAL_UINT32(defaults.dwell_us, result.options.dwell_us);
+  TEST_ASSERT_FALSE(result.options.has_dwell_override);
+}
+
+static void test_pot_sweep_parse_command_accepts_overrides(void) {
+  // Step 1: Reset defaults and issue a command overriding sweeps and dwell time.
+  phoenix_benchmark_pot_sweep_reset_state();
+  phoenix_benchmark_pot_sweep_initialise({.sweeps_per_wiper = 4u, .dwell_us = 75u});
+
+  const char* payload = "{\"command\":\"pot_sweep\",\"parameters\":{\"sweeps\":3,\"dwell_us\":500}}";
+
+  const PhoenixBenchmarkPotSweepParseResult result = phoenix_benchmark_pot_sweep_parse_command(payload);
+
+  // Step 2: Validate overrides captured correctly.
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_TRUE(result.options.has_sweeps_override);
+  TEST_ASSERT_TRUE(result.options.has_dwell_override);
+  TEST_ASSERT_EQUAL_UINT32(3u, result.options.sweeps_per_wiper);
+  TEST_ASSERT_EQUAL_UINT32(500u, result.options.dwell_us);
+}
+
+static void test_pot_sweep_parse_command_rejects_wiper_parameters(void) {
+  // Step 1: Ensure any attempt to supply legacy wiper controls is rejected.
+  phoenix_benchmark_pot_sweep_reset_state();
+  phoenix_benchmark_pot_sweep_initialise({.sweeps_per_wiper = 5u, .dwell_us = 100u});
+
+  const PhoenixBenchmarkPotSweepParseResult list_result =
+      phoenix_benchmark_pot_sweep_parse_command("{\"command\":\"pot_sweep\",\"parameters\":{\"wipers\":[0,16]}}");
+  TEST_ASSERT_FALSE(list_result.success);
+
+  const PhoenixBenchmarkPotSweepParseResult range_result =
+      phoenix_benchmark_pot_sweep_parse_command("{\"command\":\"pot_sweep\",\"parameters\":{\"wiper_start\":0}}");
+  TEST_ASSERT_FALSE(range_result.success);
+}
+
+namespace {
+
+static std::size_t g_pot_sweep_runner_calls = 0u;
+static uint8_t     g_pot_sweep_last_wiper   = 0u;
+static uint32_t    g_pot_sweep_last_dwell   = 0u;
+
+static PhoenixBenchmarkChannelMapExecutionStatus fake_pot_sweep_runner(
+    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
+    const PhoenixBenchmarkChannelMapOutputCallbacks&) {
+  TEST_ASSERT_NOT_NULL(accumulators);
+  ++g_pot_sweep_runner_calls;
+  g_pot_sweep_last_wiper = options.wiper_code;
+  g_pot_sweep_last_dwell = options.dwell_us;
+
+  // Step 1: Seed deterministic maxima for LED1 (channel A) and LED2 (channel B).
+  const int32_t led1_base = static_cast<int32_t>(options.wiper_code) * 1000;
+  const int32_t led2_base = static_cast<int32_t>(options.wiper_code) * 1100;
+
+  PhoenixBenchmarkStateAccumulator& drain = accumulators[0];
+  PhoenixBenchmarkStateAccumulator& led1  = accumulators[1];
+  PhoenixBenchmarkStateAccumulator& led2  = accumulators[2];
+
+  drain.channel_a_codes.count     = 1u;
+  drain.channel_a_codes.max_value = 100;
+  drain.channel_b_codes.count     = 1u;
+  drain.channel_b_codes.max_value = 90;
+
+  led1.channel_a_codes.count     = 5u;
+  led1.channel_a_codes.max_value = led1_base + 7000000;
+  led1.channel_b_codes.count     = 5u;
+  led1.channel_b_codes.max_value = 0;
+
+  led2.channel_a_codes.count     = 5u;
+  led2.channel_a_codes.max_value = 0;
+  led2.channel_b_codes.count     = 5u;
+  led2.channel_b_codes.max_value = led2_base + 7200000;
+
+  if (options.wiper_code >= 0x20u) {
+    led1.channel_a_codes.max_value = 7600000;
+  }
+  if (options.wiper_code >= 0x30u) {
+    led2.channel_b_codes.max_value = 7800000;
+  }
+
+  return {true, PHOENIX_BENCHMARK_OK, nullptr, false};
+}
+
+static int fake_apply_default_config(void) {
+  return MCP356X_OK;
+}
+
+}  // namespace
+
+static void test_pot_sweep_run_collects_metrics_and_recommendations(void) {
+  // Step 1: Prepare options with deterministic runner hooks.
+  phoenix_benchmark_pot_sweep_reset_state();
+  phoenix_benchmark_pot_sweep_initialise({.sweeps_per_wiper = 5u, .dwell_us = 120u});
+
+  PhoenixBenchmarkPotSweepOptions options = {};
+  options.sweeps_per_wiper                = 5u;
+  options.has_sweeps_override             = true;
+  options.dwell_us                        = 200u;
+  options.has_dwell_override              = true;
+
+  static PhoenixBenchmarkPotSweepRowMetrics rows[k_phoenix_benchmark_pot_sweep_max_wiper_count] = {};
+
+#if defined(UNIT_TEST)
+  phoenix_benchmark_pot_sweep_set_channel_map_runner_for_test(fake_pot_sweep_runner);
+  phoenix_benchmark_pot_sweep_set_hardware_ready_checker_for_test([]() { return true; });
+  phoenix_benchmark_pot_sweep_set_adc_default_configurator_for_test(fake_apply_default_config);
+#endif
+
+  g_pot_sweep_runner_calls = 0u;
+
+  static PhoenixBenchmarkPotSweepExecutionStatus status =
+      phoenix_benchmark_pot_sweep_run(options, rows, k_phoenix_benchmark_pot_sweep_max_wiper_count);
+
+#if defined(UNIT_TEST)
+  phoenix_benchmark_pot_sweep_clear_test_hooks();
+#endif
+
+  // Step 2: Validate run status and row collection.
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(status.has_warnings);  // saturation triggered for higher wipers
+  TEST_ASSERT_EQUAL_UINT32(k_phoenix_benchmark_pot_sweep_max_wiper_count, status.rows_generated);
+  TEST_ASSERT_EQUAL_UINT32(k_phoenix_benchmark_pot_sweep_max_wiper_count, g_pot_sweep_runner_calls);
+
+  TEST_ASSERT_EQUAL_UINT8(0x00u, rows[0].wiper_code);
+  TEST_ASSERT_EQUAL_INT32(7000000, rows[0].led1_max_code);
+  TEST_ASSERT_FALSE(rows[0].led1_saturated);
+  TEST_ASSERT_EQUAL_INT32(7200000, rows[0].led2_max_code);
+  TEST_ASSERT_FALSE(rows[0].led2_saturated);
+
+  const std::size_t mid_index = 0x20u;
+  TEST_ASSERT_TRUE(rows[mid_index].led1_saturated);
+  TEST_ASSERT_FALSE(rows[mid_index].led2_saturated);
+
+  const std::size_t high_index = 0x30u;
+  TEST_ASSERT_TRUE(rows[high_index].led1_saturated);
+  TEST_ASSERT_TRUE(rows[high_index].led2_saturated);
+
+  // Recommendations favour the highest non-saturated wiper code per LED.
+  TEST_ASSERT_TRUE(status.led1_recommendation_valid);
+  TEST_ASSERT_NOT_EQUAL_UINT8(0xFFu, status.led1_recommended_wiper);
+  TEST_ASSERT_TRUE(status.led2_recommendation_valid);
+  TEST_ASSERT_NOT_EQUAL_UINT8(0xFFu, status.led2_recommended_wiper);
+
+  TEST_ASSERT_EQUAL_UINT8(0xFFu, g_pot_sweep_last_wiper);
+  TEST_ASSERT_EQUAL_UINT32(200u, g_pot_sweep_last_dwell);
+}
+
 void setup() {
   // Step 1: Initialise Unity's serial logging channel.
   UNITY_SETUP_SERIAL_DEFAULT();
@@ -626,6 +815,11 @@ void setup() {
   RUN_TEST(test_osr_sweep_format_summary_header);
   RUN_TEST(test_osr_sweep_format_summary_row_formats_metrics);
   RUN_TEST(test_osr_sweep_format_summary_row_uses_placeholders_without_metrics);
+  RUN_TEST(test_pot_sweep_parse_command_applies_defaults);
+  RUN_TEST(test_pot_sweep_parse_command_accepts_plain_token);
+  RUN_TEST(test_pot_sweep_parse_command_accepts_overrides);
+  RUN_TEST(test_pot_sweep_parse_command_rejects_wiper_parameters);
+  RUN_TEST(test_pot_sweep_run_collects_metrics_and_recommendations);
   // Step 3: Finalise Unity before idling in loop().
   UNITY_END();
 }

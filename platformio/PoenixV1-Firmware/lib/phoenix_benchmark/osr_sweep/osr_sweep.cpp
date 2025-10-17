@@ -17,11 +17,12 @@ constexpr PhoenixBenchmarkOsrSweepDefaults k_default_osr_sweep_defaults = {
     .wiper_code  = 0x00u,
 };
 
-constexpr const char* k_error_invalid_arguments = "invalid arguments";
-constexpr const char* k_error_invalid_options   = "invalid options";
-constexpr const char* k_error_set_osr_failed    = "osr configuration failed";
-constexpr const char* k_error_channel_map_run   = "channel_map failed";
-constexpr const char* k_error_hardware_init     = "hardware initialisation failed";
+constexpr const char* k_error_invalid_arguments  = "invalid arguments";
+constexpr const char* k_error_invalid_options    = "invalid options";
+constexpr const char* k_error_set_osr_failed     = "osr configuration failed";
+constexpr const char* k_error_channel_map_run    = "channel_map failed";
+constexpr const char* k_error_hardware_init      = "hardware initialisation failed";
+constexpr const char* k_error_restore_osr_failed = "osr restore failed";
 
 typedef PhoenixBenchmarkChannelMapExecutionStatus (*ChannelMapRunner)(
     const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
@@ -130,8 +131,21 @@ PhoenixBenchmarkOsrSweepParseResult phoenix_benchmark_osr_sweep_parse_command(co
 PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
     const PhoenixBenchmarkOsrSweepOptions& input_options, PhoenixBenchmarkOsrSweepRowMetrics* rows,
     std::size_t row_capacity) {
+  auto finalize_status = [](bool attempted_osr_updates, PhoenixBenchmarkOsrSweepExecutionStatus status) {
+    if (attempted_osr_updates && (g_osr_setter != nullptr)) {
+      const int restore_result = g_osr_setter(mcp356x_osr::osr_4096);
+      if (restore_result != MCP356X_OK) {
+        status.has_warnings = true;
+        if (!status.success && (status.message == nullptr)) {
+          status.message = k_error_restore_osr_failed;
+        }
+      }
+    }
+    return status;
+  };
+
   if ((rows == nullptr) || (row_capacity < k_phoenix_benchmark_osr_value_count)) {
-    return {false, false, k_error_invalid_arguments, 0u};
+    return finalize_status(false, {false, false, k_error_invalid_arguments, 0u});
   }
 
   PhoenixBenchmarkOsrSweepOptions options = input_options;
@@ -139,24 +153,27 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
 
   const char* validation_message = nullptr;
   if (!options.validate(&validation_message)) {
-    return {false, false, (validation_message != nullptr) ? validation_message : k_error_invalid_options, 0u};
+    return finalize_status(
+        false, {false, false, (validation_message != nullptr) ? validation_message : k_error_invalid_options, 0u});
   }
 
   PhoenixBenchmarkChannelMapOutputCallbacks callbacks = {nullptr, nullptr};
 
   if (!g_hardware_ready()) {
-    return {false, false, k_error_hardware_init, 0u};
+    return finalize_status(false, {false, false, k_error_hardware_init, 0u});
   }
 
-  uint32_t rows_generated = 0u;
-  bool     has_warnings   = false;
+  uint32_t rows_generated        = 0u;
+  bool     has_warnings          = false;
+  bool     attempted_osr_updates = false;
   for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_value_count; ++index) {
     const mcp356x_osr current_osr = k_osr_values[index];
 
     const int set_result = g_osr_setter(current_osr);
     if (set_result != MCP356X_OK) {
-      return {false, has_warnings, k_error_set_osr_failed, rows_generated};
+      return finalize_status(attempted_osr_updates, {false, has_warnings, k_error_set_osr_failed, rows_generated});
     }
+    attempted_osr_updates = true;
 
     PhoenixBenchmarkStateAccumulator accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count] = {};
 
@@ -176,7 +193,7 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
     const uint32_t end_micros = g_micros_provider();
 
     if (!run_status.success) {
-      return {false, has_warnings, k_error_channel_map_run, rows_generated};
+      return finalize_status(attempted_osr_updates, {false, has_warnings, k_error_channel_map_run, rows_generated});
     }
 
     if (run_status.has_warnings) {
@@ -194,7 +211,7 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
     rows_generated += 1u;
   }
 
-  return {true, has_warnings, nullptr, rows_generated};
+  return finalize_status(attempted_osr_updates, {true, has_warnings, nullptr, rows_generated});
 }
 
 void phoenix_benchmark_osr_sweep_set_channel_map_runner_for_test(PhoenixBenchmarkChannelMapExecutionStatus (*runner)(

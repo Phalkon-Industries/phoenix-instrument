@@ -5,6 +5,7 @@ This document captures the *currently implemented* capabilities of the Phoenix b
 ## Current Capabilities
 
 - Firmware idles after boot, waits for either a `channel_map`, `osr_sweep`, or `adc_speed` command, executes the requested scenario, and then returns to a fresh `# ready` prompt so hosts can pipeline multiple operations.
+- The potentiometer sweep scenario now always scans every digi-pot wiper code (0–255) while allowing hosts to override only the sweep count and LED dwell via `sweeps` and `dwell_us`.
 - The OSR sweep scenario iterates every supported oversampling ratio preset, capturing drain and LED variance plus sweep duration so operators can spot the lowest-noise configuration quickly.
 - The command parser is dual-mode: it prefers JSON payloads that match the host tooling schema and automatically falls back to key-value arguments such as `channel_map dwell_us=50 sweeps=10`. Both forms converge to the same option structure and apply firmware defaults when fields are omitted.
 - The summary table includes a `Channel_Map` column that compares each LED's observed dominant channel against the expected routing (`A=OK`, `B!=A`, etc.).
@@ -52,10 +53,10 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
 For reference, `docs/phoenix-benchmark/sample_runs/osr_sweep_demo/` captures a recent run covering channel_map, osr_sweep, and adc_speed along with the generated report and plots.
 
 ## Revision History
-| Date       | Notes                                                                                                            |
-| ---------- | ---------------------------------------------------------------------------------------------------------------- |
-| 2025-10-17 | Documented OSR sweep scenario, Markdown tables, log₂ OSR plots, and published sample run artifacts.              |
-| 2025-10-16 | Added ADC throughput coverage, mixed-plan reporting, and sample logs for channel map + adc_speed runs.           |
-| 2025-10-12 | Documented the dual-mode parser, reusable library API, and manual key-value workflow for the channel-map module. |
-| 2025-10-11 | Example sketch now calls the shared channel-map library; documented the new reuse surface.                       |
-| 2025-10-08 | Updated to document the command-driven Phase 1 workflow, automated reporting, and CLI-to-firmware JSON contract. |
+| Date       | Notes                                                                                                                      |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 2025-10-17 | Documented pot sweep defaults (full-range, dwell override), refreshed OSR sweep notes, and published sample run artifacts. |
+| 2025-10-16 | Added ADC throughput coverage, mixed-plan reporting, and sample logs for channel map + adc_speed runs.                     |
+| 2025-10-12 | Documented the dual-mode parser, reusable library API, and manual key-value workflow for the channel-map module.           |
+| 2025-10-11 | Example sketch now calls the shared channel-map library; documented the new reuse surface.                                 |
+| 2025-10-08 | Updated to document the command-driven Phase 1 workflow, automated reporting, and CLI-to-firmware JSON contract.           |

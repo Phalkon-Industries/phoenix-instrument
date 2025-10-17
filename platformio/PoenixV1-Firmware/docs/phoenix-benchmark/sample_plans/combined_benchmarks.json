@@ -17,6 +17,13 @@
             }
         },
         {
+            "command": "pot_sweep",
+            "parameters": {
+                "sweeps": 5,
+                "dwell_us": 100
+            }
+        },
+        {
             "command": "adc_speed",
             "parameters": {
                 "duration_ms": 750,

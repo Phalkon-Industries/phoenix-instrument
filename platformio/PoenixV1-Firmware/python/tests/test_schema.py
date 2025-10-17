@@ -169,3 +169,63 @@ def test_osr_sweep_defaults_to_ten_sweeps(tmp_path: Path) -> None:
     assert len(commands) == 1
     osr_command = commands[0]
     assert osr_command.parameters["sweeps"] == 10
+
+
+def test_load_command_plan_normalizes_pot_sweep_defaults(tmp_path: Path) -> None:
+    plan_path = tmp_path / "pot_sweep_defaults.json"
+    plan_path.write_text(
+        json.dumps({"commands": [{"command": "pot_sweep"}]}),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    pot_command = commands[0]
+    assert pot_command.name == "pot_sweep"
+    assert pot_command.parameters == {"sweeps": 5}
+
+
+def test_load_command_plan_accepts_custom_pot_sweep(tmp_path: Path) -> None:
+    plan_path = tmp_path / "pot_sweep_custom.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "pot_sweep",
+                        "parameters": {"sweeps": 3, "dwell_us": 400},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    pot_command = commands[0]
+    assert pot_command.parameters == {"sweeps": 3, "dwell_us": 400}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"command": "pot_sweep", "parameters": {"sweeps": 0}},
+        {"command": "pot_sweep", "parameters": {"wipers": []}},
+        {"command": "pot_sweep", "parameters": {"wipers": [0, 1]}},
+        {"command": "pot_sweep", "parameters": {"wiper_start": 0}},
+        {"command": "pot_sweep", "parameters": {"wiper_end": 32}},
+        {"command": "pot_sweep", "parameters": {"wiper_step": 2}},
+        {"command": "pot_sweep", "parameters": {"dwell_us": -1}},
+    ],
+)
+def test_load_command_plan_rejects_invalid_pot_sweep(
+    payload: dict[str, object], tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "pot_sweep_invalid.json"
+    plan_path.write_text(json.dumps([payload]), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        load_command_plan(plan_path)

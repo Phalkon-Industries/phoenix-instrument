@@ -9,6 +9,7 @@ import pytest  # type: ignore
 from phoenix_benchmark.report import (
     AdcSpeedSummaryRow,
     OsrSweepSummaryRow,
+    PotSweepSummaryRow,
     ReportArtifacts,
     SummaryRow,
     create_report,
@@ -262,3 +263,74 @@ def test_create_report_handles_osr_sweep(tmp_path: Path) -> None:
     assert "_duration.png)" in report_text
     assert "| OSR | Samples |" in report_text
     assert "| 32 | 12 | 1.234 |" in report_text
+
+
+def _pot_sweep_summary_lines() -> List[str]:
+    return [
+        "# phoenix benchmark ready",
+        "# running,scenario=pot_sweep,sweeps_per_wiper=6,dwell_us=180,wiper_count=256",
+        "# summary_table",
+        "Wiper LED1_Max LED2_Max LED1_Sat LED2_Sat",
+        "0x10  7000000  6800000    no    no",
+        "0x20  7600000  6900000   yes    no",
+        "0x30  7800000  7900000   yes   yes",
+        "",
+        "# pot_sweep_recommendation,led=led1,wiper=0x10",
+        "# pot_sweep_recommendation,led=led2,wiper=0x20",
+        "# pot_sweep_warnings,reason=saturation",
+        "# benchmark_complete",
+        "# ready",
+    ]
+
+
+def test_parse_summary_table_handles_pot_sweep() -> None:
+    summaries = parse_summary_table(_pot_sweep_summary_lines())
+
+    assert "pot_sweep" in summaries
+    rows = summaries["pot_sweep"]
+    assert len(rows) == 3
+
+    first = rows[0]
+    assert isinstance(first, PotSweepSummaryRow)
+    assert first.wiper_code == 0x10
+    assert first.led1_max_code == 7_000_000
+    assert first.led1_saturated is False
+    assert first.led2_max_code == 6_800_000
+    assert first.led2_saturated is False
+
+
+def test_create_report_handles_pot_sweep(tmp_path: Path) -> None:
+    lines = _pot_sweep_summary_lines()
+
+    plan_path = tmp_path / "pot_plan.json"
+    plan_path.write_text(json.dumps({"commands": []}), encoding="utf-8")
+
+    output_dir = tmp_path / "pot-report"
+    artifacts = create_report(lines, plan_path, output_dir)
+
+    assert "pot_sweep" in artifacts.scenarios
+    assert "pot_sweep" in artifacts.plot_paths
+    pot_plots = artifacts.plot_paths["pot_sweep"]
+    assert len(pot_plots) == 1
+    assert pot_plots[0].exists()
+
+    assert "pot_sweep" in artifacts.csv_paths
+    csv_files = artifacts.csv_paths["pot_sweep"]
+    assert len(csv_files) == 1
+    csv_text = csv_files[0].read_text(encoding="utf-8")
+    assert "wiper_code,led1_max_code" in csv_text
+    assert ",7800000," in csv_text
+
+    assert artifacts.pot_sweep_recommendations == {"led1": "0x10", "led2": "0x20"}
+
+    summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
+    pot_entry = next(item for item in summary_data if item["scenario"] == "pot_sweep")
+    assert pot_entry["extras"]["recommendations"]["led1"] == "0x10"
+    assert len(pot_entry["rows"]) == 3
+
+    report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
+    assert "| LED | Recommended Wiper |" in report_text
+    assert "| LED1 | 0x10 |" in report_text
+    assert "<details>" in report_text
+    assert "</details>" in report_text
+    assert "Wiper | LED1 max" in report_text

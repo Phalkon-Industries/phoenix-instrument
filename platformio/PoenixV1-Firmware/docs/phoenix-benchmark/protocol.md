@@ -60,6 +60,23 @@ Requests a full oversampling ratio sweep while holding potentiometer and dwell s
 
 The firmware iterates the OSR presets in ascending order, prints per-run metadata (`# running,scenario=osr_sweep,pot=...`) and emits a summary table that tags each row with the current OSR (e.g., `OSR1024`).
 
+### `pot_sweep`
+
+Requests a full-range potentiometer sweep. The firmware measures every wiper code (0–255) on each invocation and only honours the sweep count and dwell overrides below.
+
+| Field      | Type    | Required | Notes                                                                                                      |
+| ---------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `sweeps`   | integer | no       | Optional sweeps per wiper position. Defaults to the firmware setting (currently 5).                        |
+| `dwell_us` | integer | no       | Optional LED dwell in microseconds applied before each channel-map capture. Defaults to firmware settings. |
+
+**Example**
+
+```json
+{"command": "pot_sweep", "parameters": {"sweeps": 6, "dwell_us": 180}}
+```
+
+Run headers include the fixed span (`wiper_count=256`) so logs can be matched against the CSV table without inspecting the payload.
+
 Unknown command identifiers return a `# error,unsupported_command` line until the corresponding firmware feature ships.
 
 ### End-to-end flow
