@@ -5,6 +5,8 @@
 #include "channel_map/channel_map.hpp"
 #include "osr_sweep/osr_sweep.hpp"
 #include "osr_sweep/osr_sweep_formatter.hpp"
+#include "pot_sweep/pot_sweep.hpp"
+#include "pot_sweep/pot_sweep_formatter.hpp"
 #include <Arduino.h>
 #include <cctype>
 #include <cstdio>
@@ -44,12 +46,26 @@ const PhoenixBenchmarkOsrSweepDefaults k_osr_sweep_defaults = {
     .wiper_code  = 0x00u,
 };
 
+const PhoenixBenchmarkPotSweepDefaults k_pot_sweep_defaults = {
+    .sweeps_per_wiper = 5u,
+    .wiper_start      = 0x00u,
+    .wiper_end        = 0xFFu,
+    .wiper_step       = 0x01u,
+};
+
 PhoenixBenchmarkStateAccumulator   g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
 PhoenixBenchmarkOsrSweepRowMetrics g_osr_sweep_rows[k_phoenix_benchmark_osr_value_count];
+PhoenixBenchmarkPotSweepRowMetrics g_pot_sweep_rows[k_phoenix_benchmark_pot_sweep_max_wiper_count];
 
 void reset_osr_sweep_rows(void) {
   for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_value_count; ++index) {
     g_osr_sweep_rows[index] = PhoenixBenchmarkOsrSweepRowMetrics{};
+  }
+}
+
+void reset_pot_sweep_rows(void) {
+  for (std::size_t index = 0u; index < k_phoenix_benchmark_pot_sweep_max_wiper_count; ++index) {
+    g_pot_sweep_rows[index] = PhoenixBenchmarkPotSweepRowMetrics{};
   }
 }
 
@@ -583,6 +599,103 @@ bool print_osr_sweep_summary(const PhoenixBenchmarkOsrSweepRowMetrics* rows, std
   return true;
 }
 
+bool print_pot_sweep_summary(const PhoenixBenchmarkPotSweepRowMetrics* rows, std::size_t row_count) {
+  // Step 1: Emit the summary banner and render the header so users see available columns.
+  Serial.println();
+  Serial.println(F("# summary_table"));
+
+  char line_buffer[k_phoenix_benchmark_pot_sweep_summary_buffer_bytes] = {};
+  if (!phoenix_benchmark_pot_sweep_format_summary_header(line_buffer, sizeof(line_buffer))) {
+    Serial.println(F("# summary_table_format_failed"));
+    return false;
+  }
+  Serial.println(line_buffer);
+
+  // Step 2: Iterate each recorded wiper row and print the formatted metrics.
+  for (std::size_t index = 0u; index < row_count; ++index) {
+    const PhoenixBenchmarkPotSweepRowMetrics& row = rows[index];
+
+    PhoenixBenchmarkPotSweepSummaryRowValues summary_values = {
+        .wiper_code     = row.wiper_code,
+        .led1_max_code  = row.led1_max_code,
+        .led2_max_code  = row.led2_max_code,
+        .led1_saturated = row.led1_saturated,
+        .led2_saturated = row.led2_saturated,
+    };
+
+    if (!phoenix_benchmark_pot_sweep_format_summary_row(summary_values, line_buffer, sizeof(line_buffer))) {
+      Serial.println(F("# summary_table_row_format_failed"));
+      continue;
+    }
+    Serial.println(line_buffer);
+  }
+
+  Serial.println();
+  return true;
+}
+
+bool execute_pot_sweep_command(const PhoenixBenchmarkPotSweepOptions& options) {
+  // Step 1: Announce the run parameters for log correlation.
+  Serial.print(F("# running,scenario=pot_sweep,sweeps_per_wiper="));
+  Serial.print(options.sweeps_per_wiper);
+  Serial.print(F(",wiper_count="));
+  Serial.println(static_cast<unsigned long>(options.wiper_count));
+
+  // Step 2: Clear prior metrics and invoke the pot sweep driver.
+  reset_pot_sweep_rows();
+  const PhoenixBenchmarkPotSweepExecutionStatus status =
+      phoenix_benchmark_pot_sweep_run(options, g_pot_sweep_rows, k_phoenix_benchmark_pot_sweep_max_wiper_count);
+
+  if (!status.success) {
+    Serial.print(F("# error,pot_sweep_failed"));
+    if (status.message != nullptr) {
+      Serial.print(F(",reason="));
+      Serial.print(status.message);
+    }
+    Serial.println();
+    return false;
+  }
+
+  // Step 3: Present the summary table so operators can review LED headroom per wiper.
+  if (!print_pot_sweep_summary(g_pot_sweep_rows, status.rows_generated)) {
+    return false;
+  }
+
+  // Step 4: Report recommended wiper selections for each LED when available.
+  if (status.led1_recommendation_valid) {
+    Serial.print(F("# pot_sweep_recommendation,led=led1,wiper=0x"));
+    if (status.led1_recommended_wiper < 0x10u) {
+      Serial.print('0');
+    }
+    Serial.println(status.led1_recommended_wiper, HEX);
+  }
+
+  if (status.led2_recommendation_valid) {
+    Serial.print(F("# pot_sweep_recommendation,led=led2,wiper=0x"));
+    if (status.led2_recommended_wiper < 0x10u) {
+      Serial.print('0');
+    }
+    Serial.println(status.led2_recommended_wiper, HEX);
+  }
+
+  // Step 5: Surface warning context when saturation or channel-map issues occurred.
+  if (status.has_warnings) {
+    bool saturation_detected = false;
+    for (std::size_t index = 0u; index < status.rows_generated; ++index) {
+      if (g_pot_sweep_rows[index].led1_saturated || g_pot_sweep_rows[index].led2_saturated) {
+        saturation_detected = true;
+        break;
+      }
+    }
+
+    Serial.print(F("# pot_sweep_warnings,reason="));
+    Serial.println(saturation_detected ? F("saturation") : F("channel_map_warning"));
+  }
+
+  Serial.println(F("# benchmark_complete"));
+  return true;
+}
+
 bool execute_osr_sweep_command(const PhoenixBenchmarkOsrSweepOptions& options) {
   Serial.print(F("# running,scenario=osr_sweep,pot="));
   Serial.print(options.wiper_code);
@@ -769,6 +882,21 @@ void handle_command_line(const char* line) {
 
     handled = execute_adc_speed_command(adc_speed_options);
   }
+  else if (std::strcmp(command_identifier, "pot_sweep") == 0) {
+    const PhoenixBenchmarkPotSweepParseResult parse_result = phoenix_benchmark_pot_sweep_parse_command(line);
+    if (!parse_result.success) {
+      Serial.print(F("# error,pot_sweep_parse_failed"));
+      if (parse_result.error_message != nullptr) {
+        Serial.print(F(",reason="));
+        Serial.print(parse_result.error_message);
+      }
+      Serial.println();
+      Serial.println(F("# ready"));
+      return;
+    }
+
+    handled = execute_pot_sweep_command(parse_result.options);
+  }
   else if (std::strcmp(command_identifier, "osr_sweep") == 0) {
     const PhoenixBenchmarkOsrSweepParseResult parse_result = phoenix_benchmark_osr_sweep_parse_command(line);
     if (!parse_result.success) {
@@ -814,6 +942,8 @@ void setup() {
   phoenix_benchmark_adc_speed_initialise(k_adc_speed_defaults);
   phoenix_benchmark_osr_sweep_reset_state();
   phoenix_benchmark_osr_sweep_initialise(k_osr_sweep_defaults);
+  phoenix_benchmark_pot_sweep_reset_state();
+  phoenix_benchmark_pot_sweep_initialise(k_pot_sweep_defaults);
 
   // Step 3: Clear previous measurements and present the ready prompt.
   reset_accumulators();
