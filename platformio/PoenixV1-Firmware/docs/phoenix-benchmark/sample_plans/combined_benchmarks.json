@@ -9,6 +9,14 @@
             }
         },
         {
+            "command": "osr_sweep",
+            "parameters": {
+                "sweeps": 10,
+                "dwell_us": 100,
+                "wiper_code": 0
+            }
+        },
+        {
             "command": "adc_speed",
             "parameters": {
                 "duration_ms": 750,

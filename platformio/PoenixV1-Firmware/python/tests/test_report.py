@@ -8,6 +8,7 @@ import pytest  # type: ignore
 
 from phoenix_benchmark.report import (
     AdcSpeedSummaryRow,
+    OsrSweepSummaryRow,
     ReportArtifacts,
     SummaryRow,
     create_report,
@@ -119,8 +120,11 @@ def test_create_report_generates_artifacts(tmp_path: Path) -> None:
     assert "channel_map" in artifacts.summary_json_path.name
     assert artifacts.scenarios == ["channel_map"]
     assert "channel_map" in artifacts.plot_paths
-    assert artifacts.plot_paths["channel_map"].exists()
-    assert artifacts.plot_paths["channel_map"] == artifacts.plot_path
+    channel_plots = artifacts.plot_paths["channel_map"]
+    assert isinstance(channel_plots, list)
+    assert len(channel_plots) == 1
+    assert channel_plots[0].exists()
+    assert channel_plots[0] == artifacts.plot_path
 
     summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
     assert summary_data[0]["scenario"] == "channel_map"
@@ -174,8 +178,11 @@ def test_create_report_handles_adc_speed(tmp_path: Path) -> None:
     assert "adc_speed" in artifacts.summary_json_path.name
     assert artifacts.scenarios == ["adc_speed"]
     assert "adc_speed" in artifacts.plot_paths
-    assert artifacts.plot_paths["adc_speed"].exists()
-    assert artifacts.plot_paths["adc_speed"] == artifacts.plot_path
+    adc_plots = artifacts.plot_paths["adc_speed"]
+    assert isinstance(adc_plots, list)
+    assert len(adc_plots) == 1
+    assert adc_plots[0].exists()
+    assert adc_plots[0] == artifacts.plot_path
 
     summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
     assert summary_data[0]["scenario"] == "adc_speed"
@@ -185,3 +192,67 @@ def test_create_report_handles_adc_speed(tmp_path: Path) -> None:
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "![adc_speed plot](adc_speed.png)" in report_text
+
+
+def _osr_sweep_summary_lines() -> List[str]:
+    return [
+        "# phoenix benchmark ready",
+        "# running,scenario=osr_sweep,pot=85,dwell_us=250,sweeps=12",
+        "# summary_table",
+        "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  LED1_Mean  LED1_Std  LED1_Min  LED1_Max  LED2_Mean  LED2_Std  LED2_Min  LED2_Max  Sweep_us",
+        "OSR32            12       1.234       0.456       1.111       1.888       2.345       0.567       2.123       2.789       3.456       0.678       3.210       3.890      12345",
+        "OSR64            12       1.500       0.400       1.200       1.900       2.800       0.600       2.400       3.000       3.900       0.700       3.500       4.100      15000",
+        "",
+        "# benchmark_complete",
+        "# ready",
+    ]
+
+
+def test_parse_summary_table_handles_osr_sweep() -> None:
+    summaries = parse_summary_table(_osr_sweep_summary_lines())
+
+    assert "osr_sweep" in summaries
+    rows = summaries["osr_sweep"]
+    assert len(rows) == 2
+
+    first = rows[0]
+    assert isinstance(first, OsrSweepSummaryRow)
+    assert first.label == "OSR32"
+    assert first.osr_value == 32
+    assert first.sample_count == 12
+    assert pytest.approx(first.drain_std, rel=1e-6) == 0.456
+    assert pytest.approx(first.led2_mean, rel=1e-6) == 3.456
+    assert first.has_metrics is True
+
+
+def test_create_report_handles_osr_sweep(tmp_path: Path) -> None:
+    lines = _osr_sweep_summary_lines()
+
+    plan_path = tmp_path / "osr_plan.json"
+    plan_path.write_text(json.dumps({"commands": []}), encoding="utf-8")
+
+    output_dir = tmp_path / "osr-report"
+    artifacts = create_report(lines, plan_path, output_dir)
+
+    assert "osr_sweep_pot85_dwell_us250_sweeps12" in artifacts.transcript_path.name
+    assert "osr_sweep_pot85_dwell_us250_sweeps12" in artifacts.summary_json_path.name
+    assert artifacts.scenarios == ["osr_sweep"]
+    assert "osr_sweep" in artifacts.plot_paths
+    osr_plots = artifacts.plot_paths["osr_sweep"]
+    assert isinstance(osr_plots, list)
+    assert len(osr_plots) == 2
+    assert any(path.name.endswith("_stddev.png") for path in osr_plots)
+    assert any(path.name.endswith("_duration.png") for path in osr_plots)
+    for path in osr_plots:
+        assert path.exists()
+
+    summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
+    assert summary_data[0]["scenario"] == "osr_sweep"
+    first_row = summary_data[0]["rows"][0]
+    assert first_row["osr_value"] == 32
+    assert pytest.approx(first_row["drain_std"], rel=1e-6) == 0.456
+    assert first_row["sweep_duration_us"] == 12345
+
+    report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
+    assert "_stddev.png)" in report_text
+    assert "_duration.png)" in report_text

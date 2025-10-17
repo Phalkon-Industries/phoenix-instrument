@@ -42,6 +42,23 @@ class AdcSpeedCommand:
 
 
 @dataclass(frozen=True)
+class OsrSweepCommand:
+    """Requests an oversampling ratio sweep with shared dwell/pot settings."""
+
+    sweeps: int
+    dwell_us: int | None = None
+    wiper_code: int | None = None
+
+    def to_payload(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"sweeps": self.sweeps}
+        if self.dwell_us is not None:
+            payload["dwell_us"] = self.dwell_us
+        if self.wiper_code is not None:
+            payload["wiper_code"] = self.wiper_code
+        return payload
+
+
+@dataclass(frozen=True)
 class BenchmarkCommand:
     """Envelope describing a single host-to-firmware request."""
 
@@ -79,6 +96,24 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
                     "channel_map.wiper_code must be an integer between 0 and 255"
                 )
         command = ChannelMapCommand(sweeps=sweeps, dwell_us=dwell, wiper_code=wiper)
+        return BenchmarkCommand(name=name, parameters=command.to_payload())
+
+    if name == "osr_sweep":
+        sweeps = parameters.get("sweeps", 10)
+        if not isinstance(sweeps, int) or sweeps <= 0:
+            raise ValueError("osr_sweep.sweeps must be a positive integer")
+        dwell = parameters.get("dwell_us")
+        if dwell is not None and (not isinstance(dwell, int) or dwell < 0):
+            raise ValueError(
+                "osr_sweep.dwell_us must be a non-negative integer when provided"
+            )
+        wiper = parameters.get("wiper_code")
+        if wiper is not None:
+            if not isinstance(wiper, int) or not (0 <= wiper <= 0xFF):
+                raise ValueError(
+                    "osr_sweep.wiper_code must be an integer between 0 and 255"
+                )
+        command = OsrSweepCommand(sweeps=sweeps, dwell_us=dwell, wiper_code=wiper)
         return BenchmarkCommand(name=name, parameters=command.to_payload())
 
     if name == "adc_speed":
@@ -133,5 +168,6 @@ __all__ = [
     "AdcSpeedCommand",
     "BenchmarkCommand",
     "ChannelMapCommand",
+    "OsrSweepCommand",
     "load_command_plan",
 ]
