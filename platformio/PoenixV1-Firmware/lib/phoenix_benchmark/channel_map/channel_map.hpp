@@ -116,6 +116,13 @@ const PhoenixBenchmarkChannelMapStateDescriptor* phoenix_benchmark_channel_map_s
 void phoenix_benchmark_channel_map_initialise(const PhoenixBenchmarkChannelMapDefaults& defaults);
 
 /**
+ * @brief Ensure all hardware domains are powered and peripherals initialised.
+ *
+ * @return True when the analog front-end is ready for sampling; false on failure.
+ */
+bool phoenix_benchmark_channel_map_ensure_hardware_ready(void);
+
+/**
  * @brief Execute a channel map sweep using the provided options and accumulators.
  *
  * @param options Parsed options describing sweep count, dwell time, and wiper code.

@@ -21,6 +21,7 @@ constexpr const char* k_error_invalid_arguments = "invalid arguments";
 constexpr const char* k_error_invalid_options   = "invalid options";
 constexpr const char* k_error_set_osr_failed    = "osr configuration failed";
 constexpr const char* k_error_channel_map_run   = "channel_map failed";
+constexpr const char* k_error_hardware_init     = "hardware initialisation failed";
 
 typedef PhoenixBenchmarkChannelMapExecutionStatus (*ChannelMapRunner)(
     const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
@@ -30,10 +31,13 @@ typedef int (*OsrSetter)(mcp356x_osr value);
 
 typedef uint32_t (*MicrosProvider)(void);
 
+typedef bool (*HardwareReadyChecker)(void);
+
 PhoenixBenchmarkOsrSweepDefaults g_osr_defaults       = k_default_osr_sweep_defaults;
 ChannelMapRunner                 g_channel_map_runner = phoenix_benchmark_channel_map_run;
 OsrSetter                        g_osr_setter         = mcp356x_set_osr;
 MicrosProvider                   g_micros_provider    = ::micros;
+HardwareReadyChecker             g_hardware_ready     = phoenix_benchmark_channel_map_ensure_hardware_ready;
 
 constexpr mcp356x_osr k_osr_values[k_phoenix_benchmark_osr_value_count] = {
     mcp356x_osr::osr_32,    mcp356x_osr::osr_64,    mcp356x_osr::osr_128,   mcp356x_osr::osr_256,
@@ -140,6 +144,10 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
 
   PhoenixBenchmarkChannelMapOutputCallbacks callbacks = {nullptr, nullptr};
 
+  if (!g_hardware_ready()) {
+    return {false, false, k_error_hardware_init, 0u};
+  }
+
   uint32_t rows_generated = 0u;
   bool     has_warnings   = false;
   for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_value_count; ++index) {
@@ -203,8 +211,13 @@ void phoenix_benchmark_osr_sweep_set_micros_provider_for_test(uint32_t (*provide
   g_micros_provider = (provider != nullptr) ? provider : ::micros;
 }
 
+void phoenix_benchmark_osr_sweep_set_hardware_ready_checker_for_test(bool (*checker)(void)) {
+  g_hardware_ready = (checker != nullptr) ? checker : phoenix_benchmark_channel_map_ensure_hardware_ready;
+}
+
 void phoenix_benchmark_osr_sweep_clear_test_hooks(void) {
   g_channel_map_runner = phoenix_benchmark_channel_map_run;
   g_osr_setter         = mcp356x_set_osr;
   g_micros_provider    = ::micros;
+  g_hardware_ready     = phoenix_benchmark_channel_map_ensure_hardware_ready;
 }

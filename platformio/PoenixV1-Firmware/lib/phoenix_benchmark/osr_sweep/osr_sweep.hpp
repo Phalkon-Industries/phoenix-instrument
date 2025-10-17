@@ -141,6 +141,13 @@ void phoenix_benchmark_osr_sweep_set_osr_setter_for_test(int (*setter)(mcp356x_o
 void phoenix_benchmark_osr_sweep_set_micros_provider_for_test(uint32_t (*provider)(void));
 
 /**
+ * rief Overrides the hardware-ready checker used during unit tests.
+ *
+ * Passing nullptr restores the production implementation.
+ */
+void phoenix_benchmark_osr_sweep_set_hardware_ready_checker_for_test(bool (*checker)(void));
+
+/**
  * \brief Restores all unit-test hook overrides to their production defaults.
  */
 void phoenix_benchmark_osr_sweep_clear_test_hooks(void);

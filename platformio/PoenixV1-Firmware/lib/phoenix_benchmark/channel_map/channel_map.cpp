@@ -196,6 +196,21 @@ static bool select_led_state(LedRouterState state) {
   return return_code == LED_ROUTER_OK;
 }
 
+static bool ensure_hardware_ready(void) {
+  // Step 1: Power up shared rails and park indicator LEDs.
+  enable_power_domains();
+  configure_led_idle();
+
+  // Step 2: Initialise peripheral drivers before sampling.
+  if (!ensure_digipot_initialised() || !ensure_adc_initialised() || !ensure_led_router_initialised()) {
+    return false;
+  }
+
+  // Step 3: Default the router to the drain path so downstream code sees a known baseline.
+  (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
+  return true;
+}
+
 static bool read_adc_channel(AdcHalChannel channel, int32_t* out_code) {
   // Step 1: Request a single-ended conversion and capture the resulting code.
   const int return_code = adc_hal_read_single_ended(channel, k_adc_timeout_us, out_code);
@@ -341,6 +356,10 @@ const PhoenixBenchmarkChannelMapStateDescriptor* phoenix_benchmark_channel_map_s
 void phoenix_benchmark_channel_map_initialise(const PhoenixBenchmarkChannelMapDefaults& defaults) {
   g_defaults = defaults;
 }
+
+bool phoenix_benchmark_channel_map_ensure_hardware_ready(void) {
+  return ensure_hardware_ready();
+}
 //
 // ============================= Main Function =============================
 //
@@ -362,23 +381,16 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
     return {false, PHOENIX_BENCHMARK_ERR_INVALID_ARGUMENT, k_error_invalid_options, false};
   }
 
-  // Step 3: Power the shared domains and park indicators in a neutral state.
-  enable_power_domains();
-  configure_led_idle();
-
-  // Step 4: Initialize every peripheral before we start the sweep.
-  if (!ensure_digipot_initialised() || !ensure_adc_initialised() || !ensure_led_router_initialised()) {
+  // Step 3: Power domains and initialise peripherals before starting the sweep.
+  if (!ensure_hardware_ready()) {
     emit_line(callbacks, "# channel_map,error=hardware_initialisation_failed");
     return {false, PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE, k_error_hardware_failure, false};
   }
 
-  // Step 5: Set the LED router to drain.
-  (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
-
-  // Step 6: Reset the per-state statistics before recording measurements.
+  // Step 4: Reset the per-state statistics before recording measurements.
   reset_accumulators(accumulators);
 
-  // Step 7: Apply the requested digitpot value.
+  // Step 5: Apply the requested digitpot value.
   if (!apply_wiper_code(options.wiper_code)) {
     emit_line(callbacks, "# channel_map,error=ad524x_failure");
     return {false, PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE, k_error_hardware_failure, false};
