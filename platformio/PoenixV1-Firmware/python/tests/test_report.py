@@ -134,6 +134,8 @@ def test_create_report_generates_artifacts(tmp_path: Path) -> None:
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "![channel_map plot](channel_map.png)" in report_text
+    assert "| State | Samples |" in report_text
+    assert "| LED1 | 10 | 123.000 |" in report_text
     assert "LED1" in report_text
 
 
@@ -192,6 +194,8 @@ def test_create_report_handles_adc_speed(tmp_path: Path) -> None:
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "![adc_speed plot](adc_speed.png)" in report_text
+    assert "| Mode | Samples/s |" in report_text
+    assert "| Blocking | 1234.500 |" in report_text
 
 
 def _osr_sweep_summary_lines() -> List[str]:
@@ -256,3 +260,5 @@ def test_create_report_handles_osr_sweep(tmp_path: Path) -> None:
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "_stddev.png)" in report_text
     assert "_duration.png)" in report_text
+    assert "| OSR | Samples |" in report_text
+    assert "| 32 | 12 | 1.234 |" in report_text

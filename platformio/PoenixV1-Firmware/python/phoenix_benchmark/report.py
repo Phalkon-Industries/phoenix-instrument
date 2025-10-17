@@ -11,6 +11,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter
 
 LABEL_WIDTH = 8
 SAMPLES_WIDTH = 9
@@ -267,7 +268,7 @@ def create_report(
     }
 
     report_markdown_path.write_text(
-        _render_markdown_report(plan_path, sections, plot_relatives),
+        _render_markdown_report(plan_path, sections, plot_relatives, summaries),
         encoding="utf-8",
     )
 
@@ -517,6 +518,35 @@ def _parse_float(value: str) -> float | None:
         raise ValueError(f"Invalid float field in summary row: '{value}'") from exc
 
 
+def _format_optional_float(value: float | None, digits: int = 3) -> str:
+    if value is None:
+        return "--"
+    return f"{value:.{digits}f}"
+
+
+def _format_optional_int(value: int | None) -> str:
+    if value is None:
+        return "--"
+    return str(value)
+
+
+def _format_optional_text(value: str | None) -> str:
+    return value if value else "--"
+
+
+def _apply_osr_log_axis(axes: Iterable[plt.Axes], values: List[int]) -> None:
+    if not values:
+        return
+
+    for axis in axes:
+        axis.set_xscale("log", base=2)
+        axis.set_xticks(values)
+        formatter = ScalarFormatter()
+        formatter.set_scientific(False)
+        axis.xaxis.set_major_formatter(formatter)
+        axis.tick_params(axis="x", labelrotation=45)
+
+
 def _render_placeholder_plot(message: str, output_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.set_title(message)
@@ -695,8 +725,7 @@ def _render_osr_standard_deviation_plot(
 
     x_axis = [row.osr_value for row in sorted_rows if row.osr_value is not None]
     ax_drain.set_xlabel("OSR setting")
-    if x_axis:
-        ax_drain.set_xticks(x_axis)
+    _apply_osr_log_axis([ax_drain, ax_led1, ax_led2], x_axis)
     ax_drain.set_title("OSR sweep standard deviation")
     ax_drain.grid(axis="both", linestyle="--", alpha=0.4)
 
@@ -730,17 +759,145 @@ def _render_osr_duration_plot(
     ax.set_ylabel("Sweep duration (us)")
     ax.set_title("OSR sweep duration per setting")
     ax.grid(axis="both", linestyle="--", alpha=0.4)
-    ax.set_xticks(x_vals)
+    _apply_osr_log_axis([ax], x_vals)
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
 
 
+def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
+    channel_rows = [row for row in rows if isinstance(row, SummaryRow)]
+    if not channel_rows:
+        return []
+
+    headers = [
+        "State",
+        "Samples",
+        "Mean A",
+        "Std A",
+        "Min A",
+        "Max A",
+        "Mean B",
+        "Std B",
+        "Min B",
+        "Max B",
+        "Channel map",
+    ]
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+
+    for row in channel_rows:
+        values = [
+            row.label,
+            str(row.sample_count),
+            _format_optional_float(row.mean_channel_a),
+            _format_optional_float(row.std_channel_a),
+            _format_optional_float(row.min_channel_a),
+            _format_optional_float(row.max_channel_a),
+            _format_optional_float(row.mean_channel_b),
+            _format_optional_float(row.std_channel_b),
+            _format_optional_float(row.min_channel_b),
+            _format_optional_float(row.max_channel_b),
+            _format_optional_text(row.channel_alignment),
+        ]
+        table.append("| " + " | ".join(values) + " |")
+
+    return table
+
+
+def _build_adc_speed_table(rows: List[ParsedSummary]) -> List[str]:
+    adc_rows = [row for row in rows if isinstance(row, AdcSpeedSummaryRow)]
+    if not adc_rows:
+        return []
+
+    headers = ["Mode", "Samples/s", "Loop (us)", "Errors", "Notes"]
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+
+    for row in adc_rows:
+        values = [
+            row.mode,
+            _format_optional_float(row.samples_per_second),
+            _format_optional_float(row.loop_microseconds),
+            _format_optional_int(row.error_count),
+            _format_optional_text(row.notes),
+        ]
+        table.append("| " + " | ".join(values) + " |")
+
+    return table
+
+
+def _build_osr_sweep_table(rows: List[ParsedSummary]) -> List[str]:
+    osr_rows = [row for row in rows if isinstance(row, OsrSweepSummaryRow)]
+    if not osr_rows:
+        return []
+
+    headers = [
+        "OSR",
+        "Samples",
+        "Drain mean",
+        "Drain std",
+        "Drain min",
+        "Drain max",
+        "LED1 mean",
+        "LED1 std",
+        "LED1 min",
+        "LED1 max",
+        "LED2 mean",
+        "LED2 std",
+        "LED2 min",
+        "LED2 max",
+        "Sweep (us)",
+    ]
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+
+    for row in osr_rows:
+        osr_label = str(row.osr_value) if row.osr_value is not None else row.label
+        values = [
+            osr_label,
+            str(row.sample_count),
+            _format_optional_float(row.drain_mean),
+            _format_optional_float(row.drain_std),
+            _format_optional_float(row.drain_min),
+            _format_optional_float(row.drain_max),
+            _format_optional_float(row.led1_mean),
+            _format_optional_float(row.led1_std),
+            _format_optional_float(row.led1_min),
+            _format_optional_float(row.led1_max),
+            _format_optional_float(row.led2_mean),
+            _format_optional_float(row.led2_std),
+            _format_optional_float(row.led2_min),
+            _format_optional_float(row.led2_max),
+            _format_optional_int(row.sweep_duration_us),
+        ]
+        table.append("| " + " | ".join(values) + " |")
+
+    return table
+
+
+def _render_section_table(scenario: str, rows: List[ParsedSummary]) -> List[str]:
+    if scenario == "channel_map":
+        return _build_channel_map_table(rows)
+    if scenario == "adc_speed":
+        return _build_adc_speed_table(rows)
+    if scenario == "osr_sweep":
+        return _build_osr_sweep_table(rows)
+    return []
+
+
 def _render_markdown_report(
     plan_path: Path,
     sections: List[_SummarySection],
     plot_paths: Dict[str, List[Path]],
+    summaries: Dict[str, List[ParsedSummary]],
 ) -> str:
     lines = ["# Phoenix Benchmark Report", ""]
     lines.append(f"*Plan:* `{plan_path}`")
@@ -748,10 +905,17 @@ def _render_markdown_report(
     if sections:
         for section in sections:
             lines.append(f"## Summary Table ({section.scenario})")
-            lines.append("```")
-            lines.append(section.header)
-            lines.extend(section.rows)
-            lines.append("```")
+            table_lines = _render_section_table(
+                section.scenario, summaries.get(section.scenario, [])
+            )
+            if table_lines:
+                lines.extend(table_lines)
+            else:
+                lines.append("```")
+                lines.append(section.header)
+                lines.extend(section.rows)
+                lines.append("```")
+            lines.append("")
             if section.scenario in plot_paths:
                 for index, path in enumerate(plot_paths[section.scenario], start=1):
                     plot_name = path.as_posix()
