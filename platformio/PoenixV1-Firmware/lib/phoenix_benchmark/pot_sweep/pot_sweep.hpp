@@ -17,23 +17,18 @@ constexpr std::size_t k_phoenix_benchmark_pot_sweep_max_wiper_count = 256u;
 struct PhoenixBenchmarkPotSweepDefaults {
   /** Number of channel-map mini-sweeps executed for each wiper position. */
   uint32_t sweeps_per_wiper;
-  /** First wiper code included when generating the default list. */
-  uint8_t wiper_start;
-  /** Last wiper code included when generating the default list. */
-  uint8_t wiper_end;
-  /** Increment applied between wiper codes when filling the default list. */
-  uint8_t wiper_step;
+  /** Microsecond dwell applied before each channel-map measurement. */
+  uint32_t dwell_us;
 };
 
 /**
  * @brief Call-site options controlling a potentiometer sweep execution.
  */
 struct PhoenixBenchmarkPotSweepOptions {
-  uint32_t    sweeps_per_wiper;
-  bool        has_sweeps_override;
-  uint8_t     wiper_codes[k_phoenix_benchmark_pot_sweep_max_wiper_count];
-  std::size_t wiper_count;
-  bool        has_wiper_list_override;
+  uint32_t sweeps_per_wiper;
+  bool     has_sweeps_override;
+  uint32_t dwell_us;
+  bool     has_dwell_override;
 
   /**
    * @brief Populate unset fields with the supplied defaults.

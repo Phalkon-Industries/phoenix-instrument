@@ -14,9 +14,7 @@ namespace {
 
 constexpr PhoenixBenchmarkPotSweepDefaults k_default_pot_sweep_defaults = {
     .sweeps_per_wiper = 5u,
-    .wiper_start      = 0x00u,
-    .wiper_end        = 0xFFu,
-    .wiper_step       = 0x01u,
+    .dwell_us         = 100u,
 };
 
 // 90% of the 24-bit full-scale ADC code (0.9 * 8,388,607) defines the saturation boundary.
@@ -110,48 +108,21 @@ void PhoenixBenchmarkPotSweepOptions::apply_defaults(const PhoenixBenchmarkPotSw
     sweeps_per_wiper = defaults.sweeps_per_wiper;
   }
 
-  // Step 2: Populate the default wiper list when the caller supplied no override list.
-  if (!has_wiper_list_override) {
-    wiper_count = 0u;
-    if ((defaults.wiper_step == 0u) || (defaults.wiper_start > defaults.wiper_end)) {
-      return;
-    }
-
-    for (uint32_t code = defaults.wiper_start; code <= defaults.wiper_end; code += defaults.wiper_step) {
-      if (wiper_count >= k_phoenix_benchmark_pot_sweep_max_wiper_count) {
-        break;
-      }
-      wiper_codes[wiper_count] = static_cast<uint8_t>(code & 0xFFu);
-      wiper_count += 1u;
-
-      if (defaults.wiper_end - code < defaults.wiper_step) {
-        break;
-      }
-    }
+  // Step 2: Mirror the default dwell time unless the caller provided an override.
+  if (!has_dwell_override) {
+    dwell_us = defaults.dwell_us;
   }
 }
 
 bool PhoenixBenchmarkPotSweepOptions::validate(const char** error_message) const {
   const char* message = nullptr;
 
-  // Step 1: Guard against zero sweeps or an empty wiper list.
+  // Step 1: Guard against zero sweeps or excessive dwell times.
   if (sweeps_per_wiper == 0u) {
     message = "sweeps_per_wiper must be greater than zero";
   }
-  else if (wiper_count == 0u) {
-    message = "wiper list cannot be empty";
-  }
-  else if (wiper_count > k_phoenix_benchmark_pot_sweep_max_wiper_count) {
-    message = "wiper list exceeds capacity";
-  }
-  else {
-    // Step 2: Ensure wiper codes increase strictly so pot sweeps move forward monotonically.
-    for (std::size_t index = 1u; index < wiper_count; ++index) {
-      if (wiper_codes[index] <= wiper_codes[index - 1u]) {
-        message = "wiper codes must be strictly ascending";
-        break;
-      }
-    }
+  else if (dwell_us > 5000000u) {
+    message = "dwell_us exceeds limit";
   }
 
   if ((message != nullptr) && (error_message != nullptr)) {
@@ -316,47 +287,14 @@ PhoenixBenchmarkPotSweepParseResult phoenix_benchmark_pot_sweep_parse_command(co
           options.sweeps_per_wiper    = sweeps;
           options.has_sweeps_override = true;
         }
-        else if (std::strcmp(param_key_buffer, "wipers") == 0) {
-          // Step 3b-ii: Replace the default wiper list with the host-provided sequence.
-          if (*cursor != '[') {
-            return {false, options, k_error_invalid_command};
+        else if (std::strcmp(param_key_buffer, "dwell_us") == 0) {
+          // Step 3b-ii: Override the dwell interval when specified by the host.
+          uint32_t dwell = 0u;
+          if (!parse_unsigned_value(cursor, 10, &dwell, &cursor)) {
+            return {false, options, k_error_invalid_value};
           }
-          ++cursor;
-          options.has_wiper_list_override = true;
-          options.wiper_count             = 0u;
-          while (true) {
-            cursor = skip_whitespace(cursor);
-            if (cursor == nullptr) {
-              return {false, options, k_error_invalid_command};
-            }
-            if (*cursor == ']') {
-              ++cursor;
-              break;
-            }
-
-            uint32_t parsed_value = 0u;
-            if (!parse_unsigned_value(cursor, 0, &parsed_value, &cursor) || (parsed_value > 0xFFu)) {
-              return {false, options, k_error_invalid_value};
-            }
-
-            if (options.wiper_count >= k_phoenix_benchmark_pot_sweep_max_wiper_count) {
-              return {false, options, k_error_invalid_value};
-            }
-
-            options.wiper_codes[options.wiper_count] = static_cast<uint8_t>(parsed_value & 0xFFu);
-            options.wiper_count += 1u;
-
-            cursor = skip_whitespace(cursor);
-            if (*cursor == ',') {
-              ++cursor;
-              continue;
-            }
-            if (*cursor == ']') {
-              ++cursor;
-              break;
-            }
-            return {false, options, k_error_invalid_command};
-          }
+          options.dwell_us           = dwell;
+          options.has_dwell_override = true;
         }
         else {
           // Step 3b-iii: Reject unrecognised parameters to highlight protocol drift.
@@ -423,7 +361,7 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
   }
 
   // Step 4: Confirm the output buffer can store every wiper result.
-  if (row_capacity < options.wiper_count) {
+  if (row_capacity < k_phoenix_benchmark_pot_sweep_max_wiper_count) {
     return {false, false, k_error_invalid_arguments, 0u, false, 0u, false, 0u};
   }
 
@@ -434,6 +372,9 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
 
   const ChannelMapTemplateResult    template_result      = load_channel_map_template();
   PhoenixBenchmarkChannelMapOptions channel_map_template = template_result.options;
+
+  channel_map_template.dwell_us           = options.dwell_us;
+  channel_map_template.has_dwell_override = true;
 
   PhoenixBenchmarkChannelMapOutputCallbacks callbacks = {nullptr, nullptr};
 
@@ -448,13 +389,15 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
   uint8_t led2_recommended_wiper    = 0u;
   int32_t led2_best_code            = std::numeric_limits<int32_t>::min();
 
-  for (std::size_t index = 0u; index < options.wiper_count; ++index) {
-    const uint8_t wiper_code = options.wiper_codes[index];
+  for (uint32_t wiper = 0u; wiper <= 0xFFu; ++wiper) {
+    const uint8_t wiper_code = static_cast<uint8_t>(wiper & 0xFFu);
 
     // Step 6: Execute the channel-map runner for the current wiper position.
     PhoenixBenchmarkChannelMapOptions map_options = channel_map_template;
     map_options.sweep_count                       = options.sweeps_per_wiper;
     map_options.has_sweep_override                = true;
+    map_options.dwell_us                          = options.dwell_us;
+    map_options.has_dwell_override                = true;
     map_options.wiper_code                        = wiper_code;
     map_options.has_wiper_override                = true;
 
@@ -478,7 +421,7 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
     }
 
     // Step 7: Capture per-wiper maxima so the formatter can report LED headroom.
-    PhoenixBenchmarkPotSweepRowMetrics& row = rows[index];
+    PhoenixBenchmarkPotSweepRowMetrics& row = rows[rows_generated];
     row                                     = PhoenixBenchmarkPotSweepRowMetrics{};
     row.wiper_code                          = wiper_code;
 
@@ -525,14 +468,14 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
   }
 
   // Step 9: Fall back to the first wiper when saturation prevented recommendation selection.
-  if (!led1_recommendation_valid && (options.wiper_count > 0u)) {
+  if (!led1_recommendation_valid) {
     led1_recommendation_valid = true;
-    led1_recommended_wiper    = options.wiper_codes[0];
+    led1_recommended_wiper    = 0x00u;
   }
 
-  if (!led2_recommendation_valid && (options.wiper_count > 0u)) {
+  if (!led2_recommendation_valid) {
     led2_recommendation_valid = true;
-    led2_recommended_wiper    = options.wiper_codes[0];
+    led2_recommended_wiper    = 0x00u;
   }
 
   return {true,

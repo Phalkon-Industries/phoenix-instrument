@@ -48,9 +48,7 @@ const PhoenixBenchmarkOsrSweepDefaults k_osr_sweep_defaults = {
 
 const PhoenixBenchmarkPotSweepDefaults k_pot_sweep_defaults = {
     .sweeps_per_wiper = 5u,
-    .wiper_start      = 0x00u,
-    .wiper_end        = 0xFFu,
-    .wiper_step       = 0x01u,
+    .dwell_us         = 100u,
 };
 
 PhoenixBenchmarkStateAccumulator   g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
@@ -638,8 +636,10 @@ bool execute_pot_sweep_command(const PhoenixBenchmarkPotSweepOptions& options) {
   // Step 1: Announce the run parameters for log correlation.
   Serial.print(F("# running,scenario=pot_sweep,sweeps_per_wiper="));
   Serial.print(options.sweeps_per_wiper);
+  Serial.print(F(",dwell_us="));
+  Serial.print(options.dwell_us);
   Serial.print(F(",wiper_count="));
-  Serial.println(static_cast<unsigned long>(options.wiper_count));
+  Serial.println(static_cast<unsigned long>(k_phoenix_benchmark_pot_sweep_max_wiper_count));
 
   // Step 2: Clear prior metrics and invoke the pot sweep driver.
   reset_pot_sweep_rows();
