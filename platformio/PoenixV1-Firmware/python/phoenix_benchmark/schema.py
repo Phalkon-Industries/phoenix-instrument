@@ -59,6 +59,20 @@ class OsrSweepCommand:
 
 
 @dataclass(frozen=True)
+class PotSweepCommand:
+    """Requests a potentiometer sweep across the full wiper range."""
+
+    sweeps_per_wiper: int
+    dwell_us: int | None = None
+
+    def to_payload(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"sweeps": self.sweeps_per_wiper}
+        if self.dwell_us is not None:
+            payload["dwell_us"] = self.dwell_us
+        return payload
+
+
+@dataclass(frozen=True)
 class BenchmarkCommand:
     """Envelope describing a single host-to-firmware request."""
 
@@ -133,6 +147,26 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
         )
         return BenchmarkCommand(name=name, parameters=command.to_payload())
 
+    if name == "pot_sweep":
+        sweeps = parameters.get("sweeps", 5)
+        if not isinstance(sweeps, int) or sweeps <= 0:
+            raise ValueError("pot_sweep.sweeps must be a positive integer")
+
+        dwell = parameters.get("dwell_us")
+        if dwell is not None:
+            if not isinstance(dwell, int) or dwell < 0:
+                raise ValueError(
+                    "pot_sweep.dwell_us must be a non-negative integer when provided"
+                )
+
+        extra_keys = set(parameters.keys()) - {"sweeps", "dwell_us"}
+        if extra_keys:
+            unexpected = ", ".join(sorted(extra_keys))
+            raise ValueError(f"pot_sweep received unsupported parameters: {unexpected}")
+
+        command = PotSweepCommand(sweeps_per_wiper=sweeps, dwell_us=dwell)
+        return BenchmarkCommand(name=name, parameters=command.to_payload())
+
     # Unknown commands pass-through for future phases
     return BenchmarkCommand(name=name, parameters=parameters)
 
@@ -168,6 +202,7 @@ __all__ = [
     "AdcSpeedCommand",
     "BenchmarkCommand",
     "ChannelMapCommand",
+    "PotSweepCommand",
     "OsrSweepCommand",
     "load_command_plan",
 ]

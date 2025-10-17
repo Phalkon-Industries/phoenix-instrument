@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from typing import List
+from typing import Dict, List
 
 import pytest  # type: ignore
 
@@ -120,6 +120,26 @@ class OsrSweepSerial(DummySerial):
             header,
             row,
             b"\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+        ]
+
+
+class PotSweepSerial(DummySerial):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._line_queue = [
+            b"# phoenix benchmark ready\n",
+            b"# running,scenario=pot_sweep,sweeps_per_wiper=6,dwell_us=180,wiper_count=256\n",
+            b"# summary_table\n",
+            b"Wiper LED1_Max LED2_Max LED1_Sat LED2_Sat\n",
+            b"0x10  7000000  6800000    no    no\n",
+            b"0x20  7600000  6900000   yes    no\n",
+            b"0x30  7800000  7900000   yes   yes\n",
+            b"\n",
+            b"# pot_sweep_recommendation,led=led1,wiper=0x10\n",
+            b"# pot_sweep_recommendation,led=led2,wiper=0x20\n",
+            b"# pot_sweep_warnings,reason=saturation\n",
             b"# benchmark_complete\n",
             b"# ready\n",
         ]
@@ -342,6 +362,83 @@ def test_cli_streams_osr_sweep_command(
     assert any(
         "osr_sweep_pot85_dwell_us250_sweeps12_duration" in plot.name for plot in plots
     )
+
+
+def test_cli_streams_pot_sweep_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "pot_sweep",
+                        "parameters": {"sweeps": 6, "dwell_us": 180},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "pot-report"
+
+    monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", PotSweepSerial)
+
+    captured: Dict[str, object] = {}
+
+    class DummyArtifacts:
+        def __init__(self, directory: Path) -> None:
+            self.output_dir = directory
+            self.transcript_path = directory / "transcript_pot_sweep.txt"
+            self.summary_json_path = directory / "summary_pot_sweep.json"
+            self.plot_path = directory / "pot_sweep.png"
+            self.report_markdown_path = directory / "report.md"
+            self.scenarios = ["pot_sweep"]
+            self.plot_paths = {"pot_sweep": [self.plot_path]}
+            self.csv_paths = {"pot_sweep": [directory / "pot_sweep.csv"]}
+            self.pot_sweep_recommendations = {"led1": "0x10", "led2": "0x20"}
+            self.pot_sweep_warning = "saturation"
+            self.transcript_path.parent.mkdir(parents=True, exist_ok=True)
+            self.transcript_path.write_text("", encoding="utf-8")
+            self.summary_json_path.write_text("[]", encoding="utf-8")
+            self.plot_path.write_text("plot", encoding="utf-8")
+            self.report_markdown_path.write_text("report", encoding="utf-8")
+            for path in self.csv_paths["pot_sweep"]:
+                path.write_text(
+                    "wiper,led1_max,led2_max,led1_saturated,led2_saturated\n",
+                    encoding="utf-8",
+                )
+
+    def fake_create_report(lines, plan_path, out_dir):  # type: ignore[no-untyped-def]
+        captured["lines"] = list(lines)
+        captured["plan"] = plan_path
+        captured["output"] = out_dir
+        return DummyArtifacts(out_dir)
+
+    monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
+
+    exit_code = main([str(plan), "--port", "COM10", "--output", str(output_dir)])
+    assert exit_code == 0
+
+    stdout = capsys.readouterr().out
+    assert "# running,scenario=pot_sweep" in stdout
+    assert "# pot_sweep_recommendation" in stdout
+    assert "# pot_sweep_summary,led1=0x10,led2=0x20,warnings=saturation" in stdout
+
+    instance = DummySerial.last_instance
+    assert instance is not None
+    assert any(b'"command":"pot_sweep"' in payload for payload in instance.written)
+    assert any(b'"sweeps":6' in payload for payload in instance.written)
+    assert any(b'"dwell_us":180' in payload for payload in instance.written)
+    assert all(b'"wipers"' not in payload for payload in instance.written)
+
+    assert captured["plan"] == plan
+    assert captured["output"] == output_dir
+    recorded_lines = captured["lines"]
+    assert isinstance(recorded_lines, list)
+    assert any("Wiper LED1_Max" in entry for entry in recorded_lines)
 
 
 def test_cli_aborts_when_device_reports_error(

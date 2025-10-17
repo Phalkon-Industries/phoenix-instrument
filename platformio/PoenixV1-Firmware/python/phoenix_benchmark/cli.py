@@ -118,6 +118,15 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 130
 
     artifacts = create_report(transcript, args.plan, output_dir)
+    recommendations = getattr(artifacts, "pot_sweep_recommendations", {}) or {}
+    warning_label = getattr(artifacts, "pot_sweep_warning", None)
+    if recommendations:
+        led1 = recommendations.get("led1", "--")
+        led2 = recommendations.get("led2", "--")
+        warning = warning_label if warning_label else "none"
+        sys.stdout.write(
+            f"# pot_sweep_summary,led1={led1},led2={led2},warnings={warning}\n"
+        )
     sys.stdout.write(f"# report_written,{artifacts.report_markdown_path}\n")
 
     return 0

@@ -17,10 +17,12 @@ LABEL_WIDTH = 8
 SAMPLES_WIDTH = 9
 CHANNEL_WIDTH = 12
 MAP_WIDTH = 12
+POT_SWEEP_SATURATION_THRESHOLD = 7_549_746
 
 __all__ = [
     "AdcSpeedSummaryRow",
     "OsrSweepSummaryRow",
+    "PotSweepSummaryRow",
     "SummaryRow",
     "ReportArtifacts",
     "parse_summary_table",
@@ -123,14 +125,35 @@ class OsrSweepSummaryRow:
 
 
 @dataclass(frozen=True)
+class PotSweepSummaryRow:
+    wiper_code: int
+    led1_max_code: int
+    led2_max_code: int
+    led1_saturated: bool
+    led2_saturated: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "wiper_code": self.wiper_code,
+            "led1_max_code": self.led1_max_code,
+            "led2_max_code": self.led2_max_code,
+            "led1_saturated": self.led1_saturated,
+            "led2_saturated": self.led2_saturated,
+        }
+
+
+@dataclass(frozen=True)
 class ReportArtifacts:
     output_dir: Path
     transcript_path: Path
     summary_json_path: Path
     plot_path: Path
     plot_paths: Dict[str, List[Path]]
+    csv_paths: Dict[str, List[Path]]
     report_markdown_path: Path
     scenarios: List[str]
+    pot_sweep_recommendations: Dict[str, str]
+    pot_sweep_warning: str | None
 
 
 @dataclass(frozen=True)
@@ -144,7 +167,9 @@ class _SummarySection:
         return [self.header, *self.rows]
 
 
-ParsedSummary = Union[SummaryRow, AdcSpeedSummaryRow, OsrSweepSummaryRow]
+ParsedSummary = Union[
+    SummaryRow, AdcSpeedSummaryRow, OsrSweepSummaryRow, PotSweepSummaryRow
+]
 
 
 def _extract_metadata(line: str) -> Dict[str, str]:
@@ -162,17 +187,51 @@ def _extract_metadata(line: str) -> Dict[str, str]:
 
 
 def _build_scenario_slug(scenario: str, metadata: Dict[str, str]) -> str:
-    if scenario != "osr_sweep" or not metadata:
-        return scenario
+    if scenario == "osr_sweep" and metadata:
+        parts = [scenario]
+        for key in ("pot", "dwell_us", "sweeps"):
+            value = metadata.get(key)
+            if value is None:
+                continue
+            sanitized = value.replace("/", "_").replace(" ", "_")
+            parts.append(f"{key}{sanitized}")
+        return "_".join(parts)
 
-    parts = [scenario]
-    for key in ("pot", "dwell_us", "sweeps"):
-        value = metadata.get(key)
-        if value is None:
-            continue
-        sanitized = value.replace("/", "_").replace(" ", "_")
-        parts.append(f"{key}{sanitized}")
-    return "_".join(parts)
+    if scenario == "pot_sweep" and metadata:
+        parts = [scenario]
+        for key in ("sweeps_per_wiper", "dwell_us", "wiper_count"):
+            value = metadata.get(key)
+            if value is None:
+                continue
+            sanitized = value.replace("/", "_").replace(" ", "_")
+            parts.append(f"{key}{sanitized}")
+        return "_".join(parts)
+
+    return scenario
+
+
+def _extract_pot_sweep_metadata(
+    lines: Iterable[str],
+) -> tuple[Dict[str, str], str | None]:
+    recommendations: Dict[str, str] = {}
+    warning: str | None = None
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("# pot_sweep_recommendation"):
+            tokens = _extract_metadata(line)
+            led = tokens.get("led")
+            wiper = tokens.get("wiper")
+            if led and wiper:
+                normalized = wiper.strip()
+                if normalized.lower().startswith("0x") and len(normalized) > 2:
+                    normalized = "0x" + normalized[2:].upper()
+                recommendations[led] = normalized
+        elif line.startswith("# pot_sweep_warnings"):
+            tokens = _extract_metadata(line)
+            reason = tokens.get("reason")
+            if reason:
+                warning = reason
+    return recommendations, warning
 
 
 def parse_summary_table(lines: Iterable[str]) -> Dict[str, List[ParsedSummary]]:
@@ -210,11 +269,26 @@ def create_report(
     transcript_path = output_dir / f"transcript_{suffix}.txt"
     transcript_path.write_text("\n".join(transcript_lines) + "\n", encoding="utf-8")
 
+    pot_recommendations, pot_warning = _extract_pot_sweep_metadata(transcript_lines)
+    scenario_extras: Dict[str, Dict[str, object]] = {}
+    if "pot_sweep" in summaries:
+        scenario_extras["pot_sweep"] = {
+            "recommendations": dict(sorted(pot_recommendations.items())),
+            "warning": pot_warning or "none",
+            "saturation_threshold": POT_SWEEP_SATURATION_THRESHOLD,
+        }
+
     summary_payload: List[dict[str, object]] = []
     for scenario in scenario_order:
         scenario_rows = summaries.get(scenario, [])
         row_payload = [row.to_dict() for row in scenario_rows]
-        summary_payload.append({"scenario": scenario, "rows": row_payload})
+        summary_payload.append(
+            {
+                "scenario": scenario,
+                "rows": row_payload,
+                "extras": scenario_extras.get(scenario, {}),
+            }
+        )
 
     summary_json_path = output_dir / f"summary_{suffix}.json"
     summary_json_path.write_text(
@@ -222,6 +296,7 @@ def create_report(
     )
 
     plot_paths: Dict[str, List[Path]] = {}
+    csv_paths: Dict[str, List[Path]] = {}
     if "channel_map" in summaries:
         channel_rows = [
             row for row in summaries["channel_map"] if isinstance(row, SummaryRow)
@@ -248,6 +323,18 @@ def create_report(
         osr_plot_paths = _render_osr_sweep_plots(osr_rows, output_dir, slug)
         plot_paths["osr_sweep"] = osr_plot_paths
 
+    if "pot_sweep" in summaries:
+        pot_rows = [
+            row for row in summaries["pot_sweep"] if isinstance(row, PotSweepSummaryRow)
+        ]
+        slug = scenario_slug_map.get("pot_sweep", "pot_sweep")
+        csv_path = output_dir / f"{slug}.csv"
+        _write_pot_sweep_csv(pot_rows, csv_path)
+        csv_paths["pot_sweep"] = [csv_path]
+        pot_plot_path = output_dir / f"{slug}_profile.png"
+        _render_pot_sweep_plot(pot_rows, pot_plot_path, POT_SWEEP_SATURATION_THRESHOLD)
+        plot_paths["pot_sweep"] = [pot_plot_path]
+
     fallback_plot_path: Path | None = None
     if not plot_paths and scenario_order:
         fallback_slug = scenario_slug_order[0]
@@ -266,9 +353,20 @@ def create_report(
         key: [path.relative_to(output_dir) for path in paths]
         for key, paths in plot_paths.items()
     }
+    csv_relatives = {
+        key: [path.relative_to(output_dir) for path in paths]
+        for key, paths in csv_paths.items()
+    }
 
     report_markdown_path.write_text(
-        _render_markdown_report(plan_path, sections, plot_relatives, summaries),
+        _render_markdown_report(
+            plan_path,
+            sections,
+            plot_relatives,
+            summaries,
+            scenario_extras,
+            csv_relatives,
+        ),
         encoding="utf-8",
     )
 
@@ -278,8 +376,11 @@ def create_report(
         summary_json_path=summary_json_path,
         plot_path=primary_plot_path,
         plot_paths=plot_paths,
+        csv_paths=csv_paths,
         report_markdown_path=report_markdown_path,
         scenarios=scenario_order,
+        pot_sweep_recommendations=dict(sorted(pot_recommendations.items())),
+        pot_sweep_warning=pot_warning,
     )
 
 
@@ -341,6 +442,8 @@ def _parse_sections(sections: List[_SummarySection]) -> Dict[str, List[ParsedSum
             rows = _parse_adc_speed_rows(section)
         elif section.header.startswith("Value"):
             rows = _parse_osr_sweep_rows(section)
+        elif section.header.startswith("Wiper"):
+            rows = _parse_pot_sweep_rows(section)
         else:
             continue
 
@@ -459,6 +562,40 @@ def _parse_osr_sweep_rows(section: _SummarySection) -> List[OsrSweepSummaryRow]:
                 led2_max=metrics[11],
                 sweep_duration_us=sweep_duration,
                 has_metrics=has_metrics,
+            )
+        )
+    return parsed
+
+
+def _parse_pot_sweep_rows(section: _SummarySection) -> List[PotSweepSummaryRow]:
+    parsed: List[PotSweepSummaryRow] = []
+    for entry in section.rows:
+        data = entry.strip()
+        if not data:
+            continue
+
+        parts = data.split()
+        if len(parts) != 5:
+            raise ValueError(f"Invalid pot_sweep summary row: '{entry}'")
+
+        wiper_token, led1_token, led2_token, led1_sat, led2_sat = parts
+        try:
+            wiper_code = int(wiper_token, 16)
+        except ValueError as exc:
+            raise ValueError(f"Invalid pot_sweep wiper code: '{wiper_token}'") from exc
+
+        led1_max_code = _parse_int(led1_token)
+        led2_max_code = _parse_int(led2_token)
+        led1_saturated = led1_sat.lower() == "yes"
+        led2_saturated = led2_sat.lower() == "yes"
+
+        parsed.append(
+            PotSweepSummaryRow(
+                wiper_code=wiper_code,
+                led1_max_code=led1_max_code,
+                led2_max_code=led2_max_code,
+                led1_saturated=led1_saturated,
+                led2_saturated=led2_saturated,
             )
         )
     return parsed
@@ -766,6 +903,56 @@ def _render_osr_duration_plot(
     plt.close(fig)
 
 
+def _write_pot_sweep_csv(rows: List[PotSweepSummaryRow], output_path: Path) -> None:
+    header = "wiper_code,led1_max_code,led2_max_code,led1_saturated,led2_saturated"
+    lines = [header]
+    for row in rows:
+        lines.append(
+            ",".join(
+                [
+                    str(row.wiper_code),
+                    str(row.led1_max_code),
+                    str(row.led2_max_code),
+                    "yes" if row.led1_saturated else "no",
+                    "yes" if row.led2_saturated else "no",
+                ]
+            )
+        )
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _render_pot_sweep_plot(
+    rows: List[PotSweepSummaryRow], output_path: Path, saturation_threshold: int
+) -> None:
+    if not rows:
+        _render_placeholder_plot("No pot sweep metrics available", output_path)
+        return
+
+    sorted_rows = sorted(rows, key=lambda row: row.wiper_code)
+    wipers = [row.wiper_code for row in sorted_rows]
+    led1_codes = [row.led1_max_code for row in sorted_rows]
+    led2_codes = [row.led2_max_code for row in sorted_rows]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(wipers, led1_codes, marker="o", color="#4C72B0", label="LED1 max")
+    ax.plot(wipers, led2_codes, marker="s", color="#55A868", label="LED2 max")
+    ax.axhline(
+        saturation_threshold,
+        color="#C44E52",
+        linestyle="--",
+        label="Saturation threshold",
+    )
+    ax.set_xlabel("Wiper code")
+    ax.set_ylabel("ADC code")
+    ax.set_title("Potentiometer sweep LED headroom")
+    ax.grid(axis="both", linestyle="--", alpha=0.4)
+    ax.legend()
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
     channel_rows = [row for row in rows if isinstance(row, SummaryRow)]
     if not channel_rows:
@@ -883,6 +1070,36 @@ def _build_osr_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     return table
 
 
+def _build_pot_sweep_table(rows: List[ParsedSummary]) -> List[str]:
+    pot_rows = [row for row in rows if isinstance(row, PotSweepSummaryRow)]
+    if not pot_rows:
+        return []
+
+    headers = [
+        "Wiper",
+        "LED1 max code",
+        "LED2 max code",
+        "LED1 saturated",
+        "LED2 saturated",
+    ]
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+
+    for row in pot_rows:
+        values = [
+            f"0x{row.wiper_code:02X}",
+            str(row.led1_max_code),
+            str(row.led2_max_code),
+            "yes" if row.led1_saturated else "no",
+            "yes" if row.led2_saturated else "no",
+        ]
+        table.append("| " + " | ".join(values) + " |")
+
+    return table
+
+
 def _render_section_table(scenario: str, rows: List[ParsedSummary]) -> List[str]:
     if scenario == "channel_map":
         return _build_channel_map_table(rows)
@@ -890,7 +1107,58 @@ def _render_section_table(scenario: str, rows: List[ParsedSummary]) -> List[str]
         return _build_adc_speed_table(rows)
     if scenario == "osr_sweep":
         return _build_osr_sweep_table(rows)
+    if scenario == "pot_sweep":
+        return _build_pot_sweep_table(rows)
     return []
+
+
+def _render_pot_sweep_section(
+    rows: List[ParsedSummary],
+    plot_paths: List[Path],
+    extras: Dict[str, object],
+    csv_paths: List[Path],
+) -> List[str]:
+    lines: List[str] = ["## Summary Table (pot_sweep)"]
+
+    recommendations = extras.get("recommendations") if extras else None
+    warning = extras.get("warning") if extras else None
+
+    if isinstance(recommendations, dict) and recommendations:
+        lines.append("| LED | Recommended Wiper |")
+        lines.append("| --- | --- |")
+        for led, wiper in sorted(recommendations.items()):
+            lines.append(f"| {led.upper()} | {wiper} |")
+    else:
+        lines.append("_No recommendations recorded._")
+    lines.append("")
+
+    warning_label = warning if isinstance(warning, str) and warning else "none"
+    lines.append(f"_Warnings_: {warning_label}")
+    lines.append("")
+
+    lines.append("<details>")
+    lines.append("<summary>Full potentiometer sweep results</summary>")
+    lines.append("")
+    table_lines = _build_pot_sweep_table(rows)
+    if table_lines:
+        lines.extend(table_lines)
+    else:
+        lines.append("_(no pot sweep metrics)_")
+    lines.append("")
+    if csv_paths:
+        csv_link = csv_paths[0].as_posix()
+        lines.append(f"[Download CSV]({csv_link})")
+        lines.append("")
+    lines.append("</details>")
+    lines.append("")
+
+    if plot_paths:
+        for index, path in enumerate(plot_paths, start=1):
+            suffix = f" #{index}" if len(plot_paths) > 1 else ""
+            lines.append(f"![pot_sweep plot{suffix}]({path.as_posix()})")
+        lines.append("")
+
+    return lines
 
 
 def _render_markdown_report(
@@ -898,12 +1166,25 @@ def _render_markdown_report(
     sections: List[_SummarySection],
     plot_paths: Dict[str, List[Path]],
     summaries: Dict[str, List[ParsedSummary]],
+    scenario_extras: Dict[str, Dict[str, object]],
+    csv_paths: Dict[str, List[Path]],
 ) -> str:
     lines = ["# Phoenix Benchmark Report", ""]
     lines.append(f"*Plan:* `{plan_path}`")
     lines.append("")
     if sections:
         for section in sections:
+            extras = scenario_extras.get(section.scenario, {})
+            if section.scenario == "pot_sweep":
+                pot_lines = _render_pot_sweep_section(
+                    summaries.get(section.scenario, []),
+                    plot_paths.get(section.scenario, []),
+                    extras,
+                    csv_paths.get(section.scenario, []),
+                )
+                lines.extend(pot_lines)
+                continue
+
             lines.append(f"## Summary Table ({section.scenario})")
             table_lines = _render_section_table(
                 section.scenario, summaries.get(section.scenario, [])
