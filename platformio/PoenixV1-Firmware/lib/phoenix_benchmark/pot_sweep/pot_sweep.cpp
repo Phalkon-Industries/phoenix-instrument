@@ -1,5 +1,6 @@
 #include "pot_sweep.hpp"
 
+#include "../../mcp356x/mcp356x.hpp"
 #include "../channel_map/channel_map.hpp"
 #include <cctype>
 #include <cerrno>
@@ -26,16 +27,19 @@ constexpr const char* k_error_invalid_value     = "invalid value";
 constexpr const char* k_error_invalid_options   = "invalid options";
 constexpr const char* k_error_hardware_init     = "hardware initialisation failed";
 constexpr const char* k_error_channel_map_run   = "channel_map failed";
+constexpr const char* k_error_adc_defaults      = "adc default configuration failed";
 
 typedef PhoenixBenchmarkChannelMapExecutionStatus (*ChannelMapRunner)(
     const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
     const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks);
 
 typedef bool (*HardwareReadyChecker)(void);
+typedef int (*AdcConfigurator)(void);
 
 PhoenixBenchmarkPotSweepDefaults g_pot_sweep_defaults     = k_default_pot_sweep_defaults;
 ChannelMapRunner                 g_channel_map_runner     = phoenix_benchmark_channel_map_run;
 HardwareReadyChecker             g_hardware_ready_checker = phoenix_benchmark_channel_map_ensure_hardware_ready;
+AdcConfigurator                  g_adc_default_config     = mcp356x_apply_default_config;
 
 const char* skip_whitespace(const char* cursor) {
   if (cursor == nullptr) {
@@ -370,6 +374,10 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
     return {false, false, k_error_hardware_init, 0u, false, 0u, false, 0u};
   }
 
+  if ((g_adc_default_config != nullptr) && (g_adc_default_config() != MCP356X_OK)) {
+    return {false, false, k_error_adc_defaults, 0u, false, 0u, false, 0u};
+  }
+
   const ChannelMapTemplateResult    template_result      = load_channel_map_template();
   PhoenixBenchmarkChannelMapOptions channel_map_template = template_result.options;
 
@@ -502,7 +510,12 @@ void phoenix_benchmark_pot_sweep_set_hardware_ready_checker_for_test(bool (*chec
   g_hardware_ready_checker = (checker != nullptr) ? checker : phoenix_benchmark_channel_map_ensure_hardware_ready;
 }
 
+void phoenix_benchmark_pot_sweep_set_adc_default_configurator_for_test(int (*configurator)(void)) {
+  g_adc_default_config = (configurator != nullptr) ? configurator : mcp356x_apply_default_config;
+}
+
 void phoenix_benchmark_pot_sweep_clear_test_hooks(void) {
   g_channel_map_runner     = phoenix_benchmark_channel_map_run;
   g_hardware_ready_checker = phoenix_benchmark_channel_map_ensure_hardware_ready;
+  g_adc_default_config     = mcp356x_apply_default_config;
 }

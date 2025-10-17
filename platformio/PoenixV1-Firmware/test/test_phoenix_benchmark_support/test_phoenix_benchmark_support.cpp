@@ -450,6 +450,7 @@ PhoenixBenchmarkChannelMapExecutionStatus g_fake_osr_runner_status = {
 
 static std::size_t g_fake_runner_call_count = 0u;
 static std::size_t g_fake_set_osr_count     = 0u;
+static mcp356x_osr g_fake_last_osr_value    = mcp356x_osr::osr_32;
 static uint32_t    g_fake_micros_now        = 0u;
 
 static PhoenixBenchmarkChannelMapExecutionStatus fake_osr_channel_map_runner(
@@ -491,8 +492,9 @@ static PhoenixBenchmarkChannelMapExecutionStatus fake_osr_channel_map_runner(
   return g_fake_osr_runner_status;
 }
 
-static int fake_set_osr(mcp356x_osr) {
+static int fake_set_osr(mcp356x_osr value) {
   ++g_fake_set_osr_count;
+  g_fake_last_osr_value = value;
   return MCP356X_OK;
 }
 
@@ -520,6 +522,7 @@ static void test_osr_sweep_run_iterates_all_osr_values(void) {
   static PhoenixBenchmarkOsrSweepRowMetrics rows[k_expected_osr_value_count] = {};
   g_fake_runner_call_count                                                   = 0u;
   g_fake_set_osr_count                                                       = 0u;
+  g_fake_last_osr_value                                                      = mcp356x_osr::osr_32;
   g_fake_micros_now                                                          = 1000u;
 
   PhoenixBenchmarkOsrSweepExecutionStatus status =
@@ -529,7 +532,8 @@ static void test_osr_sweep_run_iterates_all_osr_values(void) {
   TEST_ASSERT_TRUE(status.success);
   TEST_ASSERT_EQUAL_UINT32(k_expected_osr_value_count, status.rows_generated);
   TEST_ASSERT_EQUAL_UINT32(k_expected_osr_value_count, g_fake_runner_call_count);
-  TEST_ASSERT_EQUAL_UINT32(k_expected_osr_value_count, g_fake_set_osr_count);
+  TEST_ASSERT_EQUAL_UINT32(k_expected_osr_value_count + 1u, g_fake_set_osr_count);
+  TEST_ASSERT_EQUAL(mcp356x_osr::osr_4096, g_fake_last_osr_value);
 
   // Step 3: Validate captured metrics and elapsed time.
   uint32_t expected_elapsed = 75u;
@@ -716,6 +720,10 @@ static PhoenixBenchmarkChannelMapExecutionStatus fake_pot_sweep_runner(
   return {true, PHOENIX_BENCHMARK_OK, nullptr, false};
 }
 
+static int fake_apply_default_config(void) {
+  return MCP356X_OK;
+}
+
 }  // namespace
 
 static void test_pot_sweep_run_collects_metrics_and_recommendations(void) {
@@ -734,6 +742,7 @@ static void test_pot_sweep_run_collects_metrics_and_recommendations(void) {
 #if defined(UNIT_TEST)
   phoenix_benchmark_pot_sweep_set_channel_map_runner_for_test(fake_pot_sweep_runner);
   phoenix_benchmark_pot_sweep_set_hardware_ready_checker_for_test([]() { return true; });
+  phoenix_benchmark_pot_sweep_set_adc_default_configurator_for_test(fake_apply_default_config);
 #endif
 
   g_pot_sweep_runner_calls = 0u;

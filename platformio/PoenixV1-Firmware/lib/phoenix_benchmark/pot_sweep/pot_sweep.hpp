@@ -132,6 +132,12 @@ void phoenix_benchmark_pot_sweep_set_channel_map_runner_for_test(PhoenixBenchmar
  */
 void phoenix_benchmark_pot_sweep_set_hardware_ready_checker_for_test(bool (*checker)(void));
 /**
+ * @brief Override the ADC default configurator used during pot sweep tests.
+ *
+ * Passing nullptr restores the production implementation.
+ */
+void phoenix_benchmark_pot_sweep_set_adc_default_configurator_for_test(int (*configurator)(void));
+/**
  * @brief Restore production hooks after tests replace runner or readiness helpers.
  */
 void phoenix_benchmark_pot_sweep_clear_test_hooks(void);
