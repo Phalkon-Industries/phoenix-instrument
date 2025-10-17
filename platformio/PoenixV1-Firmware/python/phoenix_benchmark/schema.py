@@ -26,6 +26,22 @@ class ChannelMapCommand:
 
 
 @dataclass(frozen=True)
+class AdcSpeedCommand:
+    """Requests a throughput benchmark for blocking and/or IRQ sampling."""
+
+    duration_ms: int
+    enable_blocking: bool = True
+    enable_irq: bool = True
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {
+            "duration_ms": self.duration_ms,
+            "enable_blocking": self.enable_blocking,
+            "enable_irq": self.enable_irq,
+        }
+
+
+@dataclass(frozen=True)
 class BenchmarkCommand:
     """Envelope describing a single host-to-firmware request."""
 
@@ -65,6 +81,23 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
         command = ChannelMapCommand(sweeps=sweeps, dwell_us=dwell, wiper_code=wiper)
         return BenchmarkCommand(name=name, parameters=command.to_payload())
 
+    if name == "adc_speed":
+        duration = parameters.get("duration_ms")
+        if not isinstance(duration, int) or duration <= 0:
+            raise ValueError("adc_speed.duration_ms must be a positive integer")
+
+        enable_blocking = parameters.get("enable_blocking", True)
+        enable_irq = parameters.get("enable_irq", True)
+        if not isinstance(enable_blocking, bool) or not isinstance(enable_irq, bool):
+            raise ValueError("adc_speed enable flags must be boolean values")
+
+        command = AdcSpeedCommand(
+            duration_ms=duration,
+            enable_blocking=enable_blocking,
+            enable_irq=enable_irq,
+        )
+        return BenchmarkCommand(name=name, parameters=command.to_payload())
+
     # Unknown commands pass-through for future phases
     return BenchmarkCommand(name=name, parameters=parameters)
 
@@ -96,4 +129,9 @@ def load_command_plan(path: Path | str) -> List[BenchmarkCommand]:
     return commands
 
 
-__all__ = ["BenchmarkCommand", "ChannelMapCommand", "load_command_plan"]
+__all__ = [
+    "AdcSpeedCommand",
+    "BenchmarkCommand",
+    "ChannelMapCommand",
+    "load_command_plan",
+]

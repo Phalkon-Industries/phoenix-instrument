@@ -66,3 +66,32 @@ def test_load_command_plan_rejects_invalid_wiper(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         load_command_plan(plan_path)
+
+
+def test_load_command_plan_normalizes_adc_speed(tmp_path: Path) -> None:
+    plan_path = tmp_path / "adc_speed_plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "adc_speed",
+                        "parameters": {"duration_ms": 750},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    adc_speed_command = commands[0]
+    assert isinstance(adc_speed_command, BenchmarkCommand)
+    assert adc_speed_command.name == "adc_speed"
+    assert adc_speed_command.parameters == {
+        "duration_ms": 750,
+        "enable_blocking": True,
+        "enable_irq": True,
+    }

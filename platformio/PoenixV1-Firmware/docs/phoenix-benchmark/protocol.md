@@ -1,6 +1,6 @@
 # Phoenix Benchmark Serial Protocol
 
-This document tracks the evolving host ↔ firmware contract. Beginning with Phase 1, the firmware idles after boot, waits for structured commands issued by the host CLI, and returns to an idle `# ready` prompt after every run. The envelope defined below remains the foundation for later phases so host tooling and firmware can converge safely.
+This document tracks the evolving host ↔ firmware contract. Beginning with Phase 1, the firmware idles after boot, waits for structured commands issued by the host CLI, and returns to an idle `# ready` prompt after every run. Phase 2 adds the high-speed ADC throughput scenario while preserving the original framing rules so host tooling and firmware can converge safely.
 
 ## Message Framing
 
@@ -26,15 +26,31 @@ Requests a single sweep that identifies which ADC channel responds to each LED s
 {"command": "channel_map", "parameters": {"sweeps": 100, "dwell_us": 100}}
 ```
 
-Additional commands (gain matrix, dwell sensitivity, etc.) will be added in later phases. Unknown command identifiers return a `# error,unsupported_command` line until the corresponding firmware feature ships.
+### `adc_speed`
+
+Requests a timed throughput measurement using the configured sampling modes.
+
+| Field             | Type    | Required | Notes                                                                                          |
+| ----------------- | ------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `duration_ms`     | integer | yes      | Benchmark runtime per mode. Must be positive.                                                  |
+| `enable_blocking` | boolean | no       | When omitted, defaults to `true`. Set to `false` to skip blocking-mode sampling.               |
+| `enable_irq`      | boolean | no       | When omitted, defaults to `true`. Set to `false` to skip IRQ sampling (or `enable_irq=false`). |
+
+**Example**
+
+```json
+{"command": "adc_speed", "parameters": {"duration_ms": 750, "enable_blocking": true, "enable_irq": true}}
+```
+
+Unknown command identifiers return a `# error,unsupported_command` line until the corresponding firmware feature ships.
 
 ### End-to-end flow
 
 1. Operator invokes the CLI with a plan file. The CLI prints a numbered preview of the JSON lines that will be transmitted.
 2. When `--port` is provided (non dry-run), the CLI opens the serial port at 115200 baud, waits for the firmware's `# phoenix benchmark ready` + `# ready` banner, and stores every line it receives in a transcript buffer while echoing it to stdout.
-3. Each queued command is streamed verbatim as one JSON line followed by `\n`. The firmware's command loop trims the newline, calls `parse_channel_map_command()` (Phase 1), and executes the request. Unsupported identifiers emit `# error,unsupported_command` before the dispatcher returns to idle.
-4. During execution the firmware prints the legacy summary table plus any metadata lines. The CLI continues to mirror the output and records it for later parsing.
-5. After the `# benchmark_complete` line, the firmware prints a fresh `# ready` prompt. The CLI closes the serial port, persists the transcript, parses the summary table, and produces a Markdown report with plots inside the selected output directory.
+3. Each queued command is streamed verbatim as one JSON line followed by `\n`. The firmware's command loop trims the newline, dispatches to the scenario-specific parser (`phoenix_benchmark_channel_map_parse_command` or `phoenix_benchmark_adc_speed_parse_command`), and executes the request. Unsupported identifiers emit `# error,unsupported_command` before the dispatcher returns to idle.
+4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit the legacy per-state table; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
+5. After each `# benchmark_complete` line, the firmware prints a fresh `# ready` prompt. The CLI stays attached until the plan is exhausted, then persists the transcript, parses every captured table, and produces a Markdown report with scenario-tagged sections inside the selected output directory. Artifact file names now embed the scenario list to aid long-term archiving (e.g., `transcript_channel_map-adc_speed.txt`).
 
 ## Host Expectations
 
@@ -42,12 +58,14 @@ Additional commands (gain matrix, dwell sensitivity, etc.) will be added in late
 - Host plans store an ordered list of command objects under a `commands` (or `sequence`) array.
 - Tooling serialises each entry with compact separators so commands remain single-line friendly for terminal usage.
 - The CLI awaits the firmware's `# ready` prompt before issuing the first command and prints every line the device emits so logs can be redirected or parsed downstream.
-- After a run completes, the CLI writes a `transcript.txt`, `summary.json`, `channel_map.png`, and `report.md` bundle to the chosen output folder. The Markdown report embeds the raw summary table and the generated plot so lab staff can share results immediately.
+- After a run completes, the CLI writes a `transcript_<scenarios>.txt`, `summary_<scenarios>.json`, and `report.md` bundle (plus scenario-specific plots) to the chosen output folder. The Markdown report embeds every summary table so lab staff can share results immediately.
 
 ## Firmware Expectations
 
-- Firmware now waits for a `channel_map` command before executing the characterization sweep. Upon receiving the request it echoes a `# running` metadata line, performs the sweep, and prints `# benchmark_complete` followed by a renewed `# ready` prompt.
+- Firmware now waits for supported commands (`channel_map`, `adc_speed`) before executing work. Upon receiving the request it echoes a `# running` metadata line, performs the scenario, and prints `# benchmark_complete` followed by a renewed `# ready` prompt.
 - During Phase 1, channel-to-LED association is reported in the summary table via the new `Channel_Map` column:
   - `A=OK` or `B=OK` indicates that the observed dominant ADC channel matches the expected LED routing.
   - `B!=A`, `A!=B`, or `??!=A/B` highlight mismatches or ambiguous responses.
-- Min/max ADC codes are now included per channel so host automation can surface saturation without parsing the streamed CSV.
+- Min/max ADC codes are now included per channel so host automation can surface saturation without parsing the streamed CSV. Throughput runs report samples-per-second, loop timing, and ADC error counts per enabled mode; warnings surface via the `Notes` column when errors occur.
+
+For a complete example covering both scenarios, see `docs/phoenix-benchmark/sample_logs/combined_run_transcript.txt`.

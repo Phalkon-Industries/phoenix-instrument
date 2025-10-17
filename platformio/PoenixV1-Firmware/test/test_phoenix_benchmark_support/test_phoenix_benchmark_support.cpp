@@ -1,3 +1,6 @@
+#include "adc_speed/adc_speed.hpp"
+#include "adc_speed/adc_speed_command_parser.hpp"
+#include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map_formatter.hpp"
 #include "channel_map/channel_map_support.hpp"
 #include "core/phoenix_benchmark_core.hpp"
@@ -169,6 +172,227 @@ static void test_is_adc_code_saturated_detects_full_scale_codes(void) {
   TEST_ASSERT_FALSE(phoenix_benchmark_is_adc_code_saturated(1024));
 }
 
+static void test_adc_speed_format_summary_header_renders_expected_columns(void) {
+  // Step 1. Invoke the header formatter and confirm it reports success.
+  char buffer[k_phoenix_benchmark_adc_speed_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_adc_speed_format_summary_header(buffer, sizeof(buffer)));
+
+  // Step 2. Ensure the header uses the agreed column labels and alignment spacing.
+  TEST_ASSERT_EQUAL_STRING("Mode          Samples_per_s        Loop_us     Errors Notes", buffer);
+}
+
+static void test_adc_speed_format_summary_row_formats_metrics(void) {
+  // Step 1. Format a row with populated metrics so numeric alignment can be asserted.
+  PhoenixBenchmarkAdcSpeedSummaryRowValues values = {
+      .mode_label         = "Blocking",
+      .samples_per_second = 12345.678,
+      .loop_microseconds  = 42.5,
+      .error_count        = 3u,
+      .notes              = "ok",
+      .has_metrics        = true,
+  };
+
+  char buffer[k_phoenix_benchmark_adc_speed_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_adc_speed_format_summary_row(values, buffer, sizeof(buffer)));
+
+  // Step 2. Verify the rendered row contains the formatted metrics with fixed precision.
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "Blocking"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "12345.68"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "42.500"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "3"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "ok"));
+}
+
+static void test_adc_speed_format_summary_row_uses_placeholders_without_metrics(void) {
+  // Step 1. Produce a row where metrics are absent so placeholders should appear.
+  PhoenixBenchmarkAdcSpeedSummaryRowValues values = {
+      .mode_label         = "IRQ",
+      .samples_per_second = 0.0,
+      .loop_microseconds  = 0.0,
+      .error_count        = 0u,
+      .notes              = nullptr,
+      .has_metrics        = false,
+  };
+
+  char buffer[k_phoenix_benchmark_adc_speed_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_adc_speed_format_summary_row(values, buffer, sizeof(buffer)));
+
+  // Step 2. Check that placeholder markers were emitted in place of real metrics.
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "IRQ"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "--"));
+}
+
+static void test_adc_speed_parse_command_line_accepts_json_payload(void) {
+  // Step 1. Supply a JSON command enabling both blocking and IRQ modes with a custom duration.
+  const char* command_line =
+      "{\"command\":\"adc_speed\",\"parameters\":{\"duration_ms\":1500,\"enable_blocking\":true,\"enable_irq\":true}}";
+
+  const PhoenixBenchmarkAdcSpeedParseOutcome outcome = phoenix_benchmark_adc_speed_parse_command_line(command_line);
+
+  // Step 2. Expect the parser to accept the payload and surface the supplied configuration.
+  TEST_ASSERT_TRUE(outcome.success);
+  TEST_ASSERT_EQUAL_UINT32(1500u, outcome.options.duration_ms);
+  TEST_ASSERT_TRUE(outcome.options.enable_blocking);
+  TEST_ASSERT_TRUE(outcome.options.enable_irq);
+  TEST_ASSERT_TRUE(outcome.options.has_duration_override);
+  TEST_ASSERT_TRUE(outcome.options.has_blocking_override);
+  TEST_ASSERT_TRUE(outcome.options.has_irq_override);
+  TEST_ASSERT_NULL(outcome.error_message);
+}
+
+static void test_adc_speed_parse_command_line_rejects_invalid_duration(void) {
+  // Step 1. Attempt to parse an invalid payload with a zero duration value.
+  const char* command_line = "{\"command\":\"adc_speed\",\"parameters\":{\"duration_ms\":0}}";
+
+  const PhoenixBenchmarkAdcSpeedParseOutcome outcome = phoenix_benchmark_adc_speed_parse_command_line(command_line);
+
+  // Step 2. The parser should reject the command and surface an invalid value error.
+  TEST_ASSERT_FALSE(outcome.success);
+  TEST_ASSERT_EQUAL_STRING(k_phoenix_benchmark_adc_speed_error_invalid_value, outcome.error_message);
+}
+
+static void test_adc_speed_parse_command_uses_initialised_defaults(void) {
+  // Step 1. Seed the adc speed module with non-default values.
+  phoenix_benchmark_adc_speed_reset_state();
+  const PhoenixBenchmarkAdcSpeedDefaults defaults = {
+      .duration_ms     = 2500u,
+      .enable_blocking = false,
+      .enable_irq      = true,
+  };
+  phoenix_benchmark_adc_speed_initialise(defaults);
+
+  // Step 2. Parse a minimal command and confirm defaults were applied to options.
+  const PhoenixBenchmarkAdcSpeedParseResult result =
+      phoenix_benchmark_adc_speed_parse_command("{\"command\":\"adc_speed\"}");
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_EQUAL_UINT32(defaults.duration_ms, result.options.duration_ms);
+  TEST_ASSERT_EQUAL(defaults.enable_blocking, result.options.enable_blocking);
+  TEST_ASSERT_EQUAL(defaults.enable_irq, result.options.enable_irq);
+  TEST_ASSERT_FALSE(result.options.has_duration_override);
+  TEST_ASSERT_FALSE(result.options.has_blocking_override);
+  TEST_ASSERT_FALSE(result.options.has_irq_override);
+}
+
+static void test_adc_speed_parse_command_overrides_defaults(void) {
+  // Step 1. Seed defaults and provide overrides for duration and mode flags.
+  phoenix_benchmark_adc_speed_reset_state();
+  const PhoenixBenchmarkAdcSpeedDefaults defaults = {
+      .duration_ms     = 500u,
+      .enable_blocking = true,
+      .enable_irq      = false,
+  };
+  phoenix_benchmark_adc_speed_initialise(defaults);
+
+  const char* command_line =
+      "{\"command\":\"adc_speed\",\"parameters\":{\"duration_ms\":1500,\"enable_blocking\":false,\"enable_irq\":true}}";
+
+  // Step 2. Parse and confirm overrides win over defaults.
+  const PhoenixBenchmarkAdcSpeedParseResult result = phoenix_benchmark_adc_speed_parse_command(command_line);
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_EQUAL_UINT32(1500u, result.options.duration_ms);
+  TEST_ASSERT_FALSE(result.options.enable_blocking);
+  TEST_ASSERT_TRUE(result.options.enable_irq);
+  TEST_ASSERT_TRUE(result.options.has_duration_override);
+  TEST_ASSERT_TRUE(result.options.has_blocking_override);
+  TEST_ASSERT_TRUE(result.options.has_irq_override);
+}
+
+static uint32_t g_adc_speed_fake_micros = 0u;
+
+static uint32_t adc_speed_fake_micros_provider(void) {
+  return g_adc_speed_fake_micros;
+}
+
+static bool adc_speed_blocking_only_provider(PhoenixBenchmarkAdcSpeedTestMode mode, uint32_t iteration,
+                                             int32_t* out_sample) {
+  (void) iteration;
+  if (out_sample != nullptr) {
+    *out_sample = 0;
+  }
+  if (mode != PhoenixBenchmarkAdcSpeedTestMode::kBlocking) {
+    return false;
+  }
+  g_adc_speed_fake_micros += 1000u;
+  return true;
+}
+
+static bool adc_speed_dual_mode_provider(PhoenixBenchmarkAdcSpeedTestMode mode, uint32_t iteration,
+                                         int32_t* out_sample) {
+  if (out_sample != nullptr) {
+    *out_sample = static_cast<int32_t>(iteration);
+  }
+  if (mode == PhoenixBenchmarkAdcSpeedTestMode::kBlocking) {
+    g_adc_speed_fake_micros += 750u;
+    return true;
+  }
+  g_adc_speed_fake_micros += 1500u;
+  return iteration != 2u;
+}
+
+static void adc_speed_reset_test_hooks(void) {
+  phoenix_benchmark_adc_speed_clear_sample_provider_for_test();
+  phoenix_benchmark_adc_speed_clear_micros_provider_for_test();
+  g_adc_speed_fake_micros = 0u;
+}
+
+static void test_adc_speed_run_collects_blocking_metrics(void) {
+  // Step 1. Install deterministic hooks so the run executes without hardware dependencies.
+  adc_speed_reset_test_hooks();
+  phoenix_benchmark_adc_speed_set_sample_provider_for_test(adc_speed_blocking_only_provider);
+  phoenix_benchmark_adc_speed_set_micros_provider_for_test(adc_speed_fake_micros_provider);
+
+  PhoenixBenchmarkAdcSpeedOptions options = {
+      .duration_ms           = 5u,
+      .enable_blocking       = true,
+      .enable_irq            = false,
+      .has_duration_override = true,
+      .has_blocking_override = true,
+      .has_irq_override      = true,
+  };
+
+  const PhoenixBenchmarkAdcSpeedExecutionStatus status = phoenix_benchmark_adc_speed_run(options, nullptr, 0u);
+
+  adc_speed_reset_test_hooks();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_FALSE(status.has_warnings);
+  TEST_ASSERT_NULL(status.message);
+  TEST_ASSERT_TRUE(status.blocking_executed);
+  TEST_ASSERT_FALSE(status.irq_executed);
+  TEST_ASSERT_FLOAT_WITHIN(0.1, 1000.0, status.blocking_samples_per_second);
+  TEST_ASSERT_FLOAT_WITHIN(0.1, 1000.0, status.blocking_loop_microseconds);
+  TEST_ASSERT_EQUAL_UINT32(0u, status.blocking_error_count);
+}
+
+static void test_adc_speed_run_collects_dual_mode_metrics(void) {
+  // Step 1. Exercise both blocking and IRQ paths with scripted timing.
+  adc_speed_reset_test_hooks();
+  phoenix_benchmark_adc_speed_set_sample_provider_for_test(adc_speed_dual_mode_provider);
+  phoenix_benchmark_adc_speed_set_micros_provider_for_test(adc_speed_fake_micros_provider);
+
+  PhoenixBenchmarkAdcSpeedOptions options = {
+      .duration_ms           = 9u,
+      .enable_blocking       = true,
+      .enable_irq            = true,
+      .has_duration_override = true,
+      .has_blocking_override = true,
+      .has_irq_override      = true,
+  };
+
+  const PhoenixBenchmarkAdcSpeedExecutionStatus status = phoenix_benchmark_adc_speed_run(options, nullptr, 0u);
+
+  adc_speed_reset_test_hooks();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(status.has_warnings);
+  TEST_ASSERT_TRUE(status.blocking_executed);
+  TEST_ASSERT_TRUE(status.irq_executed);
+  TEST_ASSERT_TRUE(status.blocking_samples_per_second > 0.0);
+  TEST_ASSERT_TRUE(status.irq_samples_per_second > 0.0);
+  TEST_ASSERT_EQUAL_UINT32(0u, status.blocking_error_count);
+  TEST_ASSERT_EQUAL_UINT32(1u, status.irq_error_count);
+}
+
 void setup() {
   // Step 1. Initialise Unity's serial logging channel.
   UNITY_SETUP_SERIAL_DEFAULT();
@@ -185,6 +409,15 @@ void setup() {
   RUN_TEST(test_parse_channel_map_command_rejects_out_of_range_wiper);
   RUN_TEST(test_parse_channel_map_command_rejects_invalid_payload);
   RUN_TEST(test_is_adc_code_saturated_detects_full_scale_codes);
+  RUN_TEST(test_adc_speed_format_summary_header_renders_expected_columns);
+  RUN_TEST(test_adc_speed_format_summary_row_formats_metrics);
+  RUN_TEST(test_adc_speed_format_summary_row_uses_placeholders_without_metrics);
+  RUN_TEST(test_adc_speed_parse_command_line_accepts_json_payload);
+  RUN_TEST(test_adc_speed_parse_command_line_rejects_invalid_duration);
+  RUN_TEST(test_adc_speed_parse_command_uses_initialised_defaults);
+  RUN_TEST(test_adc_speed_parse_command_overrides_defaults);
+  RUN_TEST(test_adc_speed_run_collects_blocking_metrics);
+  RUN_TEST(test_adc_speed_run_collects_dual_mode_metrics);
   // Step 3. Finalise Unity before idling in loop().
   UNITY_END();
 }

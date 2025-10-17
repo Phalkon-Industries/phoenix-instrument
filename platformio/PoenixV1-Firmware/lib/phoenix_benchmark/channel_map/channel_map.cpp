@@ -25,6 +25,11 @@ static_assert(PIN_ADC_CS == 13, "ADC CS pin changed; update channel_map constant
 #endif
 static constexpr int k_pin_adc_cs = 13;
 
+#ifdef PIN_ADC_IRQ
+static_assert(PIN_ADC_IRQ = 9, "ADC IRQ pin changed; update channel_map constants");
+#endif
+static constexpr int k_pin_adc_irq = 9;
+
 #ifdef PIN_ENABLE_POWER
 static_assert(PIN_ENABLE_POWER == 12, "Power enable pin changed; update channel_map constants");
 #endif
@@ -78,9 +83,9 @@ static bool                               g_force_saturation_for_test = false;
 static constexpr int32_t  k_positive_full_scale_test_code = k_phoenix_benchmark_adc_positive_full_scale_code;
 static constexpr int32_t  k_negative_full_scale_test_code = k_phoenix_benchmark_adc_negative_full_scale_code;
 static const AdcHalConfig k_adc_config                    = {
-    .chip_select_pin = k_pin_adc_cs,
-    .spi_clock_hz    = k_spi_clock_hz,
-    .irq_pin         = PIN_ADC_IRQ,  // DRDY routed through the Arduino attachInterrupt path.
+                       .chip_select_pin = k_pin_adc_cs,
+                       .spi_clock_hz    = k_spi_clock_hz,
+                       .irq_pin         = k_pin_adc_irq,  // DRDY routed through the Arduino attachInterrupt path.
 };
 
 static void enable_power_domains(void) {
