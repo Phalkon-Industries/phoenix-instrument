@@ -136,8 +136,7 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
 
   // Step 4: Convert the timeout to the units expected by the MCP356x driver while retaining the
   // original microsecond budget for the local wait loop.
-  const uint32_t timeout_ms      = adc_hal_timeout_us_to_ms(timeout_us);
-  const uint32_t timeout_us_full = timeout_us;
+  const uint32_t timeout_ms = adc_hal_timeout_us_to_ms(timeout_us);
 
   g_last_channel_requested = channel;
   g_irq_sample_ready       = false;

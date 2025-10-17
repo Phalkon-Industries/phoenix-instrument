@@ -42,45 +42,6 @@ constexpr mcp356x_osr k_osr_values[k_phoenix_benchmark_osr_value_count] = {
     mcp356x_osr::osr_40960, mcp356x_osr::osr_49152, mcp356x_osr::osr_81920, mcp356x_osr::osr_98304,
 };
 
-uint32_t decode_osr_ratio(mcp356x_osr value) {
-  switch (value) {
-    case mcp356x_osr::osr_32:
-      return 32u;
-    case mcp356x_osr::osr_64:
-      return 64u;
-    case mcp356x_osr::osr_128:
-      return 128u;
-    case mcp356x_osr::osr_256:
-      return 256u;
-    case mcp356x_osr::osr_512:
-      return 512u;
-    case mcp356x_osr::osr_1024:
-      return 1024u;
-    case mcp356x_osr::osr_2048:
-      return 2048u;
-    case mcp356x_osr::osr_4096:
-      return 4096u;
-    case mcp356x_osr::osr_8192:
-      return 8192u;
-    case mcp356x_osr::osr_16384:
-      return 16384u;
-    case mcp356x_osr::osr_20480:
-      return 20480u;
-    case mcp356x_osr::osr_24576:
-      return 24576u;
-    case mcp356x_osr::osr_40960:
-      return 40960u;
-    case mcp356x_osr::osr_49152:
-      return 49152u;
-    case mcp356x_osr::osr_81920:
-      return 81920u;
-    case mcp356x_osr::osr_98304:
-      return 98304u;
-    default:
-      return 0u;
-  }
-}
-
 uint32_t compute_elapsed_time(uint32_t start, uint32_t end) {
   if (end >= start) {
     return end - start;
@@ -183,7 +144,6 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
   bool     has_warnings   = false;
   for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_value_count; ++index) {
     const mcp356x_osr current_osr = k_osr_values[index];
-    const uint32_t    osr_ratio   = decode_osr_ratio(current_osr);
 
     const int set_result = g_osr_setter(current_osr);
     if (set_result != MCP356X_OK) {

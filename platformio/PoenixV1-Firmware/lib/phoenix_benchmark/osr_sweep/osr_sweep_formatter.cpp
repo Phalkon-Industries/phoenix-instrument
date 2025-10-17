@@ -1,5 +1,6 @@
 #include "osr_sweep_formatter.hpp"
 
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 
@@ -26,7 +27,7 @@ void format_integer_metric(char* buffer, std::size_t length, uint32_t value, boo
     std::snprintf(buffer, length, "%s", k_placeholder);
     return;
   }
-  std::snprintf(buffer, length, "%u", value);
+  std::snprintf(buffer, length, "%" PRIu32, value);
 }
 
 }  // namespace
@@ -88,7 +89,7 @@ bool phoenix_benchmark_osr_sweep_format_summary_row(const PhoenixBenchmarkOsrSwe
   format_integer_metric(sweep_us, sizeof(sweep_us), values.sweep_duration_us, has_metric_values);
 
   const int written = std::snprintf(
-      buffer, length, "%-10s%9u  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s",
+      buffer, length, "%-10s%9" PRIu32 "  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s  %10s",
       values.label, values.sample_count, drain_mean, drain_std, drain_min, drain_max, led1_mean, led1_std, led1_min,
       led1_max, led2_mean, led2_std, led2_min, led2_max, sweep_us);
   if (written <= 0) {
