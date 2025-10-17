@@ -95,3 +95,77 @@ def test_load_command_plan_normalizes_adc_speed(tmp_path: Path) -> None:
         "enable_blocking": True,
         "enable_irq": True,
     }
+
+
+def test_load_command_plan_normalizes_osr_sweep(tmp_path: Path) -> None:
+    plan_path = tmp_path / "osr_plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "osr_sweep",
+                        "parameters": {
+                            "sweeps": 120,
+                            "dwell_us": 250,
+                            "wiper_code": 85,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    osr_command = commands[0]
+    assert isinstance(osr_command, BenchmarkCommand)
+    assert osr_command.name == "osr_sweep"
+    assert osr_command.parameters == {
+        "sweeps": 120,
+        "dwell_us": 250,
+        "wiper_code": 85,
+    }
+
+
+def test_load_command_plan_rejects_invalid_osr_payload(tmp_path: Path) -> None:
+    plan_path = tmp_path / "bad_osr.json"
+    plan_path.write_text(
+        json.dumps(
+            [
+                {
+                    "command": "osr_sweep",
+                    "parameters": {"sweeps": -5, "dwell_us": -1},
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_command_plan(plan_path)
+
+
+def test_osr_sweep_defaults_to_ten_sweeps(tmp_path: Path) -> None:
+    plan_path = tmp_path / "osr_defaults.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "osr_sweep",
+                        "parameters": {"dwell_us": 250, "wiper_code": 42},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    osr_command = commands[0]
+    assert osr_command.parameters["sweeps"] == 10

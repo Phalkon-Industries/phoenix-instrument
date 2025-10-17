@@ -3,6 +3,8 @@
 #include "adc_speed/adc_speed_command_parser.hpp"
 #include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map.hpp"
+#include "osr_sweep/osr_sweep.hpp"
+#include "osr_sweep/osr_sweep_formatter.hpp"
 #include <Arduino.h>
 #include <cctype>
 #include <cstdio>
@@ -36,7 +38,20 @@ const PhoenixBenchmarkAdcSpeedDefaults k_adc_speed_defaults = {
     .enable_irq      = true,
 };
 
-PhoenixBenchmarkStateAccumulator g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
+const PhoenixBenchmarkOsrSweepDefaults k_osr_sweep_defaults = {
+    .sweep_count = 100u,
+    .dwell_us    = 100u,
+    .wiper_code  = 0x00u,
+};
+
+PhoenixBenchmarkStateAccumulator   g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
+PhoenixBenchmarkOsrSweepRowMetrics g_osr_sweep_rows[k_phoenix_benchmark_osr_value_count];
+
+void reset_osr_sweep_rows(void) {
+  for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_value_count; ++index) {
+    g_osr_sweep_rows[index] = PhoenixBenchmarkOsrSweepRowMetrics{};
+  }
+}
 
 void reset_accumulators(void) {
   // Step 1: Clear each accumulator so new runs start without residual data.
@@ -472,6 +487,136 @@ void print_adc_speed_summary(const PhoenixBenchmarkAdcSpeedExecutionStatus& stat
   Serial.println();
 }
 
+uint32_t osr_enum_to_value(mcp356x_osr osr_value) {
+  switch (osr_value) {
+    case mcp356x_osr::osr_32:
+      return 32u;
+    case mcp356x_osr::osr_64:
+      return 64u;
+    case mcp356x_osr::osr_128:
+      return 128u;
+    case mcp356x_osr::osr_256:
+      return 256u;
+    case mcp356x_osr::osr_512:
+      return 512u;
+    case mcp356x_osr::osr_1024:
+      return 1024u;
+    case mcp356x_osr::osr_2048:
+      return 2048u;
+    case mcp356x_osr::osr_4096:
+      return 4096u;
+    case mcp356x_osr::osr_8192:
+      return 8192u;
+    case mcp356x_osr::osr_16384:
+      return 16384u;
+    case mcp356x_osr::osr_20480:
+      return 20480u;
+    case mcp356x_osr::osr_24576:
+      return 24576u;
+    case mcp356x_osr::osr_40960:
+      return 40960u;
+    case mcp356x_osr::osr_49152:
+      return 49152u;
+    case mcp356x_osr::osr_81920:
+      return 81920u;
+    case mcp356x_osr::osr_98304:
+      return 98304u;
+    default:
+      return 0u;
+  }
+}
+
+void format_osr_label(mcp356x_osr osr_value, char* buffer, std::size_t length) {
+  if ((buffer == nullptr) || (length == 0u)) {
+    return;
+  }
+  const uint32_t numeric_value = osr_enum_to_value(osr_value);
+  std::snprintf(buffer, length, "OSR%lu", static_cast<unsigned long>(numeric_value));
+}
+
+bool print_osr_sweep_summary(const PhoenixBenchmarkOsrSweepRowMetrics* rows, std::size_t row_count) {
+  Serial.println();
+  Serial.println(F("# summary_table"));
+
+  char line_buffer[k_phoenix_benchmark_osr_sweep_summary_buffer_bytes] = {};
+  if (!phoenix_benchmark_osr_sweep_format_summary_header(line_buffer, sizeof(line_buffer))) {
+    Serial.println(F("# summary_table_format_failed"));
+    return false;
+  }
+  Serial.println(line_buffer);
+
+  for (std::size_t index = 0u; index < row_count; ++index) {
+    const PhoenixBenchmarkOsrSweepRowMetrics& row = rows[index];
+
+    PhoenixBenchmarkOsrSweepSummaryRowValues summary_values   = {};
+    char                                     label_buffer[12] = {};
+    format_osr_label(row.osr_value, label_buffer, sizeof(label_buffer));
+    summary_values.label        = label_buffer;
+    summary_values.sample_count = row.drain.channel_a_codes.count;
+    summary_values.drain_mean   = row.drain.channel_a_codes.mean;
+    summary_values.drain_std    = row.drain.channel_a_codes.standard_deviation();
+    summary_values.drain_min    = static_cast<double>(row.drain.channel_a_codes.min_value);
+    summary_values.drain_max    = static_cast<double>(row.drain.channel_a_codes.max_value);
+
+    summary_values.led1_mean = row.led1.channel_a_codes.mean;
+    summary_values.led1_std  = row.led1.channel_a_codes.standard_deviation();
+    summary_values.led1_min  = static_cast<double>(row.led1.channel_a_codes.min_value);
+    summary_values.led1_max  = static_cast<double>(row.led1.channel_a_codes.max_value);
+
+    summary_values.led2_mean = row.led2.channel_b_codes.mean;
+    summary_values.led2_std  = row.led2.channel_b_codes.standard_deviation();
+    summary_values.led2_min  = static_cast<double>(row.led2.channel_b_codes.min_value);
+    summary_values.led2_max  = static_cast<double>(row.led2.channel_b_codes.max_value);
+
+    summary_values.sweep_duration_us = row.elapsed_microseconds;
+    summary_values.has_metrics = row.drain.channel_a_codes.has_samples() && row.led1.channel_a_codes.has_samples() &&
+                                 row.led2.channel_b_codes.has_samples();
+
+    if (!phoenix_benchmark_osr_sweep_format_summary_row(summary_values, line_buffer, sizeof(line_buffer))) {
+      Serial.println(F("# summary_table_row_format_failed"));
+      continue;
+    }
+    Serial.println(line_buffer);
+  }
+
+  Serial.println();
+  return true;
+}
+
+bool execute_osr_sweep_command(const PhoenixBenchmarkOsrSweepOptions& options) {
+  Serial.print(F("# running,scenario=osr_sweep,pot="));
+  Serial.print(options.wiper_code);
+  Serial.print(F(",dwell_us="));
+  Serial.print(options.dwell_us);
+  Serial.print(F(",sweeps="));
+  Serial.println(options.sweep_count);
+
+  reset_osr_sweep_rows();
+  const PhoenixBenchmarkOsrSweepExecutionStatus status =
+      phoenix_benchmark_osr_sweep_run(options, g_osr_sweep_rows, k_phoenix_benchmark_osr_value_count);
+
+  if (!status.success) {
+    Serial.print(F("# error,osr_sweep_failed"));
+    if (status.message != nullptr) {
+      Serial.print(F(",reason="));
+      Serial.print(status.message);
+    }
+    Serial.println();
+    return false;
+  }
+
+  if (!print_osr_sweep_summary(g_osr_sweep_rows, status.rows_generated)) {
+    return false;
+  }
+
+  if (status.has_warnings) {
+    Serial.println(F("# osr_sweep_warnings,reason=channel_map_warning"));
+  }
+
+  Serial.println(F("# benchmark_complete"));
+  return true;
+}
+
 bool execute_channel_map_command(const PhoenixBenchmarkChannelMapOptions& options) {
   // Step 1: Log the invocation so host tooling can correlate outputs.
   Serial.print(F("# running,scenario=channel_map,sweeps="));
@@ -624,6 +769,21 @@ void handle_command_line(const char* line) {
 
     handled = execute_adc_speed_command(adc_speed_options);
   }
+  else if (std::strcmp(command_identifier, "osr_sweep") == 0) {
+    const PhoenixBenchmarkOsrSweepParseResult parse_result = phoenix_benchmark_osr_sweep_parse_command(line);
+    if (!parse_result.success) {
+      Serial.print(F("# error,osr_sweep_parse_failed"));
+      if (parse_result.error_message != nullptr) {
+        Serial.print(F(",reason="));
+        Serial.print(parse_result.error_message);
+      }
+      Serial.println();
+      Serial.println(F("# ready"));
+      return;
+    }
+
+    handled = execute_osr_sweep_command(parse_result.options);
+  }
   else {
     Serial.print(F("# error,unknown_command"));
     Serial.print(F(",command="));
@@ -652,6 +812,8 @@ void setup() {
   phoenix_benchmark_channel_map_initialise(k_channel_map_defaults);
   phoenix_benchmark_adc_speed_reset_state();
   phoenix_benchmark_adc_speed_initialise(k_adc_speed_defaults);
+  phoenix_benchmark_osr_sweep_reset_state();
+  phoenix_benchmark_osr_sweep_initialise(k_osr_sweep_defaults);
 
   // Step 3: Clear previous measurements and present the ready prompt.
   reset_accumulators();
