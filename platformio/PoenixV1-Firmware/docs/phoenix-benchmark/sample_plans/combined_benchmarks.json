@@ -1,0 +1,20 @@
+{
+    "commands": [
+        {
+            "command": "channel_map",
+            "parameters": {
+                "sweeps": 50,
+                "dwell_us": 100,
+                "wiper_code": 0
+            }
+        },
+        {
+            "command": "adc_speed",
+            "parameters": {
+                "duration_ms": 750,
+                "enable_blocking": true,
+                "enable_irq": true
+            }
+        }
+    ]
+}
