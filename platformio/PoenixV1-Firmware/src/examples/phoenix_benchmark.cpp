@@ -3,6 +3,8 @@
 #include "adc_speed/adc_speed_command_parser.hpp"
 #include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map.hpp"
+#include "dwell_sweep/dwell_sweep.hpp"
+#include "dwell_sweep/dwell_sweep_formatter.hpp"
 #include "osr_sweep/osr_sweep.hpp"
 #include "osr_sweep/osr_sweep_formatter.hpp"
 #include "pot_sweep/pot_sweep.hpp"
@@ -51,9 +53,17 @@ const PhoenixBenchmarkPotSweepDefaults k_pot_sweep_defaults = {
     .dwell_us         = 100u,
 };
 
-PhoenixBenchmarkStateAccumulator   g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
-PhoenixBenchmarkOsrSweepRowMetrics g_osr_sweep_rows[k_phoenix_benchmark_osr_value_count];
-PhoenixBenchmarkPotSweepRowMetrics g_pot_sweep_rows[k_phoenix_benchmark_pot_sweep_max_wiper_count];
+const PhoenixBenchmarkDwellSweepDefaults k_dwell_sweep_defaults = {
+    .sweeps_per_dwell = 4u,
+    .start_dwell_us   = 100u,
+    .end_dwell_us     = 400u,
+    .dwell_step_us    = 100u,
+};
+
+PhoenixBenchmarkStateAccumulator     g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
+PhoenixBenchmarkOsrSweepRowMetrics   g_osr_sweep_rows[k_phoenix_benchmark_osr_value_count];
+PhoenixBenchmarkPotSweepRowMetrics   g_pot_sweep_rows[k_phoenix_benchmark_pot_sweep_max_wiper_count];
+PhoenixBenchmarkDwellSweepRowMetrics g_dwell_sweep_rows[k_phoenix_benchmark_dwell_sweep_max_step_count];
 
 void reset_osr_sweep_rows(void) {
   for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_value_count; ++index) {
@@ -64,6 +74,12 @@ void reset_osr_sweep_rows(void) {
 void reset_pot_sweep_rows(void) {
   for (std::size_t index = 0u; index < k_phoenix_benchmark_pot_sweep_max_wiper_count; ++index) {
     g_pot_sweep_rows[index] = PhoenixBenchmarkPotSweepRowMetrics{};
+  }
+}
+
+void reset_dwell_sweep_rows(void) {
+  for (std::size_t index = 0u; index < k_phoenix_benchmark_dwell_sweep_max_step_count; ++index) {
+    g_dwell_sweep_rows[index] = PhoenixBenchmarkDwellSweepRowMetrics{};
   }
 }
 
@@ -597,6 +613,137 @@ bool print_osr_sweep_summary(const PhoenixBenchmarkOsrSweepRowMetrics* rows, std
   return true;
 }
 
+uint32_t compute_dwell_step_count(const PhoenixBenchmarkDwellSweepOptions& options) {
+  if (options.dwell_step_us == 0u) {
+    return 0u;
+  }
+  if (options.start_dwell_us > options.end_dwell_us) {
+    return 0u;
+  }
+  const uint64_t range = static_cast<uint64_t>(options.end_dwell_us) - static_cast<uint64_t>(options.start_dwell_us);
+  const uint64_t increments = range / static_cast<uint64_t>(options.dwell_step_us);
+  return static_cast<uint32_t>(increments + 1u);
+}
+
+bool print_dwell_sweep_summary(const PhoenixBenchmarkDwellSweepRowMetrics* rows, uint32_t row_count) {
+  Serial.println();
+  Serial.println(F("# summary_table"));
+
+  char line_buffer[k_phoenix_benchmark_dwell_sweep_summary_buffer_bytes] = {};
+  if (!phoenix_benchmark_dwell_sweep_format_summary_header(line_buffer, sizeof(line_buffer))) {
+    Serial.println(F("# summary_table_format_failed"));
+    return false;
+  }
+  Serial.println(line_buffer);
+
+  for (uint32_t index = 0u; index < row_count; ++index) {
+    const PhoenixBenchmarkDwellSweepRowMetrics& row = rows[index];
+
+    const bool has_metrics = row.drain.channel_a_codes.has_samples() && row.led1.channel_a_codes.has_samples() &&
+                             row.led2.channel_b_codes.has_samples();
+
+    PhoenixBenchmarkDwellSweepSummaryRowValues summary_values = {
+        .dwell_us         = row.dwell_us,
+        .sweeps_completed = row.sweeps_completed,
+        .drain_mean       = row.drain.channel_a_codes.mean,
+        .drain_std        = row.drain.channel_a_codes.standard_deviation(),
+        .led1_mean        = row.led1.channel_a_codes.mean,
+        .led1_std         = row.led1.channel_a_codes.standard_deviation(),
+        .led2_mean        = row.led2.channel_b_codes.mean,
+        .led2_std         = row.led2.channel_b_codes.standard_deviation(),
+        .duration_us      = row.elapsed_microseconds,
+        .warning_mask     = row.warning_mask,
+        .has_metrics      = has_metrics,
+    };
+
+    if (!phoenix_benchmark_dwell_sweep_format_summary_row(summary_values, line_buffer, sizeof(line_buffer))) {
+      Serial.println(F("# summary_table_row_format_failed"));
+      continue;
+    }
+    Serial.println(line_buffer);
+  }
+
+  Serial.println();
+  return true;
+}
+
+void print_dwell_warning_reasons(uint8_t mask) {
+  bool emitted_reason = false;
+  if ((mask & k_phoenix_benchmark_dwell_sweep_warning_saturation) != 0u) {
+    Serial.print(F("saturation"));
+    emitted_reason = true;
+  }
+  if ((mask & k_phoenix_benchmark_dwell_sweep_warning_adc_error) != 0u) {
+    if (emitted_reason) {
+      Serial.print('|');
+    }
+    Serial.print(F("adc_error"));
+    emitted_reason = true;
+  }
+  if ((mask & k_phoenix_benchmark_dwell_sweep_warning_alignment) != 0u) {
+    if (emitted_reason) {
+      Serial.print('|');
+    }
+    Serial.print(F("alignment"));
+    emitted_reason = true;
+  }
+  if (!emitted_reason) {
+    Serial.print(F("template_fallback"));
+  }
+}
+
+bool execute_dwell_sweep_command(const PhoenixBenchmarkDwellSweepOptions& options) {
+  const uint32_t expected_steps = compute_dwell_step_count(options);
+
+  Serial.print(F("# running,scenario=dwell_sweep,sweeps_per_dwell="));
+  Serial.print(options.sweeps_per_dwell);
+  Serial.print(F(",start_us="));
+  Serial.print(options.start_dwell_us);
+  Serial.print(F(",end_us="));
+  Serial.print(options.end_dwell_us);
+  Serial.print(F(",step_us="));
+  Serial.print(options.dwell_step_us);
+  Serial.print(F(",steps="));
+  Serial.println(expected_steps);
+
+  reset_dwell_sweep_rows();
+  const PhoenixBenchmarkDwellSweepExecutionStatus status =
+      phoenix_benchmark_dwell_sweep_run(options, g_dwell_sweep_rows, k_phoenix_benchmark_dwell_sweep_max_step_count);
+
+  if (!status.success) {
+    Serial.print(F("# error,dwell_sweep_failed"));
+    if (status.message != nullptr) {
+      Serial.print(F(",reason="));
+      Serial.print(status.message);
+    }
+    Serial.println();
+    return false;
+  }
+
+  if (!print_dwell_sweep_summary(g_dwell_sweep_rows, status.rows_generated)) {
+    return false;
+  }
+
+  uint8_t aggregated_warnings = 0u;
+  for (uint32_t index = 0u; index < status.rows_generated; ++index) {
+    aggregated_warnings |= g_dwell_sweep_rows[index].warning_mask;
+  }
+
+  if (status.has_warnings) {
+    Serial.print(F("# dwell_sweep_warnings,reason="));
+    if (aggregated_warnings != 0u) {
+      print_dwell_warning_reasons(aggregated_warnings);
+    }
+    else {
+      Serial.print(F("template_fallback"));
+    }
+    Serial.println();
+  }
+
+  Serial.println(F("# benchmark_complete"));
+  return true;
+}
+
 bool print_pot_sweep_summary(const PhoenixBenchmarkPotSweepRowMetrics* rows, std::size_t row_count) {
   // Step 1: Emit the summary banner and render the header so users see available columns.
   Serial.println();
@@ -897,6 +1044,21 @@ void handle_command_line(const char* line) {
 
     handled = execute_pot_sweep_command(parse_result.options);
   }
+  else if (std::strcmp(command_identifier, "dwell_sweep") == 0) {
+    const PhoenixBenchmarkDwellSweepParseResult parse_result = phoenix_benchmark_dwell_sweep_parse_command(line);
+    if (!parse_result.success) {
+      Serial.print(F("# error,dwell_sweep_parse_failed"));
+      if (parse_result.error_message != nullptr) {
+        Serial.print(F(",reason="));
+        Serial.print(parse_result.error_message);
+      }
+      Serial.println();
+      Serial.println(F("# ready"));
+      return;
+    }
+
+    handled = execute_dwell_sweep_command(parse_result.options);
+  }
   else if (std::strcmp(command_identifier, "osr_sweep") == 0) {
     const PhoenixBenchmarkOsrSweepParseResult parse_result = phoenix_benchmark_osr_sweep_parse_command(line);
     if (!parse_result.success) {
@@ -942,6 +1104,8 @@ void setup() {
   phoenix_benchmark_adc_speed_initialise(k_adc_speed_defaults);
   phoenix_benchmark_osr_sweep_reset_state();
   phoenix_benchmark_osr_sweep_initialise(k_osr_sweep_defaults);
+  phoenix_benchmark_dwell_sweep_reset_state();
+  phoenix_benchmark_dwell_sweep_initialise(k_dwell_sweep_defaults);
   phoenix_benchmark_pot_sweep_reset_state();
   phoenix_benchmark_pot_sweep_initialise(k_pot_sweep_defaults);
 
