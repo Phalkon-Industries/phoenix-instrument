@@ -211,7 +211,9 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
         extra_keys = set(parameters.keys()) - required_keys
         if extra_keys:
             unexpected = ", ".join(sorted(extra_keys))
-            raise ValueError(f"dwell_sweep received unsupported parameters: {unexpected}")
+            raise ValueError(
+                f"dwell_sweep received unsupported parameters: {unexpected}"
+            )
 
         missing = [key for key in required_keys if key not in parameters]
         if missing:

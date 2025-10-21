@@ -87,7 +87,11 @@ def _materialise_dwell_series(command: BenchmarkCommand) -> List[int]:
     end = command.parameters.get("end_dwell_us")
     step = command.parameters.get("dwell_step_us")
 
-    if not isinstance(start, int) or not isinstance(end, int) or not isinstance(step, int):
+    if (
+        not isinstance(start, int)
+        or not isinstance(end, int)
+        or not isinstance(step, int)
+    ):
         return []
     if step <= 0 or start > end:
         return []
@@ -169,9 +173,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             f"# pot_sweep_summary,led1={led1},led2={led2},warnings={warning}\n"
         )
 
-    dwell_recommendations = (
-        getattr(artifacts, "dwell_sweep_recommendations", {}) or {}
-    )
+    dwell_recommendations = getattr(artifacts, "dwell_sweep_recommendations", {}) or {}
     dwell_warning = getattr(artifacts, "dwell_sweep_warning", None)
     if dwell_recommendations:
         recommended = dwell_recommendations.get("recommended")

@@ -405,7 +405,9 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
     assert artifacts.dwell_sweep_warning == "saturation"
 
     summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
-    dwell_entry = next(item for item in summary_data if item["scenario"] == "dwell_sweep")
+    dwell_entry = next(
+        item for item in summary_data if item["scenario"] == "dwell_sweep"
+    )
     assert len(dwell_entry["rows"]) == 3
     assert dwell_entry["rows"][0]["dwell_us"] == 100
     assert dwell_entry["rows"][1]["warning_mask"] == 1

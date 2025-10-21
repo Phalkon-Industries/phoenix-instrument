@@ -345,7 +345,9 @@ def create_report(
         }
 
     dwell_rows: List[DwellSweepSummaryRow] = [
-        row for row in summaries.get("dwell_sweep", []) if isinstance(row, DwellSweepSummaryRow)
+        row
+        for row in summaries.get("dwell_sweep", [])
+        if isinstance(row, DwellSweepSummaryRow)
     ]
     dwell_recommendations = _compute_dwell_recommendations(dwell_rows)
     if dwell_rows or dwell_warning:
@@ -1185,14 +1187,10 @@ def _render_dwell_variance_plot(
         if row.drain_std is not None
     ]
     led1_points = [
-        (row.dwell_us, row.led1_std)
-        for row in metric_rows
-        if row.led1_std is not None
+        (row.dwell_us, row.led1_std) for row in metric_rows if row.led1_std is not None
     ]
     led2_points = [
-        (row.dwell_us, row.led2_std)
-        for row in metric_rows
-        if row.led2_std is not None
+        (row.dwell_us, row.led2_std) for row in metric_rows if row.led2_std is not None
     ]
 
     if not (drain_points or led1_points or led2_points):
@@ -1206,19 +1204,25 @@ def _render_dwell_variance_plot(
 
     if drain_points:
         x_vals, y_vals = zip(*drain_points)
-        (line_drain,) = ax.plot(x_vals, y_vals, marker="o", color="#4C72B0", label="Drain σ")
+        (line_drain,) = ax.plot(
+            x_vals, y_vals, marker="o", color="#4C72B0", label="Drain σ"
+        )
         handles.append(line_drain)
         labels.append("Drain σ")
 
     if led1_points:
         x_vals, y_vals = zip(*led1_points)
-        (line_led1,) = ax.plot(x_vals, y_vals, marker="s", color="#55A868", label="LED1 σ")
+        (line_led1,) = ax.plot(
+            x_vals, y_vals, marker="s", color="#55A868", label="LED1 σ"
+        )
         handles.append(line_led1)
         labels.append("LED1 σ")
 
     if led2_points:
         x_vals, y_vals = zip(*led2_points)
-        (line_led2,) = ax.plot(x_vals, y_vals, marker="^", color="#C44E52", label="LED2 σ")
+        (line_led2,) = ax.plot(
+            x_vals, y_vals, marker="^", color="#C44E52", label="LED2 σ"
+        )
         handles.append(line_led2)
         labels.append("LED2 σ")
 
@@ -1240,7 +1244,9 @@ def _render_dwell_variance_plot(
     ]
     if warning_points:
         x_vals, y_vals = zip(*warning_points)
-        scatter = ax.scatter(x_vals, y_vals, color="#DD8452", marker="x", label="saturation warning")
+        scatter = ax.scatter(
+            x_vals, y_vals, color="#DD8452", marker="x", label="saturation warning"
+        )
         handles.append(scatter)
         labels.append("saturation warning")
 
@@ -1280,7 +1286,9 @@ def _render_dwell_duration_plot(
     ]
     if warning_points:
         x_warn, y_warn = zip(*warning_points)
-        ax.scatter(x_warn, y_warn, color="#DD8452", marker="x", label="saturation warning")
+        ax.scatter(
+            x_warn, y_warn, color="#DD8452", marker="x", label="saturation warning"
+        )
         ax.legend(loc="best")
 
     ax.set_xlabel("Dwell (µs)")
@@ -1557,7 +1565,9 @@ def _render_dwell_sweep_section(
             f"{float(threshold):.2f}" if isinstance(threshold, (int, float)) else "--"
         )
         recommended_label = f"{recommended} µs" if recommended is not None else "--"
-        lines.append(f"_Recommended dwell_: {recommended_label} (σ ≤ {threshold_label})")
+        lines.append(
+            f"_Recommended dwell_: {recommended_label} (σ ≤ {threshold_label})"
+        )
         if isinstance(stable, list) and stable:
             stable_values = ", ".join(f"{value} µs" for value in stable)
             lines.append(f"_Stable candidates_: {stable_values}")

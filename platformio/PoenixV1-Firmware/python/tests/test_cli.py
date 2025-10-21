@@ -185,9 +185,15 @@ class DwellSweepSerial(DummySerial):
             "LED2_Mean  LED2_Std  Duration_us  Warning_Mask\n"
         ).encode("utf-8")
 
-        row_stable = format_row(100, 4, 1.234, 0.111, 2.345, 0.222, 3.456, 0.333, 50_000, 0x00)
-        row_saturation = format_row(200, 4, 1.400, 0.250, 2.500, 0.350, 3.600, 0.450, 60_000, 0x01)
-        row_incomplete = format_row(300, 2, None, None, None, None, None, None, 30_000, 0x00)
+        row_stable = format_row(
+            100, 4, 1.234, 0.111, 2.345, 0.222, 3.456, 0.333, 50_000, 0x00
+        )
+        row_saturation = format_row(
+            200, 4, 1.400, 0.250, 2.500, 0.350, 3.600, 0.450, 60_000, 0x01
+        )
+        row_incomplete = format_row(
+            300, 2, None, None, None, None, None, None, 30_000, 0x00
+        )
 
         self._line_queue = [
             b"# phoenix benchmark ready\n",
@@ -554,9 +560,7 @@ def test_cli_streams_dwell_sweep_command(
                 ]
             }
             self.plot_path = self.plot_paths["dwell_sweep"][0]
-            self.csv_paths = {
-                "dwell_sweep": [directory / f"{slug}.csv"]
-            }
+            self.csv_paths = {"dwell_sweep": [directory / f"{slug}.csv"]}
             self.report_markdown_path = directory / "report.md"
             self.scenarios = ["dwell_sweep"]
             self.pot_sweep_recommendations = {}
