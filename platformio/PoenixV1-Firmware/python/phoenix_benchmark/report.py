@@ -275,11 +275,15 @@ class DriftCaptureBurst:
 
     @property
     def led1_sample_count(self) -> int:
-        return sum(1 for row in self.combined_samples if row.led1_elapsed_us is not None)
+        return sum(
+            1 for row in self.combined_samples if row.led1_elapsed_us is not None
+        )
 
     @property
     def led2_sample_count(self) -> int:
-        return sum(1 for row in self.combined_samples if row.led2_elapsed_us is not None)
+        return sum(
+            1 for row in self.combined_samples if row.led2_elapsed_us is not None
+        )
 
     @property
     def warning_labels(self) -> List[str]:
@@ -560,10 +564,14 @@ def create_report(
 
     if drift_bursts:
         plot_paths["drift_capture"] = [
-            drift_plot_paths[burst.slug()] for burst in drift_bursts if burst.slug() in drift_plot_paths
+            drift_plot_paths[burst.slug()]
+            for burst in drift_bursts
+            if burst.slug() in drift_plot_paths
         ]
         csv_paths["drift_capture"] = [
-            drift_csv_paths[burst.slug()] for burst in drift_bursts if burst.slug() in drift_csv_paths
+            drift_csv_paths[burst.slug()]
+            for burst in drift_bursts
+            if burst.slug() in drift_csv_paths
         ]
 
     fallback_plot_path: Path | None = None
@@ -1473,36 +1481,61 @@ def _render_drift_capture_plot(burst: DriftCaptureBurst, output_path: Path) -> N
         _render_placeholder_plot("No drift capture samples recorded", output_path)
         return
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax_primary = plt.subplots(figsize=(10, 5))
+    legend_handles = []
+
     if led1_points:
-        x_vals, y_vals = zip(*led1_points)
-        ax.plot(x_vals, y_vals, marker="o", color="#4C72B0", label="LED1")
+        x_vals_led1, y_vals_led1 = zip(*led1_points)
+        (line_led1,) = ax_primary.plot(
+            x_vals_led1,
+            y_vals_led1,
+            color="#4C72B0",
+            label="LED1",
+        )
+        legend_handles.append(line_led1)
+        ax_primary.set_ylabel("LED1 ADC code")
+    else:
+        ax_primary.set_ylabel("ADC code")
+
+    secondary_axis = None
     if led2_points:
-        x_vals, y_vals = zip(*led2_points)
-        ax.plot(x_vals, y_vals, marker="s", color="#55A868", label="LED2")
-
-    if burst.warning_mask & DRIFT_CAPTURE_WARNING_BUFFER_OVERFLOW:
+        x_vals_led2, y_vals_led2 = zip(*led2_points)
         if led1_points:
-            x_last, y_last = led1_points[-1]
-            ax.scatter([x_last], [y_last], color="#C44E52", marker="X", s=80, label="LED1 overflow")
-        if led2_points:
-            x_last2, y_last2 = led2_points[-1]
-            ax.scatter([x_last2], [y_last2], color="#8172B2", marker="X", s=80, label="LED2 overflow")
+            secondary_axis = ax_primary.twinx()
+            secondary_axis.set_ylabel("LED2 ADC code")
+            (line_led2,) = secondary_axis.plot(
+                x_vals_led2,
+                y_vals_led2,
+                color="#55A868",
+                label="LED2",
+            )
+        else:
+            (line_led2,) = ax_primary.plot(
+                x_vals_led2,
+                y_vals_led2,
+                color="#55A868",
+                label="LED2",
+            )
+            ax_primary.set_ylabel("LED2 ADC code")
+        legend_handles.append(line_led2)
 
-    ax.set_xlabel("Elapsed (us)")
-    ax.set_ylabel("ADC code")
-    ax.set_title(f"Drift capture burst {burst.index} (wiper {burst.wiper_code})")
-    ax.grid(axis="both", linestyle="--", alpha=0.4)
-    if led1_points or led2_points:
-        ax.legend()
+    ax_primary.set_xlabel("Elapsed (us)")
+    ax_primary.set_title(
+        f"Drift capture burst {burst.index} (wiper {burst.wiper_code})"
+    )
+    ax_primary.grid(axis="both", linestyle="--", alpha=0.4)
+
+    if legend_handles:
+        legend_labels = [handle.get_label() for handle in legend_handles]
+        ax_primary.legend(legend_handles, legend_labels, loc="best")
 
     if burst.warning_labels:
         warning_text = ", ".join(burst.warning_labels)
-        ax.text(
+        ax_primary.text(
             0.02,
             0.95,
             f"Warnings: {warning_text}",
-            transform=ax.transAxes,
+            transform=ax_primary.transAxes,
             fontsize=9,
             ha="left",
             va="top",
@@ -2076,12 +2109,12 @@ def _render_markdown_report(
         lines.append(
             "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | LED1 Samples | LED2 Samples | Warnings |"
         )
-        lines.append(
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
-        )
+        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
         for entry in drift_entries:
             burst = entry.burst
-            warning_label = ", ".join(burst.warning_labels) if burst.warning_labels else "none"
+            warning_label = (
+                ", ".join(burst.warning_labels) if burst.warning_labels else "none"
+            )
             lines.append(
                 "| {index} | {start} | {end} | {step} | {osr} | {wiper} | {led1} | {led2} | {warnings} |".format(
                     index=burst.index,
@@ -2099,6 +2132,16 @@ def _render_markdown_report(
 
         for entry in drift_entries:
             burst = entry.burst
+            lines.append(f"### Burst {burst.index}")
+            lines.append("")
+            lines.append(f"![drift_capture plot]({entry.plot.as_posix()})")
+            lines.append("")
+            artifact_links = [
+                f"[CSV]({entry.csv.as_posix()})",
+                f"[JSON]({entry.json.as_posix()})",
+            ]
+            lines.append("Artifacts: " + " · ".join(artifact_links))
+            lines.append("")
             lines.append("<details>")
             lines.append(f"<summary>Burst {burst.index} samples</summary>")
             lines.append("")
@@ -2115,14 +2158,6 @@ def _render_markdown_report(
                         led2_code=_format_drift_optional(sample.led2_code),
                     )
                 )
-            lines.append("")
-            artifact_links = [
-                f"[CSV]({entry.csv.as_posix()})",
-                f"[JSON]({entry.json.as_posix()})",
-            ]
-            lines.append(" · ".join(artifact_links))
-            lines.append("")
-            lines.append(f"![drift_capture plot]({entry.plot.as_posix()})")
             lines.append("")
             lines.append("</details>")
             lines.append("")

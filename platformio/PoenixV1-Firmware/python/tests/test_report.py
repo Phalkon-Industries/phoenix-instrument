@@ -461,11 +461,22 @@ def test_create_report_handles_drift_capture(tmp_path: Path) -> None:
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "## Drift Capture" in report_text
-    assert "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | LED1 Samples | LED2 Samples | Warnings |" in report_text
-    assert "| 1 | 0 | 50 | 10 | 4096 | 0x2A | 3 | 2 | buffer_overflow, saturation |" in report_text
+    assert (
+        "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | LED1 Samples | LED2 Samples | Warnings |"
+        in report_text
+    )
+    assert (
+        "| 1 | 0 | 50 | 10 | 4096 | 0x2A | 3 | 2 | buffer_overflow, saturation |"
+        in report_text
+    )
+    assert "### Burst 1" in report_text
+    artifact_line = f"Artifacts: [CSV]({slug}.csv) · [JSON]({slug}.json)"
+    assert artifact_line in report_text
     assert "<details>" in report_text
     assert "<summary>Burst 1 samples</summary>" in report_text
     assert "</details>" in report_text
     assert "Elapsed LED1" in report_text
     assert "buffer_overflow" in report_text
-    assert f"![drift_capture plot]({slug}.png)" in report_text
+    plot_token = f"![drift_capture plot]({slug}.png)"
+    assert plot_token in report_text
+    assert report_text.index(plot_token) < report_text.index("<details>")

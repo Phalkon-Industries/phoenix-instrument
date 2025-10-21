@@ -102,13 +102,13 @@ Unknown command identifiers return a `# error,unsupported_command` line until th
 
 Requests a rapid dual-LED capture immediately after each LED transitions on. The firmware timestamps LED1/LED2 samples relative to the activation edge, stores them in a shared buffer, and emits metadata once both sequences complete.
 
-| Field            | Type    | Required | Notes                                                                                                                                         |
-| ---------------- | ------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start_time_us`  | integer | no       | First timestamp to report in microseconds. Defaults to `0` when omitted. Must be ≥ 0 and ≤ `end_time_us`.                                      |
-| `end_time_us`    | integer | no       | Final elapsed timestamp to capture. Defaults to `100000`. Must be ≥ `start_time_us` and within the buffer-derived upper bound documented in Phase 6. |
-| `step_delay_us`  | integer | no       | Optional inter-sample pause. Defaults to `0` (tight loop). Positive values insert a guarded delay between samples.                            |
-| `osr`            | integer | no       | Optional ADC oversampling ratio override. Defaults to the most recent channel-map context when omitted.                                       |
-| `wiper_code`     | integer | no       | Optional potentiometer wiper override applied before the burst. Defaults to the last channel-map wiper.                                       |
+| Field           | Type    | Required | Notes                                                                                                                                                |
+| --------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_time_us` | integer | no       | First timestamp to report in microseconds. Defaults to `0` when omitted. Must be ≥ 0 and ≤ `end_time_us`.                                            |
+| `end_time_us`   | integer | no       | Final elapsed timestamp to capture. Defaults to `100000`. Must be ≥ `start_time_us` and within the buffer-derived upper bound documented in Phase 6. |
+| `step_delay_us` | integer | no       | Optional inter-sample pause. Defaults to `0` (tight loop). Positive values insert a guarded delay between samples.                                   |
+| `osr`           | integer | no       | Optional ADC oversampling ratio override. Defaults to the most recent channel-map context when omitted.                                              |
+| `wiper_code`    | integer | no       | Optional potentiometer wiper override applied before the burst. Defaults to the last channel-map wiper.                                              |
 
 **Example**
 

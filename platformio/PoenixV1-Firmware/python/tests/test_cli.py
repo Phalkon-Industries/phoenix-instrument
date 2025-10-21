@@ -668,9 +668,7 @@ def test_cli_streams_drift_capture_command(
                 primary_slug = burst_list[0].slug() if burst_list else "drift_capture"
                 self.plot_path = directory / f"{primary_slug}.png"
                 self.plot_paths = {"drift_capture": [self.plot_path]}
-                self.csv_paths = {
-                    "drift_capture": [directory / f"{primary_slug}.csv"]
-                }
+                self.csv_paths = {"drift_capture": [directory / f"{primary_slug}.csv"]}
                 self.report_markdown_path = directory / "report.md"
                 self.report_markdown_path.write_text("", encoding="utf-8")
                 self.scenarios = ["drift_capture"]
@@ -679,13 +677,16 @@ def test_cli_streams_drift_capture_command(
                 self.dwell_sweep_recommendations = {}
                 self.dwell_sweep_warning = None
                 self.drift_capture_json_paths = {
-                    burst.slug(): directory / f"{burst.slug()}.json" for burst in burst_list
+                    burst.slug(): directory / f"{burst.slug()}.json"
+                    for burst in burst_list
                 }
                 self.drift_capture_csv_paths = {
-                    burst.slug(): directory / f"{burst.slug()}.csv" for burst in burst_list
+                    burst.slug(): directory / f"{burst.slug()}.csv"
+                    for burst in burst_list
                 }
                 self.drift_capture_plot_paths = {
-                    burst.slug(): directory / f"{burst.slug()}.png" for burst in burst_list
+                    burst.slug(): directory / f"{burst.slug()}.png"
+                    for burst in burst_list
                 }
 
         return DummyArtifacts(out_dir)

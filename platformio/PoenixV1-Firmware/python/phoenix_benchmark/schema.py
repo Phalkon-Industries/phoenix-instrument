@@ -360,9 +360,7 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
         effective_start = (
             start_us if start_us is not None else DRIFT_CAPTURE_DEFAULT_START_US
         )
-        effective_end = (
-            end_us if end_us is not None else DRIFT_CAPTURE_DEFAULT_END_US
-        )
+        effective_end = end_us if end_us is not None else DRIFT_CAPTURE_DEFAULT_END_US
         if end_us is not None and start_us is not None and end_us < start_us:
             raise ValueError("drift_capture.end_time_us must be >= start_time_us")
         if effective_end < effective_start:
