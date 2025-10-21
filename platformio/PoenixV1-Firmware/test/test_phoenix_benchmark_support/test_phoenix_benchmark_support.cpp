@@ -4,6 +4,7 @@
 #include "channel_map/channel_map_formatter.hpp"
 #include "channel_map/channel_map_support.hpp"
 #include "core/phoenix_benchmark_core.hpp"
+#include "drift_capture/drift_capture.hpp"
 #include "dwell_sweep/dwell_sweep.hpp"
 #include "main.hpp"
 #include "osr_sweep/osr_sweep.hpp"
@@ -167,6 +168,431 @@ static void test_parse_channel_map_command_rejects_invalid_payload(void) {
   PhoenixBenchmarkChannelMapRequest request      = {};
   // Step 2: Confirm the parser reports failure when validation fails.
   TEST_ASSERT_FALSE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
+}
+
+static uint32_t                        g_drift_capture_fake_micros             = 0u;
+static const int32_t*                  g_drift_capture_led1_codes              = nullptr;
+static std::size_t                     g_drift_capture_led1_length             = 0u;
+static std::size_t                     g_drift_capture_led1_index              = 0u;
+static const int32_t*                  g_drift_capture_led2_codes              = nullptr;
+static std::size_t                     g_drift_capture_led2_length             = 0u;
+static std::size_t                     g_drift_capture_led2_index              = 0u;
+static PhoenixBenchmarkDriftCaptureLed g_drift_capture_current_led             = PhoenixBenchmarkDriftCaptureLed::kLed1;
+static bool                            g_drift_capture_led_active              = false;
+static LedRouterState                  g_drift_capture_router_transitions[8]   = {};
+static std::size_t                     g_drift_capture_router_transition_count = 0u;
+static uint8_t                         g_drift_capture_last_wiper_code         = 0u;
+static uint32_t                        g_drift_capture_last_osr_enum           = 0u;
+static std::size_t                     g_drift_capture_osr_call_count          = 0u;
+static AdcHalChannel                   g_drift_capture_last_channel            = AdcHalChannel::ADC_HAL_CHANNEL_4;
+static char                            g_drift_capture_output_lines[32][128]   = {};
+static std::size_t                     g_drift_capture_output_count            = 0u;
+
+static void drift_capture_reset_fakes(void) {
+  g_drift_capture_fake_micros             = 0u;
+  g_drift_capture_led1_codes              = nullptr;
+  g_drift_capture_led1_length             = 0u;
+  g_drift_capture_led1_index              = 0u;
+  g_drift_capture_led2_codes              = nullptr;
+  g_drift_capture_led2_length             = 0u;
+  g_drift_capture_led2_index              = 0u;
+  g_drift_capture_current_led             = PhoenixBenchmarkDriftCaptureLed::kLed1;
+  g_drift_capture_led_active              = false;
+  g_drift_capture_router_transition_count = 0u;
+  g_drift_capture_last_wiper_code         = 0u;
+  g_drift_capture_last_osr_enum           = 0u;
+  g_drift_capture_osr_call_count          = 0u;
+  g_drift_capture_last_channel            = AdcHalChannel::ADC_HAL_CHANNEL_4;
+  g_drift_capture_output_count            = 0u;
+  for (std::size_t index = 0u;
+       index < (sizeof(g_drift_capture_router_transitions) / sizeof(g_drift_capture_router_transitions[0])); ++index) {
+    g_drift_capture_router_transitions[index] = LedRouterState::LED_ROUTER_STATE_OFF;
+  }
+  for (std::size_t line = 0u; line < (sizeof(g_drift_capture_output_lines) / sizeof(g_drift_capture_output_lines[0]));
+       ++line) {
+    g_drift_capture_output_lines[line][0] = '\0';
+  }
+}
+
+static bool drift_capture_fake_hardware_ready(void) {
+  return true;
+}
+
+static bool drift_capture_fake_wiper_setter(uint8_t code) {
+  g_drift_capture_last_wiper_code = code;
+  return true;
+}
+
+static int drift_capture_fake_led_setter(LedRouterState state) {
+  if (g_drift_capture_router_transition_count <
+      (sizeof(g_drift_capture_router_transitions) / sizeof(g_drift_capture_router_transitions[0]))) {
+    g_drift_capture_router_transitions[g_drift_capture_router_transition_count++] = state;
+  }
+  if (state == LedRouterState::LED_ROUTER_STATE_LED1) {
+    g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kLed1;
+    g_drift_capture_led_active  = true;
+  }
+  else if (state == LedRouterState::LED_ROUTER_STATE_LED2) {
+    g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kLed2;
+    g_drift_capture_led_active  = true;
+  }
+  else {
+    g_drift_capture_led_active = false;
+  }
+  return LED_ROUTER_OK;
+}
+
+static int drift_capture_fake_osr_setter(mcp356x_osr value) {
+  g_drift_capture_last_osr_enum = static_cast<uint32_t>(value);
+  ++g_drift_capture_osr_call_count;
+  return 0;
+}
+
+static bool drift_capture_fake_adc_reader(AdcHalChannel channel, int32_t* out_code) {
+  g_drift_capture_last_channel = channel;
+  if ((out_code == nullptr) || !g_drift_capture_led_active) {
+    return false;
+  }
+  if (g_drift_capture_current_led == PhoenixBenchmarkDriftCaptureLed::kLed1) {
+    if (g_drift_capture_led1_index >= g_drift_capture_led1_length) {
+      return false;
+    }
+    *out_code = g_drift_capture_led1_codes[g_drift_capture_led1_index++];
+  }
+  else {
+    if (g_drift_capture_led2_index >= g_drift_capture_led2_length) {
+      return false;
+    }
+    *out_code = g_drift_capture_led2_codes[g_drift_capture_led2_index++];
+  }
+  g_drift_capture_fake_micros += 3u;
+  return true;
+}
+
+static uint32_t drift_capture_fake_micros(void) {
+  return g_drift_capture_fake_micros;
+}
+
+static void drift_capture_fake_delay(uint32_t delay_us) {
+  g_drift_capture_fake_micros += delay_us;
+}
+
+static void drift_capture_collect_line(const char* line) {
+  if ((line == nullptr) || (g_drift_capture_output_count >=
+                            (sizeof(g_drift_capture_output_lines) / sizeof(g_drift_capture_output_lines[0])))) {
+    return;
+  }
+  std::strncpy(g_drift_capture_output_lines[g_drift_capture_output_count], line,
+               sizeof(g_drift_capture_output_lines[g_drift_capture_output_count]) - 1u);
+  g_drift_capture_output_lines[g_drift_capture_output_count]
+                              [sizeof(g_drift_capture_output_lines[g_drift_capture_output_count]) - 1u] = '\0';
+  ++g_drift_capture_output_count;
+}
+
+static void drift_capture_install_fakes(void) {
+  phoenix_benchmark_drift_capture_set_hardware_ready_checker_for_test(drift_capture_fake_hardware_ready);
+  phoenix_benchmark_drift_capture_set_wiper_setter_for_test(drift_capture_fake_wiper_setter);
+  phoenix_benchmark_drift_capture_set_led_setter_for_test(drift_capture_fake_led_setter);
+  phoenix_benchmark_drift_capture_set_osr_setter_for_test(drift_capture_fake_osr_setter);
+  phoenix_benchmark_drift_capture_set_adc_reader_for_test(drift_capture_fake_adc_reader);
+  phoenix_benchmark_drift_capture_set_micros_provider_for_test(drift_capture_fake_micros);
+  phoenix_benchmark_drift_capture_set_delay_provider_for_test(drift_capture_fake_delay);
+}
+
+static void drift_capture_uninstall_fakes(void) {
+  phoenix_benchmark_drift_capture_clear_test_hooks();
+}
+
+static void test_drift_capture_options_apply_defaults_inherit_initialised_values(void) {
+  // Step 1: Supply defaults and ensure options inherit fields when overrides are absent.
+  const PhoenixBenchmarkDriftCaptureDefaults defaults = {
+      .start_time_us = 0u, .end_time_us = 100000u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x20u};
+
+  PhoenixBenchmarkDriftCaptureOptions options = {};
+  options.has_start_override                  = false;
+  options.has_end_override                    = false;
+  options.has_step_override                   = false;
+  options.has_osr_override                    = false;
+  options.has_wiper_override                  = false;
+  options.apply_defaults(defaults);
+
+  TEST_ASSERT_EQUAL_UINT32(defaults.start_time_us, options.start_time_us);
+  TEST_ASSERT_EQUAL_UINT32(defaults.end_time_us, options.end_time_us);
+  TEST_ASSERT_EQUAL_UINT32(defaults.step_delay_us, options.step_delay_us);
+  TEST_ASSERT_EQUAL_UINT32(defaults.osr, options.osr);
+  TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, options.wiper_code);
+}
+
+static void test_drift_capture_options_validate_rejects_inverted_range(void) {
+  // Step 1: Configure an option set with an inverted window.
+  PhoenixBenchmarkDriftCaptureOptions options = {
+      .start_time_us      = 200u,
+      .has_start_override = true,
+      .end_time_us        = 100u,
+      .has_end_override   = true,
+      .step_delay_us      = 10u,
+      .has_step_override  = true,
+      .osr                = 4096u,
+      .has_osr_override   = true,
+      .wiper_code         = 0x10u,
+      .has_wiper_override = true,
+  };
+
+  const char* error_message = nullptr;
+  TEST_ASSERT_FALSE(options.validate(&error_message));
+  TEST_ASSERT_NOT_NULL(error_message);
+}
+
+static void test_drift_capture_options_validate_rejects_schedule_exceeding_buffer(void) {
+  // Step 1: Select a step that would exceed the static buffer capacity.
+  PhoenixBenchmarkDriftCaptureOptions options = {
+      .start_time_us      = 0u,
+      .has_start_override = true,
+      .end_time_us        = static_cast<uint32_t>((k_phoenix_benchmark_drift_capture_max_sample_count + 1u) * 10u),
+      .has_end_override   = true,
+      .step_delay_us      = 10u,
+      .has_step_override  = true,
+      .osr                = 4096u,
+      .has_osr_override   = true,
+      .wiper_code         = 0x01u,
+      .has_wiper_override = true,
+  };
+
+  const char* error_message = nullptr;
+  TEST_ASSERT_FALSE(options.validate(&error_message));
+  TEST_ASSERT_NOT_NULL(error_message);
+}
+
+static void test_drift_capture_parse_command_accepts_plain_token(void) {
+  // Step 1: Ensure the bare command inherits initialised defaults.
+  phoenix_benchmark_drift_capture_reset_state();
+  const PhoenixBenchmarkDriftCaptureDefaults defaults = {
+      .start_time_us = 0u, .end_time_us = 100000u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u};
+  phoenix_benchmark_drift_capture_initialise(defaults);
+
+  const PhoenixBenchmarkDriftCaptureParseResult result = phoenix_benchmark_drift_capture_parse_command("drift_capture");
+
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_NULL(result.error_message);
+  TEST_ASSERT_FALSE(result.options.has_start_override);
+  TEST_ASSERT_FALSE(result.options.has_end_override);
+  TEST_ASSERT_FALSE(result.options.has_step_override);
+  TEST_ASSERT_FALSE(result.options.has_osr_override);
+  TEST_ASSERT_FALSE(result.options.has_wiper_override);
+  TEST_ASSERT_EQUAL_UINT32(defaults.start_time_us, result.options.start_time_us);
+  TEST_ASSERT_EQUAL_UINT32(defaults.end_time_us, result.options.end_time_us);
+  TEST_ASSERT_EQUAL_UINT32(defaults.step_delay_us, result.options.step_delay_us);
+  TEST_ASSERT_EQUAL_UINT32(defaults.osr, result.options.osr);
+  TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, result.options.wiper_code);
+}
+
+static void test_drift_capture_parse_command_accepts_json_overrides(void) {
+  // Step 1: Provide explicit overrides for timing, OSR, and the wiper code.
+  phoenix_benchmark_drift_capture_reset_state();
+  phoenix_benchmark_drift_capture_initialise(
+      {.start_time_us = 0u, .end_time_us = 100000u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+
+  const char* payload =
+      "{\"command\":\"drift_capture\",\"parameters\":{\"start_time_us\":500,\"end_time_us\":1500,"
+      "\"step_delay_us\":25,\"osr\":8192,\"wiper_code\":64}}";
+
+  const PhoenixBenchmarkDriftCaptureParseResult result = phoenix_benchmark_drift_capture_parse_command(payload);
+
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_TRUE(result.options.has_start_override);
+  TEST_ASSERT_TRUE(result.options.has_end_override);
+  TEST_ASSERT_TRUE(result.options.has_step_override);
+  TEST_ASSERT_TRUE(result.options.has_osr_override);
+  TEST_ASSERT_TRUE(result.options.has_wiper_override);
+  TEST_ASSERT_EQUAL_UINT32(500u, result.options.start_time_us);
+  TEST_ASSERT_EQUAL_UINT32(1500u, result.options.end_time_us);
+  TEST_ASSERT_EQUAL_UINT32(25u, result.options.step_delay_us);
+  TEST_ASSERT_EQUAL_UINT32(8192u, result.options.osr);
+  TEST_ASSERT_EQUAL_UINT8(64u, result.options.wiper_code);
+}
+
+static void test_drift_capture_parse_command_rejects_invalid_range(void) {
+  // Step 1: Attempt to parse a JSON payload where the capture window is inverted.
+  phoenix_benchmark_drift_capture_reset_state();
+  phoenix_benchmark_drift_capture_initialise(
+      {.start_time_us = 0u, .end_time_us = 100000u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+
+  const char* payload =
+      "{\"command\":\"drift_capture\",\"parameters\":{\"start_time_us\":5000,\"end_time_us\":200,\"osr\":4096}}";
+
+  const PhoenixBenchmarkDriftCaptureParseResult result = phoenix_benchmark_drift_capture_parse_command(payload);
+
+  TEST_ASSERT_FALSE(result.success);
+  TEST_ASSERT_NOT_NULL(result.error_message);
+}
+
+static void test_drift_capture_run_captures_leds_in_sequence(void) {
+  // Step 1: Execute a deterministic capture covering both LED paths.
+  phoenix_benchmark_drift_capture_reset_state();
+  const PhoenixBenchmarkDriftCaptureDefaults defaults = {
+      .start_time_us = 0u, .end_time_us = 20u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x12u};
+  phoenix_benchmark_drift_capture_initialise(defaults);
+  drift_capture_reset_fakes();
+
+  static const int32_t led1_codes[] = {100, 110, 120};
+  static const int32_t led2_codes[] = {200, 210, 220};
+  g_drift_capture_led1_codes        = led1_codes;
+  g_drift_capture_led1_length       = sizeof(led1_codes) / sizeof(led1_codes[0]);
+  g_drift_capture_led2_codes        = led2_codes;
+  g_drift_capture_led2_length       = sizeof(led2_codes) / sizeof(led2_codes[0]);
+
+  drift_capture_install_fakes();
+
+  PhoenixBenchmarkDriftCaptureOptions options = {};
+  options.apply_defaults(defaults);
+  const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {nullptr};
+
+  const PhoenixBenchmarkDriftCaptureExecutionStatus status = phoenix_benchmark_drift_capture_run(options, callbacks);
+
+  drift_capture_uninstall_fakes();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_FALSE(status.has_warnings);
+  TEST_ASSERT_EQUAL_UINT8(0u, status.warning_mask);
+  TEST_ASSERT_EQUAL_UINT32(defaults.osr, status.applied_osr);
+  TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, status.applied_wiper_code);
+  TEST_ASSERT_EQUAL_UINT32(defaults.start_time_us, status.applied_start_us);
+  TEST_ASSERT_EQUAL_UINT32(defaults.end_time_us, status.applied_end_us);
+  TEST_ASSERT_EQUAL_UINT32(defaults.step_delay_us, status.applied_step_us);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_led1_length),
+                           static_cast<uint32_t>(status.led1_samples));
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_led2_length),
+                           static_cast<uint32_t>(status.led2_samples));
+  TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, g_drift_capture_last_wiper_code);
+  TEST_ASSERT_TRUE(g_drift_capture_osr_call_count >= 1u);
+
+  std::size_t                                     led1_count = 0u;
+  const PhoenixBenchmarkDriftCaptureSample* const led1_samples =
+      phoenix_benchmark_drift_capture_led_samples(PhoenixBenchmarkDriftCaptureLed::kLed1, &led1_count);
+  TEST_ASSERT_NOT_NULL(led1_samples);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_led1_length), static_cast<uint32_t>(led1_count));
+  TEST_ASSERT_EQUAL_UINT32(0u, led1_samples[0].elapsed_microseconds);
+  TEST_ASSERT_EQUAL_INT32(led1_codes[0], led1_samples[0].adc_code);
+  TEST_ASSERT_EQUAL_UINT32(10u, led1_samples[1].elapsed_microseconds);
+  TEST_ASSERT_EQUAL_INT32(led1_codes[1], led1_samples[1].adc_code);
+  TEST_ASSERT_EQUAL_UINT32(20u, led1_samples[2].elapsed_microseconds);
+  TEST_ASSERT_EQUAL_INT32(led1_codes[2], led1_samples[2].adc_code);
+
+  std::size_t                                     led2_count = 0u;
+  const PhoenixBenchmarkDriftCaptureSample* const led2_samples =
+      phoenix_benchmark_drift_capture_led_samples(PhoenixBenchmarkDriftCaptureLed::kLed2, &led2_count);
+  TEST_ASSERT_NOT_NULL(led2_samples);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_led2_length), static_cast<uint32_t>(led2_count));
+  TEST_ASSERT_EQUAL_UINT32(0u, led2_samples[0].elapsed_microseconds);
+  TEST_ASSERT_EQUAL_INT32(led2_codes[0], led2_samples[0].adc_code);
+
+  TEST_ASSERT_TRUE(g_drift_capture_router_transition_count >= 3u);
+  TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_LED1, g_drift_capture_router_transitions[0]);
+  TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_DRAIN, g_drift_capture_router_transitions[1]);
+  TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_LED2, g_drift_capture_router_transitions[2]);
+}
+
+static void test_drift_capture_run_sets_saturation_warning(void) {
+  // Step 1: Feed a saturated sample to confirm warning propagation.
+  phoenix_benchmark_drift_capture_reset_state();
+  phoenix_benchmark_drift_capture_initialise(
+      {.start_time_us = 0u, .end_time_us = 0u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+  drift_capture_reset_fakes();
+
+  static const int32_t led1_codes[] = {k_phoenix_benchmark_adc_positive_full_scale_code};
+  static const int32_t led2_codes[] = {0};
+  g_drift_capture_led1_codes        = led1_codes;
+  g_drift_capture_led1_length       = 1u;
+  g_drift_capture_led2_codes        = led2_codes;
+  g_drift_capture_led2_length       = 1u;
+
+  drift_capture_install_fakes();
+
+  PhoenixBenchmarkDriftCaptureOptions options = {};
+  options.apply_defaults(
+      {.start_time_us = 0u, .end_time_us = 0u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+  const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {nullptr};
+
+  const PhoenixBenchmarkDriftCaptureExecutionStatus status = phoenix_benchmark_drift_capture_run(options, callbacks);
+
+  drift_capture_uninstall_fakes();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(status.has_warnings);
+  TEST_ASSERT_NOT_EQUAL(0u, status.warning_mask & k_phoenix_benchmark_drift_capture_warning_saturation);
+}
+
+static void test_drift_capture_run_sets_overflow_warning(void) {
+  // Step 1: Allow step=0 captures to saturate the static buffer and halt gracefully.
+  phoenix_benchmark_drift_capture_reset_state();
+  phoenix_benchmark_drift_capture_initialise(
+      {.start_time_us = 0u, .end_time_us = 500000u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+  drift_capture_reset_fakes();
+
+  static int32_t led_codes[k_phoenix_benchmark_drift_capture_max_sample_count + 8u];
+  for (std::size_t index = 0u; index < (sizeof(led_codes) / sizeof(led_codes[0])); ++index) {
+    led_codes[index] = static_cast<int32_t>(index);
+  }
+  g_drift_capture_led1_codes  = led_codes;
+  g_drift_capture_led1_length = sizeof(led_codes) / sizeof(led_codes[0]);
+  g_drift_capture_led2_codes  = led_codes;
+  g_drift_capture_led2_length = sizeof(led_codes) / sizeof(led_codes[0]);
+
+  drift_capture_install_fakes();
+
+  PhoenixBenchmarkDriftCaptureOptions options                 = {};
+  options.start_time_us                                       = 0u;
+  options.end_time_us                                         = 500000u;
+  options.step_delay_us                                       = 0u;
+  const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {nullptr};
+
+  const PhoenixBenchmarkDriftCaptureExecutionStatus status = phoenix_benchmark_drift_capture_run(options, callbacks);
+
+  drift_capture_uninstall_fakes();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(status.has_warnings);
+  TEST_ASSERT_NOT_EQUAL(0u, status.warning_mask & k_phoenix_benchmark_drift_capture_warning_buffer_overflow);
+  TEST_ASSERT_EQUAL_UINT32(k_phoenix_benchmark_drift_capture_max_sample_count,
+                           static_cast<uint32_t>(status.led1_samples));
+}
+
+static void test_drift_capture_run_emits_nan_padding(void) {
+  // Step 1: Capture mismatched LED lengths and confirm missing entries are padded.
+  phoenix_benchmark_drift_capture_reset_state();
+  phoenix_benchmark_drift_capture_initialise(
+      {.start_time_us = 0u, .end_time_us = 10u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x00u});
+  drift_capture_reset_fakes();
+
+  static const int32_t led1_codes[] = {10, 20};
+  static const int32_t led2_codes[] = {30};
+  g_drift_capture_led1_codes        = led1_codes;
+  g_drift_capture_led1_length       = sizeof(led1_codes) / sizeof(led1_codes[0]);
+  g_drift_capture_led2_codes        = led2_codes;
+  g_drift_capture_led2_length       = sizeof(led2_codes) / sizeof(led2_codes[0]);
+
+  drift_capture_install_fakes();
+
+  PhoenixBenchmarkDriftCaptureOptions options = {};
+  options.apply_defaults(
+      {.start_time_us = 0u, .end_time_us = 10u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x00u});
+  const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {drift_capture_collect_line};
+
+  const PhoenixBenchmarkDriftCaptureExecutionStatus status = phoenix_benchmark_drift_capture_run(options, callbacks);
+
+  drift_capture_uninstall_fakes();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(g_drift_capture_output_count > 0u);
+
+  bool saw_nan_padding = false;
+  for (std::size_t index = 0u; index < g_drift_capture_output_count; ++index) {
+    if (std::strstr(g_drift_capture_output_lines[index], "nan") != nullptr) {
+      saw_nan_padding = true;
+      break;
+    }
+  }
+  TEST_ASSERT_TRUE(saw_nan_padding);
 }
 
 static void test_is_adc_code_saturated_detects_full_scale_codes(void) {
@@ -743,6 +1169,16 @@ void setup() {
   RUN_TEST(test_parse_channel_map_command_treats_missing_dwell_as_default);
   RUN_TEST(test_parse_channel_map_command_rejects_out_of_range_wiper);
   RUN_TEST(test_parse_channel_map_command_rejects_invalid_payload);
+  RUN_TEST(test_drift_capture_options_apply_defaults_inherit_initialised_values);
+  RUN_TEST(test_drift_capture_options_validate_rejects_inverted_range);
+  RUN_TEST(test_drift_capture_options_validate_rejects_schedule_exceeding_buffer);
+  RUN_TEST(test_drift_capture_parse_command_accepts_plain_token);
+  RUN_TEST(test_drift_capture_parse_command_accepts_json_overrides);
+  RUN_TEST(test_drift_capture_parse_command_rejects_invalid_range);
+  RUN_TEST(test_drift_capture_run_captures_leds_in_sequence);
+  RUN_TEST(test_drift_capture_run_sets_saturation_warning);
+  RUN_TEST(test_drift_capture_run_sets_overflow_warning);
+  RUN_TEST(test_drift_capture_run_emits_nan_padding);
   RUN_TEST(test_is_adc_code_saturated_detects_full_scale_codes);
   RUN_TEST(test_adc_speed_format_summary_header_renders_expected_columns);
   RUN_TEST(test_adc_speed_format_summary_row_formats_metrics);

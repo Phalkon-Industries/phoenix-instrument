@@ -343,3 +343,90 @@ def test_load_command_plan_rejects_invalid_dwell_sweep(
 
     with pytest.raises(ValueError):
         load_command_plan(plan_path)
+
+
+def test_load_command_plan_accepts_drift_capture(tmp_path: Path) -> None:
+    plan_path = tmp_path / "drift_capture.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "drift_capture",
+                        "parameters": {
+                            "start_time_us": 100,
+                            "end_time_us": 10_000,
+                            "step_delay_us": 25,
+                            "osr": 4096,
+                            "wiper_code": 170,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    drift_command = commands[0]
+    assert drift_command.name == "drift_capture"
+    assert drift_command.parameters == {
+        "start_time_us": 100,
+        "end_time_us": 10_000,
+        "step_delay_us": 25,
+        "osr": 4096,
+        "wiper_code": 170,
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "command": "drift_capture",
+            "parameters": {"start_time_us": 5_000, "end_time_us": 1_000},
+        },
+        {
+            "command": "drift_capture",
+            "parameters": {
+                "start_time_us": 0,
+                "end_time_us": 100_000,
+                "step_delay_us": -10,
+            },
+        },
+        {
+            "command": "drift_capture",
+            "parameters": {
+                "start_time_us": 0,
+                "end_time_us": 100_000,
+                "step_delay_us": 10,
+            },
+        },
+        {
+            "command": "drift_capture",
+            "parameters": {"start_time_us": -1, "end_time_us": 10_000},
+        },
+        {
+            "command": "drift_capture",
+            "parameters": {
+                "start_time_us": 0,
+                "end_time_us": 10_000,
+                "osr": 123,
+            },
+        },
+        {
+            "command": "drift_capture",
+            "parameters": {"wiper_code": 300},
+        },
+    ],
+)
+def test_load_command_plan_rejects_invalid_drift_capture(
+    payload: dict[str, object], tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "drift_capture_invalid.json"
+    plan_path.write_text(json.dumps([payload]), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        load_command_plan(plan_path)

@@ -3,6 +3,7 @@
 #include "adc_speed/adc_speed_command_parser.hpp"
 #include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map.hpp"
+#include "drift_capture/drift_capture.hpp"
 #include "dwell_sweep/dwell_sweep.hpp"
 #include "dwell_sweep/dwell_sweep_formatter.hpp"
 #include "osr_sweep/osr_sweep.hpp"
@@ -34,6 +35,14 @@ const PhoenixBenchmarkChannelMapDefaults k_channel_map_defaults = {
     .sweep_count = 100u,
     .dwell_us    = 100u,
     .wiper_code  = 0x00u,
+};
+
+const PhoenixBenchmarkDriftCaptureDefaults k_drift_capture_defaults = {
+    .start_time_us = 0u,
+    .end_time_us   = 100000u,
+    .step_delay_us = 0u,
+    .osr           = 4096u,
+    .wiper_code    = k_channel_map_defaults.wiper_code,
 };
 
 const PhoenixBenchmarkAdcSpeedDefaults k_adc_speed_defaults = {
@@ -891,6 +900,43 @@ bool execute_osr_sweep_command(const PhoenixBenchmarkOsrSweepOptions& options) {
   return true;
 }
 
+bool execute_drift_capture_command(const PhoenixBenchmarkDriftCaptureOptions& options) {
+  Serial.print(F("# running,scenario=drift_capture,start_us="));
+  Serial.print(options.start_time_us);
+  Serial.print(F(",end_us="));
+  Serial.print(options.end_time_us);
+  Serial.print(F(",step_delay_us="));
+  Serial.print(options.step_delay_us);
+  Serial.print(F(",osr="));
+  Serial.print(options.osr);
+  Serial.print(F(",wiper_code=0x"));
+  if (options.wiper_code < 0x10u) {
+    Serial.print('0');
+  }
+  Serial.println(options.wiper_code, HEX);
+
+  const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {serial_print_line};
+  const PhoenixBenchmarkDriftCaptureExecutionStatus status    = phoenix_benchmark_drift_capture_run(options, callbacks);
+
+  if (!status.success) {
+    Serial.print(F("# error,drift_capture_failed"));
+    if (status.message != nullptr) {
+      Serial.print(F(",reason="));
+      Serial.print(status.message);
+    }
+    Serial.println();
+    return false;
+  }
+
+  if (status.has_warnings) {
+    Serial.print(F("# drift_capture_warnings,mask=0x"));
+    Serial.println(status.warning_mask, HEX);
+  }
+
+  Serial.println(F("# benchmark_complete"));
+  return true;
+}
+
 bool execute_channel_map_command(const PhoenixBenchmarkChannelMapOptions& options) {
   // Step 1: Log the invocation so host tooling can correlate outputs.
   Serial.print(F("# running,scenario=channel_map,sweeps="));
@@ -1088,6 +1134,32 @@ void handle_command_line(const char* line) {
 
     handled = execute_osr_sweep_command(parse_result.options);
   }
+  else if (std::strcmp(command_identifier, "drift_capture") == 0) {
+    const PhoenixBenchmarkDriftCaptureParseResult parse_result = phoenix_benchmark_drift_capture_parse_command(line);
+    if (!parse_result.success) {
+      Serial.print(F("# error,drift_capture_parse_failed"));
+      if (parse_result.error_message != nullptr) {
+        Serial.print(F(",reason="));
+        Serial.print(parse_result.error_message);
+      }
+      Serial.println();
+      Serial.println(F("# ready"));
+      return;
+    }
+
+    handled = execute_drift_capture_command(parse_result.options);
+  }
+  else if (std::strcmp(command_identifier, "led_on_drift") == 0) {
+    const PhoenixBenchmarkDriftCaptureParseResult parse_result =
+        phoenix_benchmark_drift_capture_parse_command("drift_capture");
+    if (!parse_result.success) {
+      Serial.println(F("# error,drift_capture_defaults_unavailable"));
+      Serial.println(F("# ready"));
+      return;
+    }
+
+    handled = execute_drift_capture_command(parse_result.options);
+  }
   else {
     Serial.print(F("# error,unknown_command"));
     Serial.print(F(",command="));
@@ -1122,6 +1194,8 @@ void setup() {
   phoenix_benchmark_dwell_sweep_initialise(k_dwell_sweep_defaults);
   phoenix_benchmark_pot_sweep_reset_state();
   phoenix_benchmark_pot_sweep_initialise(k_pot_sweep_defaults);
+  phoenix_benchmark_drift_capture_reset_state();
+  phoenix_benchmark_drift_capture_initialise(k_drift_capture_defaults);
 
   // Step 3: Clear previous measurements and present the ready prompt.
   reset_accumulators();
