@@ -21,10 +21,12 @@ void format_metric(char* buffer, std::size_t length, double value, bool has_metr
 }  // namespace
 
 bool phoenix_benchmark_dwell_sweep_format_summary_header(char* buffer, std::size_t length) {
+  // Step 1: Reject calls without writable storage for the header.
   if ((buffer == nullptr) || (length == 0u)) {
     return false;
   }
 
+  // Step 2: Emit the fixed-width column labels mirroring other benchmark tables.
   const int written = std::snprintf(
       buffer, length,
       "Dwell_us  Sweeps  Drain_Mean  Drain_Std  LED1_Mean  LED1_Std  LED2_Mean  LED2_Std  Duration_us  Warning_Mask");
@@ -39,10 +41,12 @@ bool phoenix_benchmark_dwell_sweep_format_summary_header(char* buffer, std::size
 
 bool phoenix_benchmark_dwell_sweep_format_summary_row(const PhoenixBenchmarkDwellSweepSummaryRowValues& values,
                                                       char* buffer, std::size_t length) {
+  // Step 1: Guard against null pointers before computing row text.
   if ((buffer == nullptr) || (length == 0u)) {
     return false;
   }
 
+  // Step 2: Prepare printable versions of each floating-point metric, preserving placeholders when data is missing.
   char drain_mean[16] = {};
   char drain_std[16]  = {};
   char led1_mean[16]  = {};
@@ -57,6 +61,7 @@ bool phoenix_benchmark_dwell_sweep_format_summary_row(const PhoenixBenchmarkDwel
   format_metric(led2_mean, sizeof(led2_mean), values.led2_mean, values.has_metrics);
   format_metric(led2_std, sizeof(led2_std), values.led2_std, values.has_metrics);
 
+  // Step 3: Render the row using fixed-width columns for host-side alignment parity with other scenarios.
   const int written = std::snprintf(
       buffer, length, "%8" PRIu32 "  %6" PRIu32 "  %10s  %9s  %10s  %8s  %10s  %8s  %12" PRIu32 "  0x%02X",
       values.dwell_us, values.sweeps_completed, drain_mean, drain_std, led1_mean, led1_std, led2_mean, led2_std,

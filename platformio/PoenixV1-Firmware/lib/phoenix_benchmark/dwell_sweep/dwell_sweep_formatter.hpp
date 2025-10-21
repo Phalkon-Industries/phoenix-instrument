@@ -4,24 +4,47 @@
 #include <cstddef>
 #include <cstdint>
 
+/**
+ * @brief Byte capacity required when formatting dwell sweep summary rows.
+ */
 constexpr std::size_t k_phoenix_benchmark_dwell_sweep_summary_buffer_bytes = 192u;
 
+/**
+ * @brief Aggregated metrics rendered into a single dwell sweep summary row.
+ */
 struct PhoenixBenchmarkDwellSweepSummaryRowValues {
-  uint32_t dwell_us;
-  uint32_t sweeps_completed;
-  double   drain_mean;
-  double   drain_std;
-  double   led1_mean;
-  double   led1_std;
-  double   led2_mean;
-  double   led2_std;
-  uint32_t duration_us;
-  uint8_t  warning_mask;
-  bool     has_metrics;
+  uint32_t dwell_us;         /**< Dwell duration in microseconds for the current row. */
+  uint32_t sweeps_completed; /**< Number of sweeps successfully executed at this dwell. */
+  double   drain_mean;       /**< Mean ADC code for the drain channel. */
+  double   drain_std;        /**< Standard deviation of the drain channel. */
+  double   led1_mean;        /**< Mean ADC code captured from LED1. */
+  double   led1_std;         /**< Standard deviation of LED1 samples. */
+  double   led2_mean;        /**< Mean ADC code captured from LED2. */
+  double   led2_std;         /**< Standard deviation of LED2 samples. */
+  uint32_t duration_us;      /**< Total sweep duration in microseconds for the dwell. */
+  uint8_t  warning_mask;     /**< Warning bitmask populated during execution. */
+  bool     has_metrics;      /**< Indicates whether mean and stddev fields are valid. */
 };
 
+/**
+ * @brief Format the dwell sweep summary header into the supplied buffer.
+ *
+ * @param buffer Destination buffer that receives the header text.
+ * @param length Writable byte capacity available in @p buffer.
+ *
+ * @return True when the header fits in @p buffer; false on failure.
+ */
 bool phoenix_benchmark_dwell_sweep_format_summary_header(char* buffer, std::size_t length);
 
+/**
+ * @brief Format a single dwell sweep summary row using the provided metrics.
+ *
+ * @param values Aggregated dwell sweep metrics to render.
+ * @param buffer Destination buffer that receives the formatted row text.
+ * @param length Writable byte capacity available in @p buffer.
+ *
+ * @return True when the row fits in @p buffer; false on failure.
+ */
 bool phoenix_benchmark_dwell_sweep_format_summary_row(const PhoenixBenchmarkDwellSweepSummaryRowValues& values,
                                                       char* buffer, std::size_t length);
 

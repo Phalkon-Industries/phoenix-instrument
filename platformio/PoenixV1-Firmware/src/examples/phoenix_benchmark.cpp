@@ -78,6 +78,7 @@ void reset_pot_sweep_rows(void) {
 }
 
 void reset_dwell_sweep_rows(void) {
+  // Step 1: Clear every recorded dwell row so new sweeps start with clean buffers.
   for (std::size_t index = 0u; index < k_phoenix_benchmark_dwell_sweep_max_step_count; ++index) {
     g_dwell_sweep_rows[index] = PhoenixBenchmarkDwellSweepRowMetrics{};
   }
@@ -614,18 +615,22 @@ bool print_osr_sweep_summary(const PhoenixBenchmarkOsrSweepRowMetrics* rows, std
 }
 
 uint32_t compute_dwell_step_count(const PhoenixBenchmarkDwellSweepOptions& options) {
+  // Step 1: Reject invalid schedules that request a zero microsecond increment.
   if (options.dwell_step_us == 0u) {
     return 0u;
   }
+  // Step 2: Guard against ranges that invert the start and end dwell.
   if (options.start_dwell_us > options.end_dwell_us) {
     return 0u;
   }
+  // Step 3: Compute the inclusive dwell count using 64-bit math to avoid overflow.
   const uint64_t range = static_cast<uint64_t>(options.end_dwell_us) - static_cast<uint64_t>(options.start_dwell_us);
   const uint64_t increments = range / static_cast<uint64_t>(options.dwell_step_us);
   return static_cast<uint32_t>(increments + 1u);
 }
 
 bool print_dwell_sweep_summary(const PhoenixBenchmarkDwellSweepRowMetrics* rows, uint32_t row_count) {
+  // Step 1: Emit the summary banner and render the header so users see available columns.
   Serial.println();
   Serial.println(F("# summary_table"));
 
@@ -636,6 +641,7 @@ bool print_dwell_sweep_summary(const PhoenixBenchmarkDwellSweepRowMetrics* rows,
   }
   Serial.println(line_buffer);
 
+  // Step 2: Iterate each dwell row and log the formatted metrics.
   for (uint32_t index = 0u; index < row_count; ++index) {
     const PhoenixBenchmarkDwellSweepRowMetrics& row = rows[index];
 
@@ -668,6 +674,7 @@ bool print_dwell_sweep_summary(const PhoenixBenchmarkDwellSweepRowMetrics* rows,
 }
 
 void print_dwell_warning_reasons(uint8_t mask) {
+  // Step 1: Emit a printable warning token for each flagged condition.
   bool emitted_reason = false;
   if ((mask & k_phoenix_benchmark_dwell_sweep_warning_saturation) != 0u) {
     Serial.print(F("saturation"));
@@ -695,6 +702,7 @@ void print_dwell_warning_reasons(uint8_t mask) {
 bool execute_dwell_sweep_command(const PhoenixBenchmarkDwellSweepOptions& options) {
   const uint32_t expected_steps = compute_dwell_step_count(options);
 
+  // Step 1: Announce the run configuration so host logs capture the dwell schedule.
   Serial.print(F("# running,scenario=dwell_sweep,sweeps_per_dwell="));
   Serial.print(options.sweeps_per_dwell);
   Serial.print(F(",start_us="));
@@ -706,10 +714,12 @@ bool execute_dwell_sweep_command(const PhoenixBenchmarkDwellSweepOptions& option
   Serial.print(F(",steps="));
   Serial.println(expected_steps);
 
+  // Step 2: Clear previous metrics and invoke the dwell sweep runner.
   reset_dwell_sweep_rows();
   const PhoenixBenchmarkDwellSweepExecutionStatus status =
       phoenix_benchmark_dwell_sweep_run(options, g_dwell_sweep_rows, k_phoenix_benchmark_dwell_sweep_max_step_count);
 
+  // Step 3: Handle execution failures by reporting the error context.
   if (!status.success) {
     Serial.print(F("# error,dwell_sweep_failed"));
     if (status.message != nullptr) {
@@ -720,15 +730,18 @@ bool execute_dwell_sweep_command(const PhoenixBenchmarkDwellSweepOptions& option
     return false;
   }
 
+  // Step 4: Present the summary table so operators can review dwell performance.
   if (!print_dwell_sweep_summary(g_dwell_sweep_rows, status.rows_generated)) {
     return false;
   }
 
+  // Step 5: Aggregate warning codes to surface any dwell-level issues.
   uint8_t aggregated_warnings = 0u;
   for (uint32_t index = 0u; index < status.rows_generated; ++index) {
     aggregated_warnings |= g_dwell_sweep_rows[index].warning_mask;
   }
 
+  // Step 6: Emit a consolidated warning line when the sweep reported anomalies.
   if (status.has_warnings) {
     Serial.print(F("# dwell_sweep_warnings,reason="));
     if (aggregated_warnings != 0u) {
@@ -740,6 +753,7 @@ bool execute_dwell_sweep_command(const PhoenixBenchmarkDwellSweepOptions& option
     Serial.println();
   }
 
+  // Step 7: Mark the scenario complete so host tooling resumes prompt handling.
   Serial.println(F("# benchmark_complete"));
   return true;
 }
