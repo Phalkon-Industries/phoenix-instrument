@@ -79,6 +79,46 @@ def _render_preview(commands: Iterable[BenchmarkCommand]) -> str:
     return "\n".join(lines)
 
 
+def _materialise_dwell_series(command: BenchmarkCommand) -> List[int]:
+    if command.name != "dwell_sweep":
+        return []
+
+    start = command.parameters.get("start_dwell_us")
+    end = command.parameters.get("end_dwell_us")
+    step = command.parameters.get("dwell_step_us")
+
+    if not isinstance(start, int) or not isinstance(end, int) or not isinstance(step, int):
+        return []
+    if step <= 0 or start > end:
+        return []
+
+    span = end - start
+    if span == 0:
+        return [start]
+
+    increments = span // step
+    series = [start + offset * step for offset in range(increments + 1)]
+    if not series:
+        series.append(start)
+    return series
+
+
+def _log_dwell_schedules(commands: Iterable[BenchmarkCommand]) -> None:
+    for index, command in enumerate(commands, start=1):
+        if command.name != "dwell_sweep":
+            continue
+        series = _materialise_dwell_series(command)
+        if not series:
+            sys.stdout.write(
+                f"# dwell_sweep_schedule,index={index},steps=0,warning=empty_schedule\n"
+            )
+            continue
+        joined = "|".join(str(value) for value in series)
+        sys.stdout.write(
+            f"# dwell_sweep_schedule,index={index},steps={len(series)},dwells={joined}\n"
+        )
+
+
 DEFAULT_READY_TIMEOUT_SECONDS = 30.0
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 180.0
 
@@ -92,6 +132,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     sys.stdout.write("# phoenix benchmark command plan\n")
     sys.stdout.write(preview + "\n")
+    _log_dwell_schedules(commands)
 
     if args.dry_run:
         return 0
@@ -126,6 +167,29 @@ def main(argv: Iterable[str] | None = None) -> int:
         warning = warning_label if warning_label else "none"
         sys.stdout.write(
             f"# pot_sweep_summary,led1={led1},led2={led2},warnings={warning}\n"
+        )
+
+    dwell_recommendations = (
+        getattr(artifacts, "dwell_sweep_recommendations", {}) or {}
+    )
+    dwell_warning = getattr(artifacts, "dwell_sweep_warning", None)
+    if dwell_recommendations:
+        recommended = dwell_recommendations.get("recommended")
+        stable = dwell_recommendations.get("stable_dwells", [])
+        threshold = dwell_recommendations.get("threshold")
+        recommended_label = str(recommended) if recommended is not None else "--"
+        stable_label = "|".join(str(value) for value in stable) if stable else "--"
+        if isinstance(threshold, (int, float)):
+            threshold_label = f"{float(threshold):.2f}"
+        else:
+            threshold_label = "--"
+        warning = dwell_warning if dwell_warning else "none"
+        sys.stdout.write(
+            "# dwell_sweep_summary,"
+            f"recommended={recommended_label},"
+            f"stable={stable_label},"
+            f"threshold={threshold_label},"
+            f"warnings={warning}\n"
         )
     sys.stdout.write(f"# report_written,{artifacts.report_markdown_path}\n")
 

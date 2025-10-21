@@ -145,6 +145,65 @@ class PotSweepSerial(DummySerial):
         ]
 
 
+class DwellSweepSerial(DummySerial):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        def format_row(
+            dwell: int,
+            sweeps: int,
+            drain_mean: float | None,
+            drain_std: float | None,
+            led1_mean: float | None,
+            led1_std: float | None,
+            led2_mean: float | None,
+            led2_std: float | None,
+            duration: int,
+            warning_mask: int,
+        ) -> bytes:
+            def render_metric(value: float | None, width: int) -> str:
+                if value is None:
+                    return "--".rjust(width)
+                return f"{value:>{width}.3f}"
+
+            segments = [
+                f"{dwell:>8d}",
+                f"{sweeps:>6d}",
+                render_metric(drain_mean, 10),
+                render_metric(drain_std, 9),
+                render_metric(led1_mean, 10),
+                render_metric(led1_std, 8),
+                render_metric(led2_mean, 10),
+                render_metric(led2_std, 8),
+                f"{duration:>12d}",
+                f"0x{warning_mask:02X}",
+            ]
+            return ("  ".join(segments) + "\n").encode("utf-8")
+
+        header = (
+            "Dwell_us  Sweeps  Drain_Mean  Drain_Std  LED1_Mean  LED1_Std  "
+            "LED2_Mean  LED2_Std  Duration_us  Warning_Mask\n"
+        ).encode("utf-8")
+
+        row_stable = format_row(100, 4, 1.234, 0.111, 2.345, 0.222, 3.456, 0.333, 50_000, 0x00)
+        row_saturation = format_row(200, 4, 1.400, 0.250, 2.500, 0.350, 3.600, 0.450, 60_000, 0x01)
+        row_incomplete = format_row(300, 2, None, None, None, None, None, None, 30_000, 0x00)
+
+        self._line_queue = [
+            b"# phoenix benchmark ready\n",
+            b"# running,scenario=dwell_sweep,sweeps_per_dwell=4,start_us=100,end_us=300,step_us=100,steps=3\n",
+            b"# summary_table\n",
+            header,
+            row_stable,
+            row_saturation,
+            row_incomplete,
+            b"\n",
+            b"# dwell_sweep_warnings,reason=saturation\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+        ]
+
+
 def test_cli_dry_run_emits_preview(tmp_path: Path, capsys) -> None:
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -214,6 +273,11 @@ def test_cli_streams_plan_to_serial_port(
             self.report_markdown_path = directory / "report.md"
             self.scenarios = ["channel_map"]
             self.plot_paths = {"channel_map": [self.plot_path]}
+            self.csv_paths = {}
+            self.pot_sweep_recommendations = {}
+            self.pot_sweep_warning = None
+            self.dwell_sweep_recommendations = {}
+            self.dwell_sweep_warning = None
 
     def fake_create_report(lines, plan_path, output_dir):  # type: ignore[no-untyped-def]
         captured["lines"] = list(lines)
@@ -280,6 +344,11 @@ def test_cli_streams_adc_speed_command(
             self.report_markdown_path = directory / "report.md"
             self.scenarios = ["adc_speed"]
             self.plot_paths = {"adc_speed": [self.plot_path]}
+            self.csv_paths = {}
+            self.pot_sweep_recommendations = {}
+            self.pot_sweep_warning = None
+            self.dwell_sweep_recommendations = {}
+            self.dwell_sweep_warning = None
 
     def fake_create_report(lines, plan_path, output_dir):  # type: ignore[no-untyped-def]
         captured["lines"] = list(lines)
@@ -400,6 +469,8 @@ def test_cli_streams_pot_sweep_command(
             self.csv_paths = {"pot_sweep": [directory / "pot_sweep.csv"]}
             self.pot_sweep_recommendations = {"led1": "0x10", "led2": "0x20"}
             self.pot_sweep_warning = "saturation"
+            self.dwell_sweep_recommendations = {}
+            self.dwell_sweep_warning = None
             self.transcript_path.parent.mkdir(parents=True, exist_ok=True)
             self.transcript_path.write_text("", encoding="utf-8")
             self.summary_json_path.write_text("[]", encoding="utf-8")
@@ -439,6 +510,92 @@ def test_cli_streams_pot_sweep_command(
     recorded_lines = captured["lines"]
     assert isinstance(recorded_lines, list)
     assert any("Wiper LED1_Max" in entry for entry in recorded_lines)
+
+
+def test_cli_streams_dwell_sweep_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "dwell_sweep",
+                        "parameters": {
+                            "sweeps_per_dwell": 4,
+                            "start_dwell_us": 100,
+                            "end_dwell_us": 300,
+                            "dwell_step_us": 100,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "dwell-report"
+
+    monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", DwellSweepSerial)
+
+    captured: Dict[str, object] = {}
+
+    class DummyArtifacts:
+        def __init__(self, directory: Path) -> None:
+            self.output_dir = directory
+            slug = "dwell_sweep_start_us100_end_us300_step_us100_steps3"
+            self.transcript_path = directory / f"transcript_{slug}.txt"
+            self.summary_json_path = directory / f"summary_{slug}.json"
+            self.plot_paths = {
+                "dwell_sweep": [
+                    directory / f"{slug}_variance.png",
+                    directory / f"{slug}_duration.png",
+                ]
+            }
+            self.plot_path = self.plot_paths["dwell_sweep"][0]
+            self.csv_paths = {
+                "dwell_sweep": [directory / f"{slug}.csv"]
+            }
+            self.report_markdown_path = directory / "report.md"
+            self.scenarios = ["dwell_sweep"]
+            self.pot_sweep_recommendations = {}
+            self.pot_sweep_warning = None
+            self.dwell_sweep_recommendations = {
+                "recommended": 100,
+                "stable_dwells": [100, 300],
+                "threshold": 0.75,
+            }
+            self.dwell_sweep_warning = "saturation"
+
+    def fake_create_report(lines, plan_path, output_dir):  # type: ignore[no-untyped-def]
+        captured["lines"] = list(lines)
+        captured["plan"] = plan_path
+        captured["output"] = output_dir
+        return DummyArtifacts(output_dir)
+
+    monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
+
+    exit_code = main([str(plan), "--port", "COM12", "--output", str(output_dir)])
+    assert exit_code == 0
+
+    stdout = capsys.readouterr().out
+    assert "# running,scenario=dwell_sweep" in stdout
+    assert "# dwell_sweep_schedule,index=1,steps=3,dwells=100|200|300" in stdout
+    assert (
+        "# dwell_sweep_summary,recommended=100,stable=100|300,threshold=0.75,warnings=saturation"
+        in stdout
+    )
+
+    instance = DummySerial.last_instance
+    assert instance is not None
+    assert any(b'"command":"dwell_sweep"' in payload for payload in instance.written)
+
+    assert captured["plan"] == plan
+    assert captured["output"] == output_dir
+    recorded_lines = captured["lines"]
+    assert isinstance(recorded_lines, list)
+    assert any("Dwell_us  Sweeps" in entry for entry in recorded_lines)
 
 
 def test_cli_aborts_when_device_reports_error(

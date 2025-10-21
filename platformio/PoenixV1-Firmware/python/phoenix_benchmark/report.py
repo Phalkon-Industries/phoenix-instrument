@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Union
 
@@ -18,9 +18,17 @@ SAMPLES_WIDTH = 9
 CHANNEL_WIDTH = 12
 MAP_WIDTH = 12
 POT_SWEEP_SATURATION_THRESHOLD = 7_549_746
+DWELL_VARIANCE_THRESHOLD = 0.75
+DWELL_SATURATION_MASK = 0x01
+DWELL_WARNING_LABELS = (
+    (DWELL_SATURATION_MASK, "saturation"),
+    (0x02, "adc_error"),
+    (0x04, "alignment"),
+)
 
 __all__ = [
     "AdcSpeedSummaryRow",
+    "DwellSweepSummaryRow",
     "OsrSweepSummaryRow",
     "PotSweepSummaryRow",
     "SummaryRow",
@@ -143,6 +151,36 @@ class PotSweepSummaryRow:
 
 
 @dataclass(frozen=True)
+class DwellSweepSummaryRow:
+    dwell_us: int
+    sweeps_completed: int
+    drain_mean: float | None
+    drain_std: float | None
+    led1_mean: float | None
+    led1_std: float | None
+    led2_mean: float | None
+    led2_std: float | None
+    duration_us: int | None
+    warning_mask: int
+    has_metrics: bool
+
+    def to_dict(self) -> dict[str, object | None]:
+        return {
+            "dwell_us": self.dwell_us,
+            "sweeps_completed": self.sweeps_completed,
+            "drain_mean": self.drain_mean,
+            "drain_std": self.drain_std,
+            "led1_mean": self.led1_mean,
+            "led1_std": self.led1_std,
+            "led2_mean": self.led2_mean,
+            "led2_std": self.led2_std,
+            "duration_us": self.duration_us,
+            "warning_mask": self.warning_mask,
+            "has_metrics": self.has_metrics,
+        }
+
+
+@dataclass(frozen=True)
 class ReportArtifacts:
     output_dir: Path
     transcript_path: Path
@@ -154,6 +192,8 @@ class ReportArtifacts:
     scenarios: List[str]
     pot_sweep_recommendations: Dict[str, str]
     pot_sweep_warning: str | None
+    dwell_sweep_recommendations: Dict[str, object] = field(default_factory=dict)
+    dwell_sweep_warning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -168,7 +208,11 @@ class _SummarySection:
 
 
 ParsedSummary = Union[
-    SummaryRow, AdcSpeedSummaryRow, OsrSweepSummaryRow, PotSweepSummaryRow
+    SummaryRow,
+    AdcSpeedSummaryRow,
+    OsrSweepSummaryRow,
+    PotSweepSummaryRow,
+    DwellSweepSummaryRow,
 ]
 
 
@@ -207,6 +251,16 @@ def _build_scenario_slug(scenario: str, metadata: Dict[str, str]) -> str:
             parts.append(f"{key}{sanitized}")
         return "_".join(parts)
 
+    if scenario == "dwell_sweep" and metadata:
+        parts = [scenario]
+        for key in ("sweeps_per_dwell", "start_us", "end_us", "step_us", "steps"):
+            value = metadata.get(key)
+            if value is None:
+                continue
+            sanitized = value.replace("/", "_").replace(" ", "_")
+            parts.append(f"{key}{sanitized}")
+        return "_".join(parts)
+
     return scenario
 
 
@@ -232,6 +286,17 @@ def _extract_pot_sweep_metadata(
             if reason:
                 warning = reason
     return recommendations, warning
+
+
+def _extract_dwell_sweep_warning(lines: Iterable[str]) -> str | None:
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("# dwell_sweep_warnings"):
+            tokens = _extract_metadata(line)
+            reason = tokens.get("reason")
+            if reason:
+                return reason
+    return None
 
 
 def parse_summary_table(lines: Iterable[str]) -> Dict[str, List[ParsedSummary]]:
@@ -270,12 +335,23 @@ def create_report(
     transcript_path.write_text("\n".join(transcript_lines) + "\n", encoding="utf-8")
 
     pot_recommendations, pot_warning = _extract_pot_sweep_metadata(transcript_lines)
+    dwell_warning = _extract_dwell_sweep_warning(transcript_lines)
     scenario_extras: Dict[str, Dict[str, object]] = {}
     if "pot_sweep" in summaries:
         scenario_extras["pot_sweep"] = {
             "recommendations": dict(sorted(pot_recommendations.items())),
             "warning": pot_warning or "none",
             "saturation_threshold": POT_SWEEP_SATURATION_THRESHOLD,
+        }
+
+    dwell_rows: List[DwellSweepSummaryRow] = [
+        row for row in summaries.get("dwell_sweep", []) if isinstance(row, DwellSweepSummaryRow)
+    ]
+    dwell_recommendations = _compute_dwell_recommendations(dwell_rows)
+    if dwell_rows or dwell_warning:
+        scenario_extras["dwell_sweep"] = {
+            "recommendations": dwell_recommendations,
+            "warning": dwell_warning or "none",
         }
 
     summary_payload: List[dict[str, object]] = []
@@ -335,6 +411,17 @@ def create_report(
         _render_pot_sweep_plot(pot_rows, pot_plot_path, POT_SWEEP_SATURATION_THRESHOLD)
         plot_paths["pot_sweep"] = [pot_plot_path]
 
+    if dwell_rows:
+        slug = scenario_slug_map.get("dwell_sweep", "dwell_sweep")
+        csv_path = output_dir / f"{slug}.csv"
+        _write_dwell_sweep_csv(dwell_rows, csv_path)
+        csv_paths["dwell_sweep"] = [csv_path]
+        variance_path = output_dir / f"{slug}_variance.png"
+        duration_path = output_dir / f"{slug}_duration.png"
+        _render_dwell_variance_plot(dwell_rows, variance_path, DWELL_VARIANCE_THRESHOLD)
+        _render_dwell_duration_plot(dwell_rows, duration_path)
+        plot_paths["dwell_sweep"] = [variance_path, duration_path]
+
     fallback_plot_path: Path | None = None
     if not plot_paths and scenario_order:
         fallback_slug = scenario_slug_order[0]
@@ -381,6 +468,8 @@ def create_report(
         scenarios=scenario_order,
         pot_sweep_recommendations=dict(sorted(pot_recommendations.items())),
         pot_sweep_warning=pot_warning,
+        dwell_sweep_recommendations=dwell_recommendations,
+        dwell_sweep_warning=dwell_warning,
     )
 
 
@@ -444,6 +533,8 @@ def _parse_sections(sections: List[_SummarySection]) -> Dict[str, List[ParsedSum
             rows = _parse_osr_sweep_rows(section)
         elif section.header.startswith("Wiper"):
             rows = _parse_pot_sweep_rows(section)
+        elif section.header.startswith("Dwell_us"):
+            rows = _parse_dwell_sweep_rows(section)
         else:
             continue
 
@@ -599,6 +690,110 @@ def _parse_pot_sweep_rows(section: _SummarySection) -> List[PotSweepSummaryRow]:
             )
         )
     return parsed
+
+
+def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryRow]:
+    parsed: List[DwellSweepSummaryRow] = []
+    for entry in section.rows:
+        data = entry.strip()
+        if not data:
+            continue
+
+        parts = data.split()
+        if len(parts) != 10:
+            raise ValueError(f"Invalid dwell_sweep summary row: '{entry}'")
+
+        dwell_us = _parse_int(parts[0])
+        sweeps_completed = _parse_int(parts[1])
+        metric_tokens = parts[2:8]
+        duration_token = parts[8]
+        warning_token = parts[9]
+
+        metrics = [_parse_float(token) for token in metric_tokens]
+        has_metrics = all(value is not None for value in metrics)
+
+        duration_us: int | None
+        if duration_token in {"", "--"}:
+            duration_us = None
+        else:
+            duration_us = _parse_int(duration_token)
+
+        try:
+            if warning_token.lower().startswith("0x"):
+                warning_mask = int(warning_token, 16)
+            else:
+                warning_mask = _parse_int(warning_token)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid dwell_sweep warning mask: '{warning_token}'"
+            ) from exc
+
+        drain_mean, drain_std, led1_mean, led1_std, led2_mean, led2_std = metrics
+
+        parsed.append(
+            DwellSweepSummaryRow(
+                dwell_us=dwell_us,
+                sweeps_completed=sweeps_completed,
+                drain_mean=drain_mean,
+                drain_std=drain_std,
+                led1_mean=led1_mean,
+                led1_std=led1_std,
+                led2_mean=led2_mean,
+                led2_std=led2_std,
+                duration_us=duration_us,
+                warning_mask=warning_mask,
+                has_metrics=has_metrics,
+            )
+        )
+    return parsed
+
+
+def _max_std(row: DwellSweepSummaryRow) -> float | None:
+    values = [row.drain_std, row.led1_std, row.led2_std]
+    metrics = [value for value in values if value is not None]
+    if not metrics:
+        return None
+    return max(metrics)
+
+
+def _compute_dwell_recommendations(
+    rows: List[DwellSweepSummaryRow],
+) -> Dict[str, object]:
+    metric_rows = [row for row in rows if row.has_metrics]
+    if not metric_rows:
+        return {}
+
+    stable_rows = [row for row in metric_rows if row.warning_mask == 0]
+    if not stable_rows:
+        return {}
+
+    def candidate_key(row: DwellSweepSummaryRow) -> tuple[int, float]:
+        metric = _max_std(row)
+        return (row.dwell_us, metric if metric is not None else float("inf"))
+
+    compliant_rows = [
+        row
+        for row in stable_rows
+        if (_max_std(row) is not None and _max_std(row) <= DWELL_VARIANCE_THRESHOLD)
+    ]
+
+    if compliant_rows:
+        recommended = min(compliant_rows, key=candidate_key)
+        stable_dwells = sorted({row.dwell_us for row in compliant_rows})
+    else:
+        recommended = min(stable_rows, key=candidate_key)
+        stable_dwells = sorted({row.dwell_us for row in stable_rows})
+
+    return {
+        "recommended": recommended.dwell_us,
+        "stable_dwells": stable_dwells,
+        "threshold": DWELL_VARIANCE_THRESHOLD,
+    }
+
+
+def _decode_dwell_warning_mask(mask: int) -> str:
+    labels = [label for bit, label in DWELL_WARNING_LABELS if mask & bit]
+    return "|".join(labels) if labels else "none"
 
 
 def _parse_summary_row(line: str) -> SummaryRow:
@@ -921,6 +1116,29 @@ def _write_pot_sweep_csv(rows: List[PotSweepSummaryRow], output_path: Path) -> N
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_dwell_sweep_csv(rows: List[DwellSweepSummaryRow], output_path: Path) -> None:
+    header = (
+        "dwell_us,sweeps_completed,drain_mean,drain_std,"
+        "led1_mean,led1_std,led2_mean,led2_std,duration_us,warning_mask"
+    )
+    lines = [header]
+    for row in rows:
+        values = [
+            str(row.dwell_us),
+            str(row.sweeps_completed),
+            _format_optional_float(row.drain_mean),
+            _format_optional_float(row.drain_std),
+            _format_optional_float(row.led1_mean),
+            _format_optional_float(row.led1_std),
+            _format_optional_float(row.led2_mean),
+            _format_optional_float(row.led2_std),
+            _format_optional_int(row.duration_us),
+            f"0x{row.warning_mask:02X}",
+        ]
+        lines.append(",".join(values))
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _render_pot_sweep_plot(
     rows: List[PotSweepSummaryRow], output_path: Path, saturation_threshold: int
 ) -> None:
@@ -947,6 +1165,128 @@ def _render_pot_sweep_plot(
     ax.set_title("Potentiometer sweep LED headroom")
     ax.grid(axis="both", linestyle="--", alpha=0.4)
     ax.legend()
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def _render_dwell_variance_plot(
+    rows: List[DwellSweepSummaryRow], output_path: Path, threshold: float
+) -> None:
+    metric_rows = [row for row in rows if row.has_metrics]
+    if not metric_rows:
+        _render_placeholder_plot("No dwell sweep metrics available", output_path)
+        return
+
+    drain_points = [
+        (row.dwell_us, row.drain_std)
+        for row in metric_rows
+        if row.drain_std is not None
+    ]
+    led1_points = [
+        (row.dwell_us, row.led1_std)
+        for row in metric_rows
+        if row.led1_std is not None
+    ]
+    led2_points = [
+        (row.dwell_us, row.led2_std)
+        for row in metric_rows
+        if row.led2_std is not None
+    ]
+
+    if not (drain_points or led1_points or led2_points):
+        _render_placeholder_plot("No dwell sweep metrics available", output_path)
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    handles = []
+    labels = []
+
+    if drain_points:
+        x_vals, y_vals = zip(*drain_points)
+        (line_drain,) = ax.plot(x_vals, y_vals, marker="o", color="#4C72B0", label="Drain σ")
+        handles.append(line_drain)
+        labels.append("Drain σ")
+
+    if led1_points:
+        x_vals, y_vals = zip(*led1_points)
+        (line_led1,) = ax.plot(x_vals, y_vals, marker="s", color="#55A868", label="LED1 σ")
+        handles.append(line_led1)
+        labels.append("LED1 σ")
+
+    if led2_points:
+        x_vals, y_vals = zip(*led2_points)
+        (line_led2,) = ax.plot(x_vals, y_vals, marker="^", color="#C44E52", label="LED2 σ")
+        handles.append(line_led2)
+        labels.append("LED2 σ")
+
+    ax.axhline(
+        threshold,
+        color="#8172B3",
+        linestyle="--",
+        linewidth=1.0,
+        label=f"σ threshold ({threshold:.2f})",
+    )
+
+    warning_rows = [
+        row for row in metric_rows if (row.warning_mask & DWELL_SATURATION_MASK) != 0
+    ]
+    warning_points = [
+        (row.dwell_us, _max_std(row))
+        for row in warning_rows
+        if _max_std(row) is not None
+    ]
+    if warning_points:
+        x_vals, y_vals = zip(*warning_points)
+        scatter = ax.scatter(x_vals, y_vals, color="#DD8452", marker="x", label="saturation warning")
+        handles.append(scatter)
+        labels.append("saturation warning")
+
+    ax.set_xlabel("Dwell (µs)")
+    ax.set_ylabel("Standard deviation")
+    ax.set_title("Dwell sweep variance by channel")
+    ax.grid(axis="both", linestyle="--", alpha=0.4)
+    if handles:
+        ax.legend(handles, labels, loc="best")
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def _render_dwell_duration_plot(
+    rows: List[DwellSweepSummaryRow], output_path: Path
+) -> None:
+    duration_rows = [row for row in rows if row.duration_us is not None]
+    if not duration_rows:
+        _render_placeholder_plot("No dwell sweep duration data", output_path)
+        return
+
+    x_vals = [row.dwell_us for row in duration_rows if row.duration_us is not None]
+    y_vals = [row.duration_us for row in duration_rows if row.duration_us is not None]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(x_vals, y_vals, marker="o", color="#4C72B0")
+
+    warning_rows = [
+        row for row in duration_rows if (row.warning_mask & DWELL_SATURATION_MASK) != 0
+    ]
+    warning_points = [
+        (row.dwell_us, row.duration_us)
+        for row in warning_rows
+        if row.duration_us is not None
+    ]
+    if warning_points:
+        x_warn, y_warn = zip(*warning_points)
+        ax.scatter(x_warn, y_warn, color="#DD8452", marker="x", label="saturation warning")
+        ax.legend(loc="best")
+
+    ax.set_xlabel("Dwell (µs)")
+    ax.set_ylabel("Sweep duration (µs)")
+    ax.set_title("Dwell sweep duration per dwell value")
+    ax.grid(axis="both", linestyle="--", alpha=0.4)
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -1100,6 +1440,41 @@ def _build_pot_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     return table
 
 
+def _build_dwell_sweep_table(rows: List[ParsedSummary]) -> List[str]:
+    dwell_rows = [row for row in rows if isinstance(row, DwellSweepSummaryRow)]
+    if not dwell_rows:
+        return []
+
+    headers = [
+        "Dwell (µs)",
+        "Sweeps",
+        "Drain std",
+        "LED1 std",
+        "LED2 std",
+        "Duration (µs)",
+        "Warnings",
+    ]
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+
+    for row in dwell_rows:
+        warnings = _decode_dwell_warning_mask(row.warning_mask)
+        values = [
+            str(row.dwell_us),
+            str(row.sweeps_completed),
+            _format_optional_float(row.drain_std),
+            _format_optional_float(row.led1_std),
+            _format_optional_float(row.led2_std),
+            _format_optional_int(row.duration_us),
+            warnings,
+        ]
+        table.append("| " + " | ".join(values) + " |")
+
+    return table
+
+
 def _render_section_table(scenario: str, rows: List[ParsedSummary]) -> List[str]:
     if scenario == "channel_map":
         return _build_channel_map_table(rows)
@@ -1109,6 +1484,8 @@ def _render_section_table(scenario: str, rows: List[ParsedSummary]) -> List[str]
         return _build_osr_sweep_table(rows)
     if scenario == "pot_sweep":
         return _build_pot_sweep_table(rows)
+    if scenario == "dwell_sweep":
+        return _build_dwell_sweep_table(rows)
     return []
 
 
@@ -1161,6 +1538,58 @@ def _render_pot_sweep_section(
     return lines
 
 
+def _render_dwell_sweep_section(
+    rows: List[ParsedSummary],
+    plot_paths: List[Path],
+    extras: Dict[str, object],
+    csv_paths: List[Path],
+) -> List[str]:
+    lines: List[str] = ["## Summary Table (dwell_sweep)"]
+
+    recommendations = extras.get("recommendations") if extras else None
+    warning = extras.get("warning") if extras else None
+
+    if isinstance(recommendations, dict) and recommendations:
+        recommended = recommendations.get("recommended")
+        stable = recommendations.get("stable_dwells", [])
+        threshold = recommendations.get("threshold")
+        threshold_label = (
+            f"{float(threshold):.2f}" if isinstance(threshold, (int, float)) else "--"
+        )
+        recommended_label = f"{recommended} µs" if recommended is not None else "--"
+        lines.append(f"_Recommended dwell_: {recommended_label} (σ ≤ {threshold_label})")
+        if isinstance(stable, list) and stable:
+            stable_values = ", ".join(f"{value} µs" for value in stable)
+            lines.append(f"_Stable candidates_: {stable_values}")
+    else:
+        lines.append("_No dwell recommendations available._")
+    lines.append("")
+
+    warning_label = warning if isinstance(warning, str) and warning else "none"
+    lines.append(f"_Warnings_: {warning_label}")
+    lines.append("")
+
+    table_lines = _build_dwell_sweep_table(rows)
+    if table_lines:
+        lines.extend(table_lines)
+    else:
+        lines.append("_(no dwell sweep metrics)_")
+    lines.append("")
+
+    if csv_paths:
+        csv_link = csv_paths[0].as_posix()
+        lines.append(f"[Download CSV]({csv_link})")
+        lines.append("")
+
+    if plot_paths:
+        for index, path in enumerate(plot_paths, start=1):
+            suffix = f" #{index}" if len(plot_paths) > 1 else ""
+            lines.append(f"![dwell_sweep plot{suffix}]({path.as_posix()})")
+        lines.append("")
+
+    return lines
+
+
 def _render_markdown_report(
     plan_path: Path,
     sections: List[_SummarySection],
@@ -1183,6 +1612,16 @@ def _render_markdown_report(
                     csv_paths.get(section.scenario, []),
                 )
                 lines.extend(pot_lines)
+                continue
+
+            if section.scenario == "dwell_sweep":
+                dwell_lines = _render_dwell_sweep_section(
+                    summaries.get(section.scenario, []),
+                    plot_paths.get(section.scenario, []),
+                    extras,
+                    csv_paths.get(section.scenario, []),
+                )
+                lines.extend(dwell_lines)
                 continue
 
             lines.append(f"## Summary Table ({section.scenario})")

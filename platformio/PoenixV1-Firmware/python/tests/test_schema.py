@@ -229,3 +229,117 @@ def test_load_command_plan_rejects_invalid_pot_sweep(
 
     with pytest.raises(ValueError):
         load_command_plan(plan_path)
+
+
+def test_load_command_plan_normalizes_dwell_sweep(tmp_path: Path) -> None:
+    plan_path = tmp_path / "dwell_sweep.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "dwell_sweep",
+                        "parameters": {
+                            "sweeps_per_dwell": 4,
+                            "start_dwell_us": 100,
+                            "end_dwell_us": 500,
+                            "dwell_step_us": 100,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    dwell_command = commands[0]
+    assert dwell_command.name == "dwell_sweep"
+    assert dwell_command.parameters == {
+        "sweeps_per_dwell": 4,
+        "start_dwell_us": 100,
+        "end_dwell_us": 500,
+        "dwell_step_us": 100,
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"command": "dwell_sweep", "parameters": {"sweeps_per_dwell": 0}},
+        {
+            "command": "dwell_sweep",
+            "parameters": {
+                "sweeps_per_dwell": 1,
+                "start_dwell_us": -1,
+                "end_dwell_us": 100,
+                "dwell_step_us": 1,
+            },
+        },
+        {
+            "command": "dwell_sweep",
+            "parameters": {
+                "sweeps_per_dwell": 1,
+                "start_dwell_us": 0,
+                "end_dwell_us": 10,
+                "dwell_step_us": 0,
+            },
+        },
+        {
+            "command": "dwell_sweep",
+            "parameters": {
+                "sweeps_per_dwell": 1,
+                "start_dwell_us": 200,
+                "end_dwell_us": 100,
+                "dwell_step_us": 10,
+            },
+        },
+        {
+            "command": "dwell_sweep",
+            "parameters": {
+                "sweeps_per_dwell": 1,
+                "start_dwell_us": 0,
+                "end_dwell_us": 5_000_001,
+                "dwell_step_us": 1,
+            },
+        },
+        {
+            "command": "dwell_sweep",
+            "parameters": {
+                "sweeps_per_dwell": 1_500,
+                "start_dwell_us": 0,
+                "end_dwell_us": 100,
+                "dwell_step_us": 10,
+            },
+        },
+        {
+            "command": "dwell_sweep",
+            "parameters": {
+                "sweeps_per_dwell": 1,
+                "start_dwell_us": 0,
+                "end_dwell_us": 13_000,
+                "dwell_step_us": 50,
+            },
+        },
+        {
+            "command": "dwell_sweep",
+            "parameters": {
+                "sweeps_per_dwell": 1,
+                "start_dwell_us": 0,
+                "end_dwell_us": 100,
+                "dwell_step_us": 10,
+                "unexpected": True,
+            },
+        },
+    ],
+)
+def test_load_command_plan_rejects_invalid_dwell_sweep(
+    payload: dict[str, object], tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "dwell_sweep_invalid.json"
+    plan_path.write_text(json.dumps([payload]), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        load_command_plan(plan_path)

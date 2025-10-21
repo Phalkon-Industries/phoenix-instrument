@@ -37,7 +37,7 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
    The combined template demonstrates issuing a `channel_map` sweep, running the OSR sweep, and finishing with an `adc_speed` throughput run.
 3. **Execution** – Connect hardware, then run the CLI against a plan and serial port:
    ```powershell
-   conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/combined_benchmarks.json --port COM6 --ready-timeout 10 --command-timeout 120
+   conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/combined_benchmarks.json --port COM6 --ready-timeout 10 --command-timeout 240
    ```
    The CLI waits for the firmware `# ready` banner, streams each command, prints device output to stdout, and stores every line in a transcript buffer. Provide `--output <path>` to capture artifacts inside the repository (for example, `--output docs/phoenix-benchmark/sample_runs/osr_sweep_demo`).
    The firmware also accepts manual overrides directly from a serial terminal using the key-value syntax: `channel_map sweeps=25 dwell_us=50 wiper_code=128` or `adc_speed duration_ms=750 enable_irq=false`.
