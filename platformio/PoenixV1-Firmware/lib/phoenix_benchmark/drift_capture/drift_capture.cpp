@@ -201,6 +201,7 @@ struct CaptureOutcome {
 CaptureOutcome capture_led(PhoenixBenchmarkDriftCaptureLed led, const PhoenixBenchmarkDriftCaptureOptions& options) {
   const std::size_t led_index = static_cast<std::size_t>(led);
 
+  // Step 1: Configure the LED router so the ADC samples the desired optical path.
   if (g_led_setter == nullptr) {
     return {false, k_error_led_router_failed, false, false};
   }
@@ -212,6 +213,7 @@ CaptureOutcome capture_led(PhoenixBenchmarkDriftCaptureLed led, const PhoenixBen
 
   const uint32_t activation_micros = g_micros_provider();
 
+  // Step 2: Honour the requested start delay before taking the first sample.
   while (true) {
     const uint32_t now     = g_micros_provider();
     const uint32_t elapsed = compute_elapsed_time(activation_micros, now);
@@ -229,6 +231,7 @@ CaptureOutcome capture_led(PhoenixBenchmarkDriftCaptureLed led, const PhoenixBen
   bool overflow   = false;
   bool saturation = false;
 
+  // Step 3: Capture samples until the window closes or the buffer fills.
   while (true) {
     if (g_sample_counts[led_index] >= k_phoenix_benchmark_drift_capture_max_sample_count) {
       overflow = true;
@@ -311,12 +314,14 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
   PhoenixBenchmarkDriftCaptureOptions options = input_options;
   options.apply_defaults(g_defaults);
 
+  // Step 1: Record the effective configuration so metadata reflects applied defaults.
   status.applied_start_us   = options.start_time_us;
   status.applied_end_us     = options.end_time_us;
   status.applied_step_us    = options.step_delay_us;
   status.applied_osr        = options.osr;
   status.applied_wiper_code = options.wiper_code;
 
+  // Step 2: Validate caller input before touching any hardware state.
   const char* validation_message = nullptr;
   if (!options.validate(&validation_message)) {
     emit_line(callbacks, "# drift_capture,error=invalid_options");
@@ -324,14 +329,17 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
     return status;
   }
 
+  // Step 3: Reset capture buffers so previous runs cannot leak into this report.
   reset_buffers();
 
+  // Step 4: Ensure the upstream hardware is powered and initialised.
   if ((g_hardware_ready_checker == nullptr) || !g_hardware_ready_checker()) {
     emit_line(callbacks, "# drift_capture,error=hardware_initialisation_failed");
     status.message = k_error_hardware_init;
     return status;
   }
 
+  // Step 5: Apply the requested digipot wiper code before enabling the LEDs.
   if ((g_wiper_setter == nullptr) || !g_wiper_setter(options.wiper_code)) {
     emit_line(callbacks, "# drift_capture,error=wiper_configuration_failed");
     status.message = k_error_wiper_failed;
@@ -346,6 +354,7 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
     return status;
   }
 
+  // Step 6: Program the ADC oversampling ratio so both traces share the requested precision.
   if (g_osr_setter != nullptr) {
     if (g_osr_setter(requested_osr) != MCP356X_OK) {
       emit_line(callbacks, "# drift_capture,error=osr_configuration_failed");
@@ -366,6 +375,7 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
     run_failed = true;
   };
 
+  // Step 7: Capture the LED1 trace before switching the router back to drain.
   const CaptureOutcome led1_outcome = capture_led(PhoenixBenchmarkDriftCaptureLed::kLed1, options);
   overflow_detected |= led1_outcome.overflow;
   saturation_detected |= led1_outcome.saturation;
@@ -380,6 +390,7 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
 
   CaptureOutcome led2_outcome = {};
   if (!run_failed) {
+    // Step 8: Repeat the capture for LED2 only if the first trace succeeded.
     led2_outcome = capture_led(PhoenixBenchmarkDriftCaptureLed::kLed2, options);
     overflow_detected |= led2_outcome.overflow;
     saturation_detected |= led2_outcome.saturation;
@@ -406,6 +417,7 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
     (void) g_led_setter(LedRouterState::LED_ROUTER_STATE_DRAIN);
   }
 
+  // Step 9: Restore the ADC configuration when the test adjusted the OSR.
   if (attempted_osr && (g_osr_setter != nullptr)) {
     mcp356x_osr restore_value = mcp356x_osr::osr_4096;
     if (!resolve_osr_value(g_defaults.osr, &restore_value) || (g_osr_setter(restore_value) != MCP356X_OK)) {
@@ -420,6 +432,7 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
   status.has_warnings = (g_warning_mask != 0u);
 
   if (!run_failed) {
+    // Step 10: Emit metadata and tabulated results so the host can persist the capture.
     status.success = true;
 
     char buffer[160] = {};
