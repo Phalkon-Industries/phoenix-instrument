@@ -416,3 +416,56 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
     assert "## Summary Table (dwell_sweep)" in report_text
     assert "Recommended dwell" in report_text
     assert "saturation" in report_text
+
+
+def _drift_capture_lines() -> List[str]:
+    return [
+        "# phoenix benchmark ready",
+        "# running,scenario=drift_capture,start_us=0,end_us=50,step_us=10",
+        "# drift_capture,metadata,start_us=0,end_us=50,step_delay_us=10,osr=4096,wiper_code=0x2A",
+        "# drift_capture,results,led1_samples=3,led2_samples=2,warning_mask=0x03",
+        "Elapsed_LED1_us\tCode_LED1\tElapsed_LED2_us\tCode_LED2",
+        "0\t1024\tnan\tnan",
+        "10\t1100\t0\t950",
+        "20\t1200\t10\t960",
+        "",
+        "# benchmark_complete",
+        "# ready",
+    ]
+
+
+def test_create_report_handles_drift_capture(tmp_path: Path) -> None:
+    lines = _drift_capture_lines()
+
+    plan_path = tmp_path / "drift_plan.json"
+    plan_path.write_text(json.dumps({"commands": []}), encoding="utf-8")
+
+    output_dir = tmp_path / "drift-report"
+    artifacts = create_report(lines, plan_path, output_dir)
+
+    slug = "drift_capture_start_us0_end_us50_step_us10_osr4096_wiper_0x2A"
+
+    assert "drift_capture" in artifacts.scenarios
+    assert "drift_capture" in artifacts.plot_paths
+    assert "drift_capture" in artifacts.csv_paths
+
+    json_map = getattr(artifacts, "drift_capture_json_paths", {})
+    assert slug in json_map
+    json_path = json_map[slug]
+    assert json_path.exists()
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    assert data["metadata"]["end_us"] == 50
+    assert data["warnings"] == ["buffer_overflow", "saturation"]
+    assert len(data["samples"]) == 3
+
+    report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
+    assert "## Drift Capture" in report_text
+    assert "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | LED1 Samples | LED2 Samples | Warnings |" in report_text
+    assert "| 1 | 0 | 50 | 10 | 4096 | 0x2A | 3 | 2 | buffer_overflow, saturation |" in report_text
+    assert "<details>" in report_text
+    assert "<summary>Burst 1 samples</summary>" in report_text
+    assert "</details>" in report_text
+    assert "Elapsed LED1" in report_text
+    assert "buffer_overflow" in report_text
+    assert f"![drift_capture plot]({slug}.png)" in report_text

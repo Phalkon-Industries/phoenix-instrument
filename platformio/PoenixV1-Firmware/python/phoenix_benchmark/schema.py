@@ -13,6 +13,29 @@ DWELL_MAX_US = 5_000_000
 DWELL_MAX_STEP_COUNT = 128
 DWELL_MAX_SWEEPS_PER_DWELL = 1_000
 
+DRIFT_CAPTURE_MAX_SAMPLES = 2_048
+DRIFT_CAPTURE_DEFAULT_START_US = 0
+DRIFT_CAPTURE_DEFAULT_END_US = 100_000
+DRIFT_CAPTURE_DEFAULT_STEP_US = 0
+DRIFT_CAPTURE_ALLOWED_OSR_VALUES = {
+    32,
+    64,
+    128,
+    256,
+    512,
+    1_024,
+    2_048,
+    4_096,
+    8_192,
+    16_384,
+    20_480,
+    24_576,
+    40_960,
+    49_152,
+    81_920,
+    98_304,
+}
+
 
 @dataclass(frozen=True)
 class ChannelMapCommand:
@@ -94,6 +117,31 @@ class DwellSweepCommand:
             "end_dwell_us": self.end_dwell_us,
             "dwell_step_us": self.dwell_step_us,
         }
+
+
+@dataclass(frozen=True)
+class DriftCaptureCommand:
+    """Requests a fast LED drift capture with optional overrides."""
+
+    start_time_us: int | None = None
+    end_time_us: int | None = None
+    step_delay_us: int | None = None
+    osr: int | None = None
+    wiper_code: int | None = None
+
+    def to_payload(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if self.start_time_us is not None:
+            payload["start_time_us"] = self.start_time_us
+        if self.end_time_us is not None:
+            payload["end_time_us"] = self.end_time_us
+        if self.step_delay_us is not None:
+            payload["step_delay_us"] = self.step_delay_us
+        if self.osr is not None:
+            payload["osr"] = self.osr
+        if self.wiper_code is not None:
+            payload["wiper_code"] = self.wiper_code
+        return payload
 
 
 @dataclass(frozen=True)
@@ -272,6 +320,87 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
         )
         return BenchmarkCommand(name=name, parameters=command.to_payload())
 
+    if name == "drift_capture":
+        allowed_keys = {
+            "start_time_us",
+            "end_time_us",
+            "step_delay_us",
+            "osr",
+            "wiper_code",
+        }
+        extra_keys = set(parameters.keys()) - allowed_keys
+        if extra_keys:
+            unexpected = ", ".join(sorted(extra_keys))
+            raise ValueError(
+                f"drift_capture received unsupported parameters: {unexpected}"
+            )
+
+        def _normalise_microseconds(value: Any, field_name: str) -> int | None:
+            if value is None:
+                return None
+            if not isinstance(value, int):
+                raise ValueError(f"{field_name} must be an integer")
+            if value < 0:
+                raise ValueError(f"{field_name} must be non-negative")
+            return value
+
+        start_us = _normalise_microseconds(
+            parameters.get("start_time_us"), "drift_capture.start_time_us"
+        )
+        end_us = _normalise_microseconds(
+            parameters.get("end_time_us"), "drift_capture.end_time_us"
+        )
+        step_us = parameters.get("step_delay_us")
+        if step_us is not None:
+            if not isinstance(step_us, int):
+                raise ValueError("drift_capture.step_delay_us must be an integer")
+            if step_us < 0:
+                raise ValueError("drift_capture.step_delay_us must be non-negative")
+
+        effective_start = (
+            start_us if start_us is not None else DRIFT_CAPTURE_DEFAULT_START_US
+        )
+        effective_end = (
+            end_us if end_us is not None else DRIFT_CAPTURE_DEFAULT_END_US
+        )
+        if end_us is not None and start_us is not None and end_us < start_us:
+            raise ValueError("drift_capture.end_time_us must be >= start_time_us")
+        if effective_end < effective_start:
+            raise ValueError("drift_capture.end_time_us must be >= start_time_us")
+
+        if step_us is not None and step_us > 0:
+            span = effective_end - effective_start
+            sample_count = (span // step_us) + 1
+            if sample_count > DRIFT_CAPTURE_MAX_SAMPLES:
+                raise ValueError(
+                    "drift_capture capture window would exceed buffer capacity"
+                )
+
+        osr_value = parameters.get("osr")
+        if osr_value is not None:
+            if not isinstance(osr_value, int):
+                raise ValueError("drift_capture.osr must be an integer")
+            if osr_value not in DRIFT_CAPTURE_ALLOWED_OSR_VALUES:
+                raise ValueError("drift_capture.osr is not supported")
+
+        wiper_code = parameters.get("wiper_code")
+        if wiper_code is not None:
+            if not isinstance(wiper_code, int):
+                raise ValueError("drift_capture.wiper_code must be an integer")
+            if not (0 <= wiper_code <= 0xFF):
+                raise ValueError(
+                    "drift_capture.wiper_code must be an integer between 0 and 255"
+                )
+
+        command = DriftCaptureCommand(
+            start_time_us=start_us,
+            end_time_us=end_us,
+            step_delay_us=step_us,
+            osr=osr_value,
+            wiper_code=wiper_code,
+        )
+        return BenchmarkCommand(name=name, parameters=command.to_payload())
+
     # Unknown commands pass-through for future phases
     return BenchmarkCommand(name=name, parameters=parameters)
 
@@ -307,7 +436,13 @@ __all__ = [
     "AdcSpeedCommand",
     "BenchmarkCommand",
     "ChannelMapCommand",
+    "DRIFT_CAPTURE_ALLOWED_OSR_VALUES",
+    "DRIFT_CAPTURE_DEFAULT_END_US",
+    "DRIFT_CAPTURE_DEFAULT_START_US",
+    "DRIFT_CAPTURE_DEFAULT_STEP_US",
+    "DRIFT_CAPTURE_MAX_SAMPLES",
     "DwellSweepCommand",
+    "DriftCaptureCommand",
     "PotSweepCommand",
     "OsrSweepCommand",
     "load_command_plan",

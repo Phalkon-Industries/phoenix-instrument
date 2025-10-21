@@ -210,6 +210,24 @@ class DwellSweepSerial(DummySerial):
         ]
 
 
+class DriftCaptureSerial(DummySerial):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._line_queue = [
+            b"# phoenix benchmark ready\n",
+            b"# running,scenario=drift_capture,start_us=0,end_us=50,step_us=10\n",
+            b"# drift_capture,metadata,start_us=0,end_us=50,step_delay_us=10,osr=4096,wiper_code=0x2A\n",
+            b"# drift_capture,results,led1_samples=3,led2_samples=2,warning_mask=0x03\n",
+            b"Elapsed_LED1_us\tCode_LED1\tElapsed_LED2_us\tCode_LED2\n",
+            b"0\t1024\tnan\tnan\n",
+            b"10\t1100\t0\t950\n",
+            b"20\t1200\t10\t960\n",
+            b"\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+        ]
+
+
 def test_cli_dry_run_emits_preview(tmp_path: Path, capsys) -> None:
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -285,10 +303,11 @@ def test_cli_streams_plan_to_serial_port(
             self.dwell_sweep_recommendations = {}
             self.dwell_sweep_warning = None
 
-    def fake_create_report(lines, plan_path, output_dir):  # type: ignore[no-untyped-def]
+    def fake_create_report(lines, plan_path, output_dir, drift_captures=None):  # type: ignore[no-untyped-def]
         captured["lines"] = list(lines)
         captured["plan"] = plan_path
         captured["output"] = output_dir
+        captured["drift_captures"] = drift_captures
         return DummyArtifacts(output_dir)
 
     monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", dummy_serial)
@@ -356,10 +375,11 @@ def test_cli_streams_adc_speed_command(
             self.dwell_sweep_recommendations = {}
             self.dwell_sweep_warning = None
 
-    def fake_create_report(lines, plan_path, output_dir):  # type: ignore[no-untyped-def]
+    def fake_create_report(lines, plan_path, output_dir, drift_captures=None):  # type: ignore[no-untyped-def]
         captured["lines"] = list(lines)
         captured["plan"] = plan_path
         captured["output"] = output_dir
+        captured["drift_captures"] = drift_captures
         transcript_name = "transcript_adc_speed.txt"
         summary_name = "summary_adc_speed.json"
         return DummyArtifacts(output_dir, transcript_name, summary_name)
@@ -488,10 +508,11 @@ def test_cli_streams_pot_sweep_command(
                     encoding="utf-8",
                 )
 
-    def fake_create_report(lines, plan_path, out_dir):  # type: ignore[no-untyped-def]
+    def fake_create_report(lines, plan_path, out_dir, drift_captures=None):  # type: ignore[no-untyped-def]
         captured["lines"] = list(lines)
         captured["plan"] = plan_path
         captured["output"] = out_dir
+        captured["drift_captures"] = drift_captures
         return DummyArtifacts(out_dir)
 
     monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
@@ -572,10 +593,11 @@ def test_cli_streams_dwell_sweep_command(
             }
             self.dwell_sweep_warning = "saturation"
 
-    def fake_create_report(lines, plan_path, output_dir):  # type: ignore[no-untyped-def]
+    def fake_create_report(lines, plan_path, output_dir, drift_captures=None):  # type: ignore[no-untyped-def]
         captured["lines"] = list(lines)
         captured["plan"] = plan_path
         captured["output"] = output_dir
+        captured["drift_captures"] = drift_captures
         return DummyArtifacts(output_dir)
 
     monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
@@ -602,6 +624,105 @@ def test_cli_streams_dwell_sweep_command(
     assert any("Dwell_us  Sweeps" in entry for entry in recorded_lines)
 
 
+def test_cli_streams_drift_capture_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "drift_capture",
+                        "parameters": {
+                            "start_time_us": 0,
+                            "end_time_us": 50,
+                            "step_delay_us": 10,
+                            "osr": 4096,
+                            "wiper_code": 42,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "drift-report"
+    monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", DriftCaptureSerial)
+
+    captured: Dict[str, object] = {}
+
+    def fake_create_report(lines, plan_path, out_dir, drift_captures=None):  # type: ignore[no-untyped-def]
+        burst_list = list(drift_captures or [])
+        captured["lines"] = list(lines)
+        captured["plan"] = plan_path
+        captured["output"] = out_dir
+        captured["drift_captures"] = burst_list
+
+        class DummyArtifacts:
+            def __init__(self, directory: Path) -> None:
+                self.output_dir = directory
+                self.transcript_path = directory / "transcript_drift_capture.txt"
+                self.summary_json_path = directory / "summary_drift_capture.json"
+                primary_slug = burst_list[0].slug() if burst_list else "drift_capture"
+                self.plot_path = directory / f"{primary_slug}.png"
+                self.plot_paths = {"drift_capture": [self.plot_path]}
+                self.csv_paths = {
+                    "drift_capture": [directory / f"{primary_slug}.csv"]
+                }
+                self.report_markdown_path = directory / "report.md"
+                self.report_markdown_path.write_text("", encoding="utf-8")
+                self.scenarios = ["drift_capture"]
+                self.pot_sweep_recommendations = {}
+                self.pot_sweep_warning = None
+                self.dwell_sweep_recommendations = {}
+                self.dwell_sweep_warning = None
+                self.drift_capture_json_paths = {
+                    burst.slug(): directory / f"{burst.slug()}.json" for burst in burst_list
+                }
+                self.drift_capture_csv_paths = {
+                    burst.slug(): directory / f"{burst.slug()}.csv" for burst in burst_list
+                }
+                self.drift_capture_plot_paths = {
+                    burst.slug(): directory / f"{burst.slug()}.png" for burst in burst_list
+                }
+
+        return DummyArtifacts(out_dir)
+
+    monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
+
+    exit_code = main([str(plan), "--port", "COM15", "--output", str(output_dir)])
+    assert exit_code == 0
+
+    stdout = capsys.readouterr().out
+    assert "# running,scenario=drift_capture" in stdout
+    assert "# drift_capture_summary" in stdout
+
+    instance = DummySerial.last_instance
+    assert instance is not None
+    assert any(b'"command":"drift_capture"' in payload for payload in instance.written)
+    assert any(b'"wiper_code":42' in payload for payload in instance.written)
+
+    drift_captures = captured.get("drift_captures")
+    assert isinstance(drift_captures, list)
+    assert len(drift_captures) == 1
+
+    slug = "drift_capture_start_us0_end_us50_step_us10_osr4096_wiper_0x2A"
+    csv_path = output_dir / f"{slug}.csv"
+    json_path = output_dir / f"{slug}.json"
+    plot_path = output_dir / f"{slug}.png"
+
+    assert csv_path.exists(), "drift capture CSV should be written"
+    assert json_path.exists(), "drift capture JSON summary should be written"
+    assert plot_path.exists(), "drift capture plot should be rendered"
+
+    summary = json.loads(json_path.read_text(encoding="utf-8"))
+    assert summary["warnings"] == ["buffer_overflow", "saturation"]
+    assert summary["metadata"]["osr"] == 4096
+    assert summary["metadata"]["wiper_code"] == "0x2A"
+
+
 def test_cli_aborts_when_device_reports_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
@@ -624,7 +745,7 @@ def test_cli_aborts_when_device_reports_error(
 
     report_called = False
 
-    def fake_create_report(*args, **kwargs):  # type: ignore[no-untyped-def]
+    def fake_create_report(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         nonlocal report_called
         report_called = True
         raise AssertionError("Report should not be generated when device errors")

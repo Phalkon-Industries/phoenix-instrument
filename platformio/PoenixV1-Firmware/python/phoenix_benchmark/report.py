@@ -13,6 +13,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 
+from phoenix_benchmark.schema import (
+    DRIFT_CAPTURE_ALLOWED_OSR_VALUES,
+    DRIFT_CAPTURE_DEFAULT_END_US,
+    DRIFT_CAPTURE_DEFAULT_START_US,
+    DRIFT_CAPTURE_DEFAULT_STEP_US,
+)
+
 LABEL_WIDTH = 8
 SAMPLES_WIDTH = 9
 CHANNEL_WIDTH = 12
@@ -26,6 +33,18 @@ DWELL_WARNING_LABELS = (
     (0x04, "alignment"),
 )
 
+DRIFT_CAPTURE_WARNING_BUFFER_OVERFLOW = 0x01
+DRIFT_CAPTURE_WARNING_SATURATION = 0x02
+DRIFT_CAPTURE_WARNING_RESTORE_FAILED = 0x04
+
+DRIFT_CAPTURE_WARNING_LABELS = (
+    (DRIFT_CAPTURE_WARNING_BUFFER_OVERFLOW, "buffer_overflow"),
+    (DRIFT_CAPTURE_WARNING_SATURATION, "saturation"),
+    (DRIFT_CAPTURE_WARNING_RESTORE_FAILED, "restore_failed"),
+)
+
+DRIFT_CAPTURE_DEFAULT_OSR = min(DRIFT_CAPTURE_ALLOWED_OSR_VALUES)
+
 __all__ = [
     "AdcSpeedSummaryRow",
     "DwellSweepSummaryRow",
@@ -34,6 +53,8 @@ __all__ = [
     "SummaryRow",
     "ReportArtifacts",
     "parse_summary_table",
+    "parse_drift_capture_transcript",
+    "generate_drift_capture_artifacts",
     "create_report",
 ]
 
@@ -194,6 +215,9 @@ class ReportArtifacts:
     pot_sweep_warning: str | None
     dwell_sweep_recommendations: Dict[str, object] = field(default_factory=dict)
     dwell_sweep_warning: str | None = None
+    drift_capture_json_paths: Dict[str, Path] = field(default_factory=dict)
+    drift_capture_csv_paths: Dict[str, Path] = field(default_factory=dict)
+    drift_capture_plot_paths: Dict[str, Path] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -214,6 +238,78 @@ ParsedSummary = Union[
     PotSweepSummaryRow,
     DwellSweepSummaryRow,
 ]
+
+
+@dataclass(frozen=True)
+class DriftCaptureSampleRow:
+    led1_elapsed_us: int | None
+    led1_code: int | None
+    led2_elapsed_us: int | None
+    led2_code: int | None
+
+    def to_dict(self) -> Dict[str, int | None]:
+        return {
+            "led1_elapsed_us": self.led1_elapsed_us,
+            "led1_code": self.led1_code,
+            "led2_elapsed_us": self.led2_elapsed_us,
+            "led2_code": self.led2_code,
+        }
+
+
+@dataclass(frozen=True)
+class DriftCaptureBurst:
+    index: int
+    start_us: int
+    end_us: int
+    step_us: int
+    osr: int
+    wiper_code: str
+    warning_mask: int
+    combined_samples: List[DriftCaptureSampleRow]
+
+    def slug(self) -> str:
+        return (
+            "drift_capture_start_us"
+            f"{self.start_us}_end_us{self.end_us}_step_us{self.step_us}_osr{self.osr}_wiper_{self.wiper_code}"
+        )
+
+    @property
+    def led1_sample_count(self) -> int:
+        return sum(1 for row in self.combined_samples if row.led1_elapsed_us is not None)
+
+    @property
+    def led2_sample_count(self) -> int:
+        return sum(1 for row in self.combined_samples if row.led2_elapsed_us is not None)
+
+    @property
+    def warning_labels(self) -> List[str]:
+        return _decode_drift_warning_mask(self.warning_mask)
+
+    @property
+    def metadata(self) -> Dict[str, object]:
+        return {
+            "start_us": self.start_us,
+            "end_us": self.end_us,
+            "step_delay_us": self.step_us,
+            "osr": self.osr,
+            "wiper_code": self.wiper_code,
+        }
+
+
+@dataclass(frozen=True)
+class DriftCaptureArtifactEntry:
+    burst: DriftCaptureBurst
+    plot: Path
+    csv: Path
+    json: Path
+
+
+@dataclass(frozen=True)
+class DriftCaptureArtifactsBundle:
+    json_paths: Dict[str, Path]
+    csv_paths: Dict[str, Path]
+    plot_paths: Dict[str, Path]
+    entries: List[DriftCaptureArtifactEntry]
 
 
 def _extract_metadata(line: str) -> Dict[str, str]:
@@ -305,17 +401,28 @@ def parse_summary_table(lines: Iterable[str]) -> Dict[str, List[ParsedSummary]]:
 
 
 def create_report(
-    lines: Iterable[str], plan_path: Path, output_dir: Path
+    lines: Iterable[str],
+    plan_path: Path,
+    output_dir: Path,
+    drift_captures: List[DriftCaptureBurst] | None = None,
 ) -> ReportArtifacts:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     transcript_lines = list(lines)
     sections = _collect_summary_sections(transcript_lines)
     summaries = _parse_sections(sections)
+    drift_bursts = (
+        list(drift_captures)
+        if drift_captures is not None
+        else parse_drift_capture_transcript(transcript_lines)
+    )
 
     scenario_order = list(dict.fromkeys(section.scenario for section in sections))
     if not scenario_order:
         scenario_order = ["summary"]
+
+    if drift_bursts and "drift_capture" not in scenario_order:
+        scenario_order.append("drift_capture")
 
     scenario_slug_map: Dict[str, str] = {}
     scenario_slug_order: List[str] = []
@@ -328,6 +435,10 @@ def create_report(
     if not scenario_slug_order:
         scenario_slug_order = [scenario_order[0]]
         scenario_slug_map.setdefault(scenario_order[0], scenario_order[0])
+
+    if drift_bursts and "drift_capture" not in scenario_slug_order:
+        scenario_slug_order.append("drift_capture")
+        scenario_slug_map.setdefault("drift_capture", "drift_capture")
 
     suffix = "_".join(scenario_slug_order)
 
@@ -356,6 +467,23 @@ def create_report(
             "warning": dwell_warning or "none",
         }
 
+    if drift_bursts:
+        scenario_extras["drift_capture"] = {
+            "burst_count": len(drift_bursts),
+            "bursts": [
+                {
+                    "index": burst.index,
+                    "slug": burst.slug(),
+                    "warning_mask": burst.warning_mask,
+                    "warning_labels": burst.warning_labels,
+                    "led1_sample_count": burst.led1_sample_count,
+                    "led2_sample_count": burst.led2_sample_count,
+                    "metadata": burst.metadata,
+                }
+                for burst in drift_bursts
+            ],
+        }
+
     summary_payload: List[dict[str, object]] = []
     for scenario in scenario_order:
         scenario_rows = summaries.get(scenario, [])
@@ -372,6 +500,12 @@ def create_report(
     summary_json_path.write_text(
         json.dumps(summary_payload, indent=2), encoding="utf-8"
     )
+
+    drift_bundle = generate_drift_capture_artifacts(drift_bursts, output_dir)
+    drift_json_paths = drift_bundle.json_paths
+    drift_csv_paths = drift_bundle.csv_paths
+    drift_plot_paths = drift_bundle.plot_paths
+    drift_entries = drift_bundle.entries
 
     plot_paths: Dict[str, List[Path]] = {}
     csv_paths: Dict[str, List[Path]] = {}
@@ -424,6 +558,14 @@ def create_report(
         _render_dwell_duration_plot(dwell_rows, duration_path)
         plot_paths["dwell_sweep"] = [variance_path, duration_path]
 
+    if drift_bursts:
+        plot_paths["drift_capture"] = [
+            drift_plot_paths[burst.slug()] for burst in drift_bursts if burst.slug() in drift_plot_paths
+        ]
+        csv_paths["drift_capture"] = [
+            drift_csv_paths[burst.slug()] for burst in drift_bursts if burst.slug() in drift_csv_paths
+        ]
+
     fallback_plot_path: Path | None = None
     if not plot_paths and scenario_order:
         fallback_slug = scenario_slug_order[0]
@@ -455,6 +597,7 @@ def create_report(
             summaries,
             scenario_extras,
             csv_relatives,
+            drift_entries,
         ),
         encoding="utf-8",
     )
@@ -472,6 +615,9 @@ def create_report(
         pot_sweep_warning=pot_warning,
         dwell_sweep_recommendations=dwell_recommendations,
         dwell_sweep_warning=dwell_warning,
+        drift_capture_json_paths=drift_json_paths,
+        drift_capture_csv_paths=drift_csv_paths,
+        drift_capture_plot_paths=drift_plot_paths,
     )
 
 
@@ -544,6 +690,145 @@ def _parse_sections(sections: List[_SummarySection]) -> Dict[str, List[ParsedSum
             summaries[section.scenario] = []
         summaries[section.scenario].extend(rows)
     return summaries
+
+
+def _decode_drift_warning_mask(mask: int) -> List[str]:
+    return [label for bit, label in DRIFT_CAPTURE_WARNING_LABELS if mask & bit]
+
+
+def _parse_optional_int_field(value: str) -> int | None:
+    token = value.strip().lower()
+    if token in {"", "--", "nan"}:
+        return None
+    try:
+        return int(token)
+    except ValueError:
+        try:
+            return int(token, 0)
+        except ValueError as exc:  # pragma: no cover - guard for malformed logs
+            raise ValueError(f"Invalid drift capture integer field: '{value}'") from exc
+
+
+def _normalise_wiper_code(raw: str | None) -> str:
+    if raw is None:
+        return "0x00"
+    value = raw.strip()
+    if not value:
+        return "0x00"
+    if value.lower().startswith("0x"):
+        return "0x" + value[2:].upper()
+    try:
+        numeric = int(value)
+    except ValueError:
+        return value
+    return f"0x{numeric:02X}"
+
+
+def _parse_int_token(value: str | int | None, *, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return value
+    token = value.strip()
+    if token == "":
+        return default
+    try:
+        return int(token, 0)
+    except ValueError as exc:  # pragma: no cover - guard for malformed logs
+        raise ValueError(f"Invalid integer token '{value}'") from exc
+
+
+def _format_drift_optional(value: int | None) -> str:
+    return "--" if value is None else str(value)
+
+
+def parse_drift_capture_transcript(lines: Iterable[str]) -> List[DriftCaptureBurst]:
+    entries = list(lines)
+    bursts: List[DriftCaptureBurst] = []
+    index = 0
+    burst_counter = 0
+
+    while index < len(entries):
+        line = entries[index]
+        if not line.startswith("# drift_capture,metadata"):
+            index += 1
+            continue
+
+        metadata_tokens = _extract_metadata(line)
+        start_us = _parse_int_token(
+            metadata_tokens.get("start_us"), default=DRIFT_CAPTURE_DEFAULT_START_US
+        )
+        end_us = _parse_int_token(
+            metadata_tokens.get("end_us"), default=DRIFT_CAPTURE_DEFAULT_END_US
+        )
+        step_us = _parse_int_token(
+            metadata_tokens.get("step_delay_us"), default=DRIFT_CAPTURE_DEFAULT_STEP_US
+        )
+        osr = _parse_int_token(
+            metadata_tokens.get("osr"), default=DRIFT_CAPTURE_DEFAULT_OSR
+        )
+        wiper_code = _normalise_wiper_code(metadata_tokens.get("wiper_code"))
+
+        index += 1
+        if index >= len(entries):
+            break
+        results_line = entries[index]
+        if not results_line.startswith("# drift_capture,results"):
+            continue
+
+        results_tokens = _extract_metadata(results_line)
+        warning_mask = _parse_int_token(results_tokens.get("warning_mask"), default=0)
+
+        index += 1
+        if index >= len(entries):
+            break
+
+        header_line = entries[index]
+        if header_line.startswith("#"):
+            continue
+
+        index += 1
+        samples: List[DriftCaptureSampleRow] = []
+        while index < len(entries):
+            sample_line = entries[index]
+            if sample_line == "":
+                index += 1
+                break
+            if sample_line.startswith("#"):
+                break
+            parts = sample_line.split("\t")
+            if len(parts) != 4:
+                raise ValueError(f"Invalid drift capture sample row: '{sample_line}'")
+            led1_elapsed = _parse_optional_int_field(parts[0])
+            led1_code = _parse_optional_int_field(parts[1])
+            led2_elapsed = _parse_optional_int_field(parts[2])
+            led2_code = _parse_optional_int_field(parts[3])
+            samples.append(
+                DriftCaptureSampleRow(
+                    led1_elapsed_us=led1_elapsed,
+                    led1_code=led1_code,
+                    led2_elapsed_us=led2_elapsed,
+                    led2_code=led2_code,
+                )
+            )
+            index += 1
+
+        burst_counter += 1
+        bursts.append(
+            DriftCaptureBurst(
+                index=burst_counter,
+                start_us=start_us,
+                end_us=end_us,
+                step_us=step_us,
+                osr=osr,
+                wiper_code=wiper_code,
+                warning_mask=warning_mask,
+                combined_samples=samples,
+            )
+        )
+        continue
+
+    return bursts
 
 
 def _extract_scenario(line: str) -> str | None:
@@ -1141,6 +1426,131 @@ def _write_dwell_sweep_csv(rows: List[DwellSweepSummaryRow], output_path: Path) 
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_drift_capture_json(burst: DriftCaptureBurst, output_path: Path) -> None:
+    payload = {
+        "index": burst.index,
+        "slug": burst.slug(),
+        "metadata": burst.metadata,
+        "warning_mask": burst.warning_mask,
+        "warnings": burst.warning_labels,
+        "led1_sample_count": burst.led1_sample_count,
+        "led2_sample_count": burst.led2_sample_count,
+        "samples": [row.to_dict() for row in burst.combined_samples],
+    }
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _write_drift_capture_csv(burst: DriftCaptureBurst, output_path: Path) -> None:
+    header = "led1_elapsed_us,led1_code,led2_elapsed_us,led2_code"
+    lines = [header]
+    for sample in burst.combined_samples:
+        lines.append(
+            ",".join(
+                [
+                    _format_drift_optional(sample.led1_elapsed_us),
+                    _format_drift_optional(sample.led1_code),
+                    _format_drift_optional(sample.led2_elapsed_us),
+                    _format_drift_optional(sample.led2_code),
+                ]
+            )
+        )
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _render_drift_capture_plot(burst: DriftCaptureBurst, output_path: Path) -> None:
+    led1_points = [
+        (row.led1_elapsed_us, row.led1_code)
+        for row in burst.combined_samples
+        if row.led1_elapsed_us is not None and row.led1_code is not None
+    ]
+    led2_points = [
+        (row.led2_elapsed_us, row.led2_code)
+        for row in burst.combined_samples
+        if row.led2_elapsed_us is not None and row.led2_code is not None
+    ]
+
+    if not led1_points and not led2_points:
+        _render_placeholder_plot("No drift capture samples recorded", output_path)
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    if led1_points:
+        x_vals, y_vals = zip(*led1_points)
+        ax.plot(x_vals, y_vals, marker="o", color="#4C72B0", label="LED1")
+    if led2_points:
+        x_vals, y_vals = zip(*led2_points)
+        ax.plot(x_vals, y_vals, marker="s", color="#55A868", label="LED2")
+
+    if burst.warning_mask & DRIFT_CAPTURE_WARNING_BUFFER_OVERFLOW:
+        if led1_points:
+            x_last, y_last = led1_points[-1]
+            ax.scatter([x_last], [y_last], color="#C44E52", marker="X", s=80, label="LED1 overflow")
+        if led2_points:
+            x_last2, y_last2 = led2_points[-1]
+            ax.scatter([x_last2], [y_last2], color="#8172B2", marker="X", s=80, label="LED2 overflow")
+
+    ax.set_xlabel("Elapsed (us)")
+    ax.set_ylabel("ADC code")
+    ax.set_title(f"Drift capture burst {burst.index} (wiper {burst.wiper_code})")
+    ax.grid(axis="both", linestyle="--", alpha=0.4)
+    if led1_points or led2_points:
+        ax.legend()
+
+    if burst.warning_labels:
+        warning_text = ", ".join(burst.warning_labels)
+        ax.text(
+            0.02,
+            0.95,
+            f"Warnings: {warning_text}",
+            transform=ax.transAxes,
+            fontsize=9,
+            ha="left",
+            va="top",
+            bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.7},
+        )
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def generate_drift_capture_artifacts(
+    bursts: List[DriftCaptureBurst], output_dir: Path
+) -> DriftCaptureArtifactsBundle:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    json_paths: Dict[str, Path] = {}
+    csv_paths: Dict[str, Path] = {}
+    plot_paths: Dict[str, Path] = {}
+    entries: List[DriftCaptureArtifactEntry] = []
+
+    for burst in bursts:
+        slug = burst.slug()
+        json_path = output_dir / f"{slug}.json"
+        csv_path = output_dir / f"{slug}.csv"
+        plot_path = output_dir / f"{slug}.png"
+        _write_drift_capture_json(burst, json_path)
+        _write_drift_capture_csv(burst, csv_path)
+        _render_drift_capture_plot(burst, plot_path)
+        json_paths[slug] = json_path
+        csv_paths[slug] = csv_path
+        plot_paths[slug] = plot_path
+        entries.append(
+            DriftCaptureArtifactEntry(
+                burst=burst,
+                plot=plot_path.relative_to(output_dir),
+                csv=csv_path.relative_to(output_dir),
+                json=json_path.relative_to(output_dir),
+            )
+        )
+
+    return DriftCaptureArtifactsBundle(
+        json_paths=json_paths,
+        csv_paths=csv_paths,
+        plot_paths=plot_paths,
+        entries=entries,
+    )
+
+
 def _render_pot_sweep_plot(
     rows: List[PotSweepSummaryRow], output_path: Path, saturation_threshold: int
 ) -> None:
@@ -1607,6 +2017,7 @@ def _render_markdown_report(
     summaries: Dict[str, List[ParsedSummary]],
     scenario_extras: Dict[str, Dict[str, object]],
     csv_paths: Dict[str, List[Path]],
+    drift_entries: List[DriftCaptureArtifactEntry],
 ) -> str:
     lines = ["# Phoenix Benchmark Report", ""]
     lines.append(f"*Plan:* `{plan_path}`")
@@ -1658,4 +2069,61 @@ def _render_markdown_report(
         lines.append("## Summary Table")
         lines.append("_(no summary available)_")
         lines.append("")
+
+    if drift_entries:
+        lines.append("## Drift Capture")
+        lines.append("")
+        lines.append(
+            "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | LED1 Samples | LED2 Samples | Warnings |"
+        )
+        lines.append(
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+        )
+        for entry in drift_entries:
+            burst = entry.burst
+            warning_label = ", ".join(burst.warning_labels) if burst.warning_labels else "none"
+            lines.append(
+                "| {index} | {start} | {end} | {step} | {osr} | {wiper} | {led1} | {led2} | {warnings} |".format(
+                    index=burst.index,
+                    start=burst.start_us,
+                    end=burst.end_us,
+                    step=burst.step_us,
+                    osr=burst.osr,
+                    wiper=burst.wiper_code,
+                    led1=burst.led1_sample_count,
+                    led2=burst.led2_sample_count,
+                    warnings=warning_label,
+                )
+            )
+        lines.append("")
+
+        for entry in drift_entries:
+            burst = entry.burst
+            lines.append("<details>")
+            lines.append(f"<summary>Burst {burst.index} samples</summary>")
+            lines.append("")
+            lines.append(
+                "| Elapsed LED1 (us) | Code LED1 | Elapsed LED2 (us) | Code LED2 |"
+            )
+            lines.append("| --- | --- | --- | --- |")
+            for sample in burst.combined_samples:
+                lines.append(
+                    "| {led1_elapsed} | {led1_code} | {led2_elapsed} | {led2_code} |".format(
+                        led1_elapsed=_format_drift_optional(sample.led1_elapsed_us),
+                        led1_code=_format_drift_optional(sample.led1_code),
+                        led2_elapsed=_format_drift_optional(sample.led2_elapsed_us),
+                        led2_code=_format_drift_optional(sample.led2_code),
+                    )
+                )
+            lines.append("")
+            artifact_links = [
+                f"[CSV]({entry.csv.as_posix()})",
+                f"[JSON]({entry.json.as_posix()})",
+            ]
+            lines.append(" · ".join(artifact_links))
+            lines.append("")
+            lines.append(f"![drift_capture plot]({entry.plot.as_posix()})")
+            lines.append("")
+            lines.append("</details>")
+            lines.append("")
     return "\n".join(lines)

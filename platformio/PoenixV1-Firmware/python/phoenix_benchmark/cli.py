@@ -18,7 +18,12 @@ if (
 
 import serial
 
-from phoenix_benchmark.report import create_report
+from phoenix_benchmark.report import (
+    DriftCaptureBurst,
+    create_report,
+    generate_drift_capture_artifacts,
+    parse_drift_capture_transcript,
+)
 from phoenix_benchmark.schema import BenchmarkCommand, load_command_plan
 
 
@@ -127,6 +132,21 @@ DEFAULT_READY_TIMEOUT_SECONDS = 30.0
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 180.0
 
 
+def _emit_drift_capture_summary(bursts: List["DriftCaptureBurst"]) -> None:
+    if not bursts:
+        return
+
+    warning_set = {label for burst in bursts for label in burst.warning_labels}
+    warning_label = "|".join(sorted(warning_set)) if warning_set else "none"
+    slug_label = "|".join(burst.slug() for burst in bursts)
+    sys.stdout.write(
+        "# drift_capture_summary,"  # Intentional prefix for grep-friendly output.
+        f"bursts={len(bursts)},"
+        f"slugs={slug_label},"
+        f"warnings={warning_label}\n"
+    )
+
+
 def main(argv: Iterable[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -162,7 +182,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         sys.stderr.write("# aborted_by_user\n")
         return 130
 
-    artifacts = create_report(transcript, args.plan, output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    drift_bursts = parse_drift_capture_transcript(transcript)
+    generate_drift_capture_artifacts(drift_bursts, output_dir)
+    _emit_drift_capture_summary(drift_bursts)
+
+    artifacts = create_report(transcript, args.plan, output_dir, drift_bursts)
     recommendations = getattr(artifacts, "pot_sweep_recommendations", {}) or {}
     warning_label = getattr(artifacts, "pot_sweep_warning", None)
     if recommendations:
