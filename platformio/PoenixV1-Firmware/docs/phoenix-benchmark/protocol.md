@@ -1,6 +1,6 @@
 # Phoenix Benchmark Serial Protocol
 
-This document tracks the evolving host ↔ firmware contract. Beginning with Phase 1, the firmware idles after boot, waits for structured commands issued by the host CLI, and returns to an idle `# ready` prompt after every run. Phase 2 adds the high-speed ADC throughput scenario while preserving the original framing rules, and Phase 3 introduces the OSR sweep to characterise oversampling noise behaviour without altering the transport.
+This document tracks the evolving host ↔ firmware contract. Beginning with Phase 1, the firmware idles after boot, waits for structured commands issued by the host CLI, and returns to an idle `# ready` prompt after every run. Phase 2 adds the high-speed ADC throughput scenario while preserving the original framing rules, Phase 3 introduces the OSR sweep to characterise oversampling noise behaviour, Phase 4 adds the potentiometer saturation sweep, and Phase 5 layers on dwell-time studies without altering the transport.
 
 ## Message Framing
 
@@ -77,14 +77,33 @@ Requests a full-range potentiometer sweep. The firmware measures every wiper cod
 
 Run headers include the fixed span (`wiper_count=256`) so logs can be matched against the CSV table without inspecting the payload.
 
+### `dwell_sweep`
+
+Requests a dwell-duration sensitivity sweep. The firmware iterates a linear dwell series, capturing channel-map statistics at each step while keeping potentiometer and OSR settings fixed.
+
+| Field              | Type    | Required | Notes                                                                                                     |
+| ------------------ | ------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| `sweeps_per_dwell` | integer | yes      | Number of channel-map cycles to run per dwell entry. Must be between 1 and 1000 inclusive.                |
+| `start_dwell_us`   | integer | yes      | First dwell duration in microseconds. Must be within firmware limits (0–5,000,000 µs).                    |
+| `end_dwell_us`     | integer | yes      | Final dwell duration in microseconds. Must be ≥ `start_dwell_us` and within firmware limits.              |
+| `dwell_step_us`    | integer | yes      | Positive microsecond increment applied between dwell entries. Determines how many dwell rows are emitted. |
+
+**Example**
+
+```json
+{"command": "dwell_sweep", "parameters": {"sweeps_per_dwell": 4, "start_dwell_us": 100, "end_dwell_us": 500, "dwell_step_us": 100}}
+```
+
+Run headers list the schedule bounds (`start_us`, `end_us`, `step_us`, `steps`). Per-row metadata lines surface dwell duration, sweeps completed, elapsed time, channel variance, and a warning mask so the host can highlight saturation or ADC recovery events.
+
 Unknown command identifiers return a `# error,unsupported_command` line until the corresponding firmware feature ships.
 
 ### End-to-end flow
 
 1. Operator invokes the CLI with a plan file. The CLI prints a numbered preview of the JSON lines that will be transmitted.
 2. When `--port` is provided (non dry-run), the CLI opens the serial port at 115200 baud, waits for the firmware's `# phoenix benchmark ready` + `# ready` banner, and stores every line it receives in a transcript buffer while echoing it to stdout.
-3. Each queued command is streamed verbatim as one JSON line followed by `\n`. The firmware's command loop trims the newline, dispatches to the scenario-specific parser (`phoenix_benchmark_channel_map_parse_command`, `phoenix_benchmark_osr_sweep_parse_command`, or `phoenix_benchmark_adc_speed_parse_command`), and executes the request. Unsupported identifiers emit `# error,unsupported_command` before the dispatcher returns to idle.
-4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit the legacy per-state table; OSR sweeps emit one row per oversampling preset alongside runtime metrics; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
+3. Each queued command is streamed verbatim as one JSON line followed by `\n`. The firmware's command loop trims the newline, dispatches to the scenario-specific parser (`phoenix_benchmark_channel_map_parse_command`, `phoenix_benchmark_osr_sweep_parse_command`, `phoenix_benchmark_dwell_sweep_parse_command`, `phoenix_benchmark_pot_sweep_parse_command`, or `phoenix_benchmark_adc_speed_parse_command`), and executes the request. Unsupported identifiers emit `# error,unsupported_command` before the dispatcher returns to idle.
+4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit the legacy per-state table; OSR sweeps emit one row per oversampling preset alongside runtime metrics; dwell sweeps emit one row per dwell window with variance, timing, and warning masks; pot sweeps emit wiper recommendations and saturation flags; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
 5. After each `# benchmark_complete` line, the firmware prints a fresh `# ready` prompt. The CLI stays attached until the plan is exhausted, then persists the transcript, parses every captured table, and produces a Markdown report with scenario-tagged sections inside the selected output directory. Artifact file names now embed the scenario list to aid long-term archiving (e.g., `transcript_channel_map_osr_sweep_adc_speed.txt`).
 
 ## Host Expectations
@@ -93,14 +112,12 @@ Unknown command identifiers return a `# error,unsupported_command` line until th
 - Host plans store an ordered list of command objects under a `commands` (or `sequence`) array.
 - Tooling serialises each entry with compact separators so commands remain single-line friendly for terminal usage.
 - The CLI awaits the firmware's `# ready` prompt before issuing the first command and prints every line the device emits so logs can be redirected or parsed downstream.
-- After a run completes, the CLI writes a `transcript_<scenarios>.txt`, `summary_<scenarios>.json`, and `report.md` bundle (plus scenario-specific plots) to the chosen output folder. The Markdown report embeds every summary table—including the OSR sweep results—and links plots with log₂ OSR axes and diagonally rotated tick labels for readability.
+- After a run completes, the CLI writes a `transcript_<scenarios>.txt`, `summary_<scenarios>.json`, and `report.md` bundle (plus scenario-specific plots and CSV exports) to the chosen output folder. The Markdown report embeds every summary table—including OSR, dwell, and pot sweeps—and links plots with scenario-specific axes (log₂ for OSR, linear dwell, wiper code for potentiometer).
 
 ## Firmware Expectations
 
-- Firmware now waits for supported commands (`channel_map`, `osr_sweep`, `adc_speed`) before executing work. Upon receiving the request it echoes a `# running` metadata line, performs the scenario, and prints `# benchmark_complete` followed by a renewed `# ready` prompt.
+- Firmware now waits for supported commands (`channel_map`, `osr_sweep`, `dwell_sweep`, `pot_sweep`, `adc_speed`) before executing work. Upon receiving the request it echoes a `# running` metadata line, performs the scenario, and prints `# benchmark_complete` followed by a renewed `# ready` prompt.
 - During Phase 1, channel-to-LED association is reported in the summary table via the new `Channel_Map` column:
   - `A=OK` or `B=OK` indicates that the observed dominant ADC channel matches the expected LED routing.
   - `B!=A`, `A!=B`, or `??!=A/B` highlight mismatches or ambiguous responses.
-- Min/max ADC codes are now included per channel so host automation can surface saturation without parsing the streamed CSV. OSR sweeps report per-preset drain/LED statistics plus sweep timing, and throughput runs report samples-per-second, loop timing, and ADC error counts per enabled mode; warnings surface via the `Notes` column when errors occur.
-
-For a complete example covering the three supported scenarios, see `docs/phoenix-benchmark/sample_runs/osr_sweep_demo/`.
+- Min/max ADC codes are now included per channel so host automation can surface saturation without parsing the streamed CSV. OSR sweeps report per-preset drain/LED statistics plus sweep timing; dwell sweeps report per-dwell variance, warning masks, and runtime; pot sweeps report LED-specific saturation flags and recommended wiper codes; throughput runs report samples-per-second, loop timing, and ADC error counts per enabled mode; warnings surface via the `Notes` or `Warning Mask` columns when issues occur.

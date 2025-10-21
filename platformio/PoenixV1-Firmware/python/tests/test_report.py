@@ -8,6 +8,7 @@ import pytest  # type: ignore
 
 from phoenix_benchmark.report import (
     AdcSpeedSummaryRow,
+    DwellSweepSummaryRow,
     OsrSweepSummaryRow,
     PotSweepSummaryRow,
     ReportArtifacts,
@@ -334,3 +335,84 @@ def test_create_report_handles_pot_sweep(tmp_path: Path) -> None:
     assert "<details>" in report_text
     assert "</details>" in report_text
     assert "Wiper | LED1 max" in report_text
+
+
+def _dwell_sweep_summary_lines() -> List[str]:
+    return [
+        "# phoenix benchmark ready",
+        "# running,scenario=dwell_sweep,sweeps_per_dwell=4,start_us=100,end_us=300,step_us=100,steps=3",
+        "# summary_table",
+        "Dwell_us  Sweeps  Drain_Mean  Drain_Std  LED1_Mean  LED1_Std  LED2_Mean  LED2_Std  Duration_us  Warning_Mask",
+        "     100       4        1.234      0.111        2.345      0.222        3.456      0.333        50000  0x00",
+        "     200       4        1.500      0.450        2.650      0.520        3.700      0.610        60000  0x01",
+        "     300       2           --        --           --        --           --        --        30000  0x00",
+        "",
+        "# dwell_sweep_warnings,reason=saturation",
+        "# benchmark_complete",
+        "# ready",
+    ]
+
+
+def test_parse_summary_table_handles_dwell_sweep() -> None:
+    summaries = parse_summary_table(_dwell_sweep_summary_lines())
+
+    assert "dwell_sweep" in summaries
+    rows = summaries["dwell_sweep"]
+    assert len(rows) == 3
+
+    first = rows[0]
+    assert isinstance(first, DwellSweepSummaryRow)
+    assert first.dwell_us == 100
+    assert first.sweeps_completed == 4
+    assert pytest.approx(first.drain_std, rel=1e-6) == 0.111
+    assert first.warning_mask == 0
+    assert first.has_metrics is True
+
+    third = rows[2]
+    assert isinstance(third, DwellSweepSummaryRow)
+    assert third.has_metrics is False
+    assert third.duration_us == 30_000
+
+
+def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
+    lines = _dwell_sweep_summary_lines()
+
+    plan_path = tmp_path / "dwell_plan.json"
+    plan_path.write_text(json.dumps({"commands": []}), encoding="utf-8")
+
+    output_dir = tmp_path / "dwell-report"
+    artifacts = create_report(lines, plan_path, output_dir)
+
+    assert "dwell_sweep" in artifacts.scenarios
+    assert "dwell_sweep" in artifacts.plot_paths
+    dwell_plots = artifacts.plot_paths["dwell_sweep"]
+    assert len(dwell_plots) == 2
+    assert any(path.name.endswith("_variance.png") for path in dwell_plots)
+    assert any(path.name.endswith("_duration.png") for path in dwell_plots)
+    for path in dwell_plots:
+        assert path.exists()
+
+    assert "dwell_sweep" in artifacts.csv_paths
+    csv_files = artifacts.csv_paths["dwell_sweep"]
+    assert len(csv_files) == 1
+    csv_text = csv_files[0].read_text(encoding="utf-8")
+    assert "dwell_us,sweeps_completed" in csv_text
+    assert "200,4" in csv_text
+
+    recommendations = artifacts.dwell_sweep_recommendations
+    assert isinstance(recommendations, dict)
+    assert recommendations.get("recommended") == 100
+    assert artifacts.dwell_sweep_warning == "saturation"
+
+    summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
+    dwell_entry = next(
+        item for item in summary_data if item["scenario"] == "dwell_sweep"
+    )
+    assert len(dwell_entry["rows"]) == 3
+    assert dwell_entry["rows"][0]["dwell_us"] == 100
+    assert dwell_entry["rows"][1]["warning_mask"] == 1
+
+    report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
+    assert "## Summary Table (dwell_sweep)" in report_text
+    assert "Recommended dwell" in report_text
+    assert "saturation" in report_text

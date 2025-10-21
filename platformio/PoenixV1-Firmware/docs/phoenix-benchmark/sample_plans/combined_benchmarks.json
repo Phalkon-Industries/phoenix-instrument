@@ -17,6 +17,15 @@
             }
         },
         {
+            "command": "dwell_sweep",
+            "parameters": {
+                "sweeps_per_dwell": 4,
+                "start_dwell_us": 100,
+                "end_dwell_us": 500,
+                "dwell_step_us": 100
+            }
+        },
+        {
             "command": "pot_sweep",
             "parameters": {
                 "sweeps": 5,
