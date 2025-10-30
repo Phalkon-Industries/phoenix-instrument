@@ -29,6 +29,8 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 - Turn on “format on save” in your IDE when possible.
 - C-style public APIs should live in headers that can be included from C or C++. If a header must be consumed by both,
   add the usual `#ifdef __cplusplus` guard with `extern "C" { ... }`.
+- Give every internal helper or module-level variable internal linkage with `static`; avoid anonymous namespaces so the
+  linkage intent stays obvious to C and C++ consumers alike.
 
 ## 3. Header Layout and Includes
 - Include the module's public header first (e.g. `#include "mcp356x.hpp"`), then a blank line, then Arduino/standard-library headers.
