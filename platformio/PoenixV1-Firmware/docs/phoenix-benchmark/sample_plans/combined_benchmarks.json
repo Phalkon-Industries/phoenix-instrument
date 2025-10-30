@@ -5,7 +5,7 @@
             "parameters": {
                 "sweeps": 50,
                 "dwell_us": 100,
-                "wiper_code": 0
+                "wiper_code": 223
             }
         },
         {
@@ -15,7 +15,7 @@
                 "end_time_us": 200000,
                 "step_delay_us": 0,
                 "osr": 32,
-                "wiper_code": 0
+                "wiper_code": 223
             }
         },
         {
@@ -23,7 +23,7 @@
             "parameters": {
                 "sweeps": 10,
                 "dwell_us": 100,
-                "wiper_code": 0
+                "wiper_code": 223
             }
         },
         {
