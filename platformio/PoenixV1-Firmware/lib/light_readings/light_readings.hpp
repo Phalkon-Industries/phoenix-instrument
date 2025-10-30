@@ -23,39 +23,38 @@
  * @brief Logical photodiode channels supported by the light readings helper.
  */
 enum class LightReadingsChannel : uint8_t {
-  LIGHT_READINGS_CHANNEL_A = 0u,
-  LIGHT_READINGS_CHANNEL_B,
+  LIGHT_READINGS_CHANNEL_BLUE = 0u,
+  LIGHT_READINGS_CHANNEL_GREEN,
 };
 
 /**
- * @brief Sweep phases executed when collecting a complete light readings sample.
+ * @brief Per-colour routing, ADC, and digipot configuration.
  */
-enum class LightReadingsSweepPhase : uint8_t {
-  LIGHT_READINGS_SWEEP_PHASE_DRAIN = 0u,
-  LIGHT_READINGS_SWEEP_PHASE_CHANNEL_A,
-  LIGHT_READINGS_SWEEP_PHASE_CHANNEL_B,
+struct LightReadingsChannelConfig {
+  LedRouterState router_state; /**< Router state used when sampling this colour directly. */
+  AdcHalChannel  adc_channel;  /**< ADC channel wired to this photodiode. */
+  uint32_t       dwell_us;     /**< Delay applied after routing before sampling. */
+  uint8_t        wiper_code;   /**< Digipot wiper code applied during initialisation. */
 };
 
 /**
  * @brief Configuration required to route LEDs and sample the ADC.
  */
 struct LightReadingsConfig {
-  LedRouterState drain_state;     /**< Router state that exposes the shared drain. */
-  LedRouterState channel_a_state; /**< Router state used when sampling channel A directly. */
-  LedRouterState channel_b_state; /**< Router state used when sampling channel B directly. */
-  AdcHalChannel  channel_a_adc;   /**< ADC channel wired to photodiode A. */
-  AdcHalChannel  channel_b_adc;   /**< ADC channel wired to photodiode B. */
-  uint32_t       adc_timeout_us;  /**< Timeout passed to adc_hal reads. */
+  LedRouterState             drain_state;    /**< Router state that exposes the shared drain. */
+  LightReadingsChannelConfig blue_channel;   /**< Runtime configuration for the blue photodiode. */
+  LightReadingsChannelConfig green_channel;  /**< Runtime configuration for the green photodiode. */
+  uint32_t                   adc_timeout_us; /**< Timeout passed to adc_hal reads. */
 };
 
 /**
  * @brief Raw ADC codes captured for a single sweep.
  */
 struct LightReadingsSweepSample {
-  int32_t drain_channel_a_code; /**< Drain-state reading taken on photodiode A. */
-  int32_t drain_channel_b_code; /**< Drain-state reading taken on photodiode B. */
-  int32_t channel_a_code;       /**< Direct reading taken with channel A routed. */
-  int32_t channel_b_code;       /**< Direct reading taken with channel B routed. */
+  int32_t drain_blue_code;  /**< Drain-state reading taken on the blue photodiode. */
+  int32_t drain_green_code; /**< Drain-state reading taken on the green photodiode. */
+  int32_t blue_code;        /**< Direct reading taken with the blue channel routed. */
+  int32_t green_code;       /**< Direct reading taken with the green channel routed. */
 };
 
 /**
@@ -73,15 +72,6 @@ struct LightReadingsSweepCollection {
  * @return LIGHT_READINGS_OK on success, or a negative error code on failure.
  */
 int light_readings_initialize(const LightReadingsConfig* config);
-
-/**
- * @brief Sample the requested photodiode and return the raw ADC code.
- *
- * @param channel Logical photodiode channel to measure.
- * @param code_out Destination pointer that receives the raw ADC reading.
- * @return LIGHT_READINGS_OK on success, or a propagated error code from adc_hal or led_router.
- */
-int light_readings_read_channel(LightReadingsChannel channel, int32_t* code_out);
 
 /**
  * @brief Execute a full drain / channel A / channel B sweep and capture the results.

@@ -1,14 +1,23 @@
+#include "ad524x.hpp"
 #include "adc_hal.hpp"
 #include "device_setup.hpp"
 #include "led_router.hpp"
 #include "light_readings.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
+#include <Wire.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <unity.h>
 
 static void bring_light_readings_online(void) {
+  static bool wire_started = false;
+  if (!wire_started) {
+    Wire.begin();
+    wire_started = true;
+  }
+
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
   // Step 1: Initialise the LED router used to steer photodiode channels.
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&g_device_led_router_config));
   // Step 2: Initialise the ADC HAL so conversions can complete during tests.
@@ -23,6 +32,7 @@ void setUp(void) {
   light_readings_reset_for_test();
   led_router_reset_for_test();
   adc_hal_reset_for_test();
+  ad524x_deinitialize();
 }
 
 void tearDown(void) {
@@ -30,6 +40,7 @@ void tearDown(void) {
   light_readings_reset_for_test();
   led_router_reset_for_test();
   adc_hal_reset_for_test();
+  ad524x_deinitialize();
 }
 
 static void test_light_readings_initialize_rejects_null_config(void) {
@@ -38,8 +49,10 @@ static void test_light_readings_initialize_rejects_null_config(void) {
 }
 
 static void test_light_readings_initialize_parks_router_in_drain_state(void) {
+  Wire.begin();
   // Step 1: Bring the LED router online so the helper can command states.
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&g_device_led_router_config));
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
   // Step 2: Initialise the light readings helper using the canonical configuration.
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&g_device_light_readings_config));
 
@@ -47,13 +60,22 @@ static void test_light_readings_initialize_parks_router_in_drain_state(void) {
   LedRouterState observed_state = LedRouterState::LED_ROUTER_STATE_OFF;
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_get_state(&observed_state));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
+
+  // Step 4: Verify wiper codes were applied for both photodiodes.
+  uint8_t blue_wiper = 0u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &blue_wiper));
+  TEST_ASSERT_EQUAL_UINT8(g_device_light_readings_config.blue_channel.wiper_code, blue_wiper);
+
+  uint8_t green_wiper = 0u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(1u, &green_wiper));
+  TEST_ASSERT_EQUAL_UINT8(g_device_light_readings_config.green_channel.wiper_code, green_wiper);
 }
 
 static void test_light_readings_read_channel_requires_initialization(void) {
   // Step 1: Attempt to read without prior initialisation and expect an error.
   int32_t sample_code = 0;
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_A, &sample_code));
+                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, &sample_code));
 }
 
 static void test_light_readings_read_channel_rejects_null_storage(void) {
@@ -62,7 +84,7 @@ static void test_light_readings_read_channel_rejects_null_storage(void) {
 
   // Step 2: Request a reading using a null pointer and expect an invalid-argument error.
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_INVALID_ARG,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_A, NULL));
+                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, NULL));
 }
 
 static void test_light_readings_read_channel_routes_channel_a_and_parks_drain(void) {
@@ -72,11 +94,11 @@ static void test_light_readings_read_channel_routes_channel_a_and_parks_drain(vo
   // Step 2: Seed the sample with a sentinel that falls outside the 24-bit ADC range.
   int32_t sample_code = INT32_MAX;
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_A, &sample_code));
+                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, &sample_code));
   TEST_ASSERT_NOT_EQUAL(INT32_MAX, sample_code);
 
   // Step 3: Ensure the ADC HAL received the channel corresponding to photodiode A.
-  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(g_device_light_readings_config.channel_a_adc),
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(g_device_light_readings_config.blue_channel.adc_channel),
                           static_cast<uint8_t>(adc_hal_test_last_channel_requested()));
 
   // Step 4: Verify the helper returns the router to the drain state after sampling.
@@ -97,18 +119,18 @@ static void test_light_readings_sweep_populates_all_fields(void) {
 
   // Step 2: Populate the sweep structure with sentinels to confirm the helper writes every field.
   LightReadingsSweepSample sweep = {
-      .drain_channel_a_code = INT32_MAX,
-      .drain_channel_b_code = INT32_MAX,
-      .channel_a_code       = INT32_MAX,
-      .channel_b_code       = INT32_MAX,
+      .drain_blue_code  = INT32_MAX,
+      .drain_green_code = INT32_MAX,
+      .blue_code        = INT32_MAX,
+      .green_code       = INT32_MAX,
   };
 
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_sweep(&sweep));
 
-  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sweep.drain_channel_a_code);
-  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sweep.drain_channel_b_code);
-  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sweep.channel_a_code);
-  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sweep.channel_b_code);
+  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sweep.drain_blue_code);
+  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sweep.drain_green_code);
+  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sweep.blue_code);
+  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sweep.green_code);
 
   // Step 3: Confirm the router finishes in the configured drain state.
   LedRouterState observed_state = LedRouterState::LED_ROUTER_STATE_OFF;
@@ -148,10 +170,10 @@ static void test_light_readings_sweep_n_populates_requested_sweeps(void) {
   // Step 2: Seed the collection with sentinels to confirm every entry is updated.
   LightReadingsSweepCollection collection = {0};
   for (size_t index = 0; index < LIGHT_READINGS_MAX_SWEEP_COUNT; ++index) {
-    collection.sweeps[index].drain_channel_a_code = INT32_MAX;
-    collection.sweeps[index].drain_channel_b_code = INT32_MAX;
-    collection.sweeps[index].channel_a_code       = INT32_MAX;
-    collection.sweeps[index].channel_b_code       = INT32_MAX;
+    collection.sweeps[index].drain_blue_code  = INT32_MAX;
+    collection.sweeps[index].drain_green_code = INT32_MAX;
+    collection.sweeps[index].blue_code        = INT32_MAX;
+    collection.sweeps[index].green_code       = INT32_MAX;
   }
   collection.sweep_count = 0xFFFFFFFFu;
 
@@ -160,10 +182,10 @@ static void test_light_readings_sweep_n_populates_requested_sweeps(void) {
   TEST_ASSERT_EQUAL_UINT32(requested_count, collection.sweep_count);
 
   for (uint32_t index = 0u; index < requested_count; ++index) {
-    TEST_ASSERT_NOT_EQUAL(INT32_MAX, collection.sweeps[index].drain_channel_a_code);
-    TEST_ASSERT_NOT_EQUAL(INT32_MAX, collection.sweeps[index].drain_channel_b_code);
-    TEST_ASSERT_NOT_EQUAL(INT32_MAX, collection.sweeps[index].channel_a_code);
-    TEST_ASSERT_NOT_EQUAL(INT32_MAX, collection.sweeps[index].channel_b_code);
+    TEST_ASSERT_NOT_EQUAL(INT32_MAX, collection.sweeps[index].drain_blue_code);
+    TEST_ASSERT_NOT_EQUAL(INT32_MAX, collection.sweeps[index].drain_green_code);
+    TEST_ASSERT_NOT_EQUAL(INT32_MAX, collection.sweeps[index].blue_code);
+    TEST_ASSERT_NOT_EQUAL(INT32_MAX, collection.sweeps[index].green_code);
   }
 
   // Step 3: Ensure the router finishes a multi-sweep run back in the drain state.
@@ -187,7 +209,7 @@ static void test_light_readings_shutdown_clears_module_state(void) {
   // Step 3: Validate that subsequent reads fail because the helper is no longer initialised.
   int32_t sample_code = 0;
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_A, &sample_code));
+                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, &sample_code));
 }
 
 static void test_light_readings_reset_for_test_clears_initialization(void) {
@@ -198,7 +220,7 @@ static void test_light_readings_reset_for_test_clears_initialization(void) {
   light_readings_reset_for_test();
   int32_t sample_code = 0;
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_A, &sample_code));
+                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, &sample_code));
 }
 
 void setup() {
