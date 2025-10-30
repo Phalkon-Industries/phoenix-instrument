@@ -11,6 +11,7 @@
 #define LIGHT_READINGS_ERR_INVALID_ARG -1
 #define LIGHT_READINGS_ERR_NOT_INITIALIZED -2
 #define LIGHT_READINGS_ERR_SWEEP_CAPACITY_EXCEEDED -3
+#define LIGHT_READINGS_ERR_NOT_IMPLEMENTED -4
 
 // Default sweep capacity used when callers do not provide an override at build time.
 #ifndef LIGHT_READINGS_MAX_SWEEP_COUNT

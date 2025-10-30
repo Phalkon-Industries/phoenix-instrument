@@ -1,5 +1,5 @@
 #include "adc_hal.hpp"
-#include "device_settings.hpp"
+#include "device_setup.hpp"
 #include "led_router.hpp"
 #include "light_readings.hpp"
 #include "unity_config.h"
@@ -10,12 +10,12 @@
 
 static void bring_light_readings_online(void) {
   // Step 1: Initialise the LED router used to steer photodiode channels.
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_device_led_router_config));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&g_device_led_router_config));
   // Step 2: Initialise the ADC HAL so conversions can complete during tests.
-  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&k_device_adc_hal_config));
+  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&g_device_adc_hal_config));
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
   // Step 3: Initialise the light readings helper under test.
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&k_device_light_readings_config));
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&g_device_light_readings_config));
 }
 
 void setUp(void) {
@@ -39,14 +39,14 @@ static void test_light_readings_initialize_rejects_null_config(void) {
 
 static void test_light_readings_initialize_parks_router_in_drain_state(void) {
   // Step 1: Bring the LED router online so the helper can command states.
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_device_led_router_config));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&g_device_led_router_config));
   // Step 2: Initialise the light readings helper using the canonical configuration.
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&k_device_light_readings_config));
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&g_device_light_readings_config));
 
   // Step 3: Confirm the helper parks the router in the configured drain state.
   LedRouterState observed_state = LedRouterState::LED_ROUTER_STATE_OFF;
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_get_state(&observed_state));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(k_device_light_readings_config.drain_state), static_cast<int>(observed_state));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
 }
 
 static void test_light_readings_read_channel_requires_initialization(void) {
@@ -76,13 +76,13 @@ static void test_light_readings_read_channel_routes_channel_a_and_parks_drain(vo
   TEST_ASSERT_NOT_EQUAL(INT32_MAX, sample_code);
 
   // Step 3: Ensure the ADC HAL received the channel corresponding to photodiode A.
-  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(k_device_light_readings_config.channel_a_adc),
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(g_device_light_readings_config.channel_a_adc),
                           static_cast<uint8_t>(adc_hal_test_last_channel_requested()));
 
   // Step 4: Verify the helper returns the router to the drain state after sampling.
   LedRouterState observed_state = LedRouterState::LED_ROUTER_STATE_OFF;
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_get_state(&observed_state));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(k_device_light_readings_config.drain_state), static_cast<int>(observed_state));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
 }
 
 static void test_light_readings_sweep_requires_initialization(void) {
@@ -113,7 +113,7 @@ static void test_light_readings_sweep_populates_all_fields(void) {
   // Step 3: Confirm the router finishes in the configured drain state.
   LedRouterState observed_state = LedRouterState::LED_ROUTER_STATE_OFF;
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_get_state(&observed_state));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(k_device_light_readings_config.drain_state), static_cast<int>(observed_state));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
 }
 
 static void test_light_readings_sweep_n_requires_initialization(void) {
@@ -169,7 +169,7 @@ static void test_light_readings_sweep_n_populates_requested_sweeps(void) {
   // Step 3: Ensure the router finishes a multi-sweep run back in the drain state.
   LedRouterState observed_state = LedRouterState::LED_ROUTER_STATE_OFF;
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_get_state(&observed_state));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(k_device_light_readings_config.drain_state), static_cast<int>(observed_state));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
 }
 
 static void test_light_readings_shutdown_requires_initialization(void) {
