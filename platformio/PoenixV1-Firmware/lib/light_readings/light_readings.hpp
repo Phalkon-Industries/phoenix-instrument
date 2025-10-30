@@ -4,14 +4,15 @@
 
 #include "adc_hal.hpp"
 #include "led_router.hpp"
+#include "phoenix_guard.hpp"
 #include <stdint.h>
 
 // Return codes surfaced by the light readings helper.
-#define LIGHT_READINGS_OK 0
-#define LIGHT_READINGS_ERR_INVALID_ARG -1
-#define LIGHT_READINGS_ERR_NOT_INITIALIZED -2
-#define LIGHT_READINGS_ERR_SWEEP_CAPACITY_EXCEEDED -3
-#define LIGHT_READINGS_ERR_NOT_IMPLEMENTED -4
+#define LIGHT_READINGS_OK PHX_OK
+#define LIGHT_READINGS_ERR_INVALID_ARG PHX_ERR_INVALID_ARG
+#define LIGHT_READINGS_ERR_NOT_INITIALIZED PHX_ERR_NOT_INITIALIZED
+#define LIGHT_READINGS_ERR_SWEEP_CAPACITY_EXCEEDED (PHX_ERR_MODULE_BASE - 1)
+#define LIGHT_READINGS_ERR_NOT_IMPLEMENTED PHX_ERR_NOT_IMPLEMENTED
 
 // Default sweep capacity used when callers do not provide an override at build time.
 #ifndef LIGHT_READINGS_MAX_SWEEP_COUNT
