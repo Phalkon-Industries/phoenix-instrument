@@ -10,6 +10,8 @@
 #include <stdint.h>
 #include <unity.h>
 
+static LightReadingsSweepSample g_test_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
+
 static void bring_light_readings_online(void) {
   static bool wire_started = false;
   if (!wire_started) {
@@ -123,7 +125,8 @@ static void test_light_readings_sweep_returns_reasonable_codes(void) {
 
 static void test_light_readings_sweep_n_requires_initialization(void) {
   // Step 1: Attempt to sweep multiple times without initialisation.
-  LightReadingsSweepCollection collection = {0};
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_sweep_n(1u, &collection));
 }
 
@@ -140,8 +143,9 @@ static void test_light_readings_sweep_n_rejects_excess_count(void) {
   bring_light_readings_online();
 
   // Step 2: Request more sweeps than the fixed-capacity buffer allows.
-  LightReadingsSweepCollection collection      = {0};
-  const uint32_t               requested_count = (uint32_t) LIGHT_READINGS_MAX_SWEEP_COUNT + 1u;
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  const uint32_t requested_count          = (uint32_t) LIGHT_READINGS_MAX_SWEEP_COUNT + 1u;
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_SWEEP_CAPACITY_EXCEEDED,
                         light_readings_sweep_n(requested_count, &collection));
 }
@@ -151,7 +155,8 @@ static void test_light_readings_sweep_n_populates_requested_sweeps(void) {
   bring_light_readings_online();
 
   // Step 2: Seed the collection with sentinels to confirm every entry is updated.
-  LightReadingsSweepCollection collection = {0};
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
   for (size_t index = 0; index < LIGHT_READINGS_MAX_SWEEP_COUNT; ++index) {
     collection.sweeps[index].drain_blue_code  = INT32_MAX;
     collection.sweeps[index].drain_green_code = INT32_MAX;
@@ -177,6 +182,98 @@ static void test_light_readings_sweep_n_populates_requested_sweeps(void) {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
 }
 
+static void test_light_readings_sweep_n_handles_max_capacity(void) {
+  // Step 1: Bring the helper online so a full-capacity sweep can execute.
+  bring_light_readings_online();
+
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+
+  // Step 2: Perform the maximum number of sweeps supported by the module.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_sweep_n(LIGHT_READINGS_MAX_SWEEP_COUNT, &collection));
+  TEST_ASSERT_EQUAL_UINT32(LIGHT_READINGS_MAX_SWEEP_COUNT, collection.sweep_count);
+
+  // Step 3: Spot-check a subset of entries to confirm data was populated.
+  TEST_ASSERT_NOT_EQUAL(0, collection.sweeps[0].drain_blue_code);
+  TEST_ASSERT_NOT_EQUAL(0, collection.sweeps[LIGHT_READINGS_MAX_SWEEP_COUNT - 1u].green_code);
+}
+
+static void test_light_readings_compute_sweep_stats_requires_arguments(void) {
+  // Step 1: Verify the helper guards against null parameters.
+  LightReadingsSweepStats stats = {};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_INVALID_ARG, light_readings_compute_sweep_stats(NULL, &stats));
+
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_INVALID_ARG, light_readings_compute_sweep_stats(&collection, NULL));
+}
+
+static void test_light_readings_compute_sweep_stats_handles_empty_collection(void) {
+  // Step 1: Seed an empty collection to emulate a caller that captured no sweeps.
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  collection.sweep_count                  = 0u;
+
+  LightReadingsSweepStats stats = {};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_compute_sweep_stats(&collection, &stats));
+
+  TEST_ASSERT_EQUAL_UINT32(0u, stats.sweep_count);
+  TEST_ASSERT_FALSE(stats.drain_blue.has_samples);
+  TEST_ASSERT_FALSE(stats.drain_green.has_samples);
+  TEST_ASSERT_FALSE(stats.blue.has_samples);
+  TEST_ASSERT_FALSE(stats.green.has_samples);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats.drain_blue.sample_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats.drain_green.sample_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats.blue.sample_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, stats.green.sample_count);
+  TEST_ASSERT_EQUAL_INT32(0, stats.drain_blue.min_value);
+  TEST_ASSERT_EQUAL_INT32(0, stats.drain_blue.max_value);
+  TEST_ASSERT_EQUAL_INT32(0, stats.blue.min_value);
+  TEST_ASSERT_EQUAL_INT32(0, stats.blue.max_value);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.drain_blue.mean));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.drain_blue.standard_deviation));
+}
+
+static void test_light_readings_compute_sweep_stats_calculates_metrics(void) {
+  // Step 1: Populate a sweep collection with deterministic values for validation.
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  collection.sweep_count                  = 3u;
+  collection.sweeps[0]                    = {1000, 1500, 1100, 1200};
+  collection.sweeps[1]                    = {2000, 2500, 2100, 2200};
+  collection.sweeps[2]                    = {3000, 3500, 3100, 3200};
+
+  LightReadingsSweepStats stats = {};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_compute_sweep_stats(&collection, &stats));
+
+  TEST_ASSERT_EQUAL_UINT32(3u, stats.sweep_count);
+
+  TEST_ASSERT_TRUE(stats.drain_blue.has_samples);
+  TEST_ASSERT_EQUAL_UINT32(3u, stats.drain_blue.sample_count);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2000.0f, static_cast<float>(stats.drain_blue.mean));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.drain_blue.standard_deviation));
+  TEST_ASSERT_EQUAL_INT32(1000, stats.drain_blue.min_value);
+  TEST_ASSERT_EQUAL_INT32(3000, stats.drain_blue.max_value);
+
+  TEST_ASSERT_TRUE(stats.drain_green.has_samples);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2500.0f, static_cast<float>(stats.drain_green.mean));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.drain_green.standard_deviation));
+  TEST_ASSERT_EQUAL_INT32(1500, stats.drain_green.min_value);
+  TEST_ASSERT_EQUAL_INT32(3500, stats.drain_green.max_value);
+
+  TEST_ASSERT_TRUE(stats.blue.has_samples);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2100.0f, static_cast<float>(stats.blue.mean));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.blue.standard_deviation));
+  TEST_ASSERT_EQUAL_INT32(1100, stats.blue.min_value);
+  TEST_ASSERT_EQUAL_INT32(3100, stats.blue.max_value);
+
+  TEST_ASSERT_TRUE(stats.green.has_samples);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2200.0f, static_cast<float>(stats.green.mean));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.green.standard_deviation));
+  TEST_ASSERT_EQUAL_INT32(1200, stats.green.min_value);
+  TEST_ASSERT_EQUAL_INT32(3200, stats.green.max_value);
+}
+
 static void test_light_readings_shutdown_requires_initialization(void) {
   // Step 1: Attempt to shut down before initialise and expect an error.
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_shutdown());
@@ -188,8 +285,6 @@ static void test_light_readings_shutdown_clears_module_state(void) {
 
   // Step 2: Shut down the helper and confirm success surfaces to the caller.
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_shutdown());
-
-  // Step 3: Validate that subsequent reads fail because the helper is no longer initialised.
 }
 
 static void test_light_readings_reset_for_test_clears_initialization(void) {
@@ -216,6 +311,10 @@ void setup() {
   RUN_TEST(test_light_readings_sweep_n_rejects_null_collection);
   RUN_TEST(test_light_readings_sweep_n_rejects_excess_count);
   RUN_TEST(test_light_readings_sweep_n_populates_requested_sweeps);
+  RUN_TEST(test_light_readings_sweep_n_handles_max_capacity);
+  RUN_TEST(test_light_readings_compute_sweep_stats_requires_arguments);
+  RUN_TEST(test_light_readings_compute_sweep_stats_handles_empty_collection);
+  RUN_TEST(test_light_readings_compute_sweep_stats_calculates_metrics);
   RUN_TEST(test_light_readings_shutdown_requires_initialization);
   RUN_TEST(test_light_readings_shutdown_clears_module_state);
   RUN_TEST(test_light_readings_reset_for_test_clears_initialization);

@@ -3,6 +3,8 @@
 #include "ad524x.hpp"
 #include "phoenix_guard.hpp"
 #include <Arduino.h>
+#include <limits.h>
+#include <math.h>
 #include <stddef.h>
 
 static LightReadingsConfig g_light_config   = {};
@@ -10,6 +12,56 @@ static bool                g_is_initialized = false;
 
 static constexpr uint8_t k_light_readings_blue_channel  = 0u;
 static constexpr uint8_t k_light_readings_green_channel = 1u;
+
+LightReadingsSweepSample g_light_readings_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT] = {};
+
+struct LightReadingsRunningStats {
+  uint32_t sample_count;
+  double   mean;
+  double   m2;
+  int32_t  min_value;
+  int32_t  max_value;
+};
+
+static void light_readings_running_stats_reset(LightReadingsRunningStats* stats) {
+  stats->sample_count = 0u;
+  stats->mean         = 0.0;
+  stats->m2           = 0.0;
+  stats->min_value    = INT32_MAX;
+  stats->max_value    = INT32_MIN;
+}
+
+static void light_readings_running_stats_update(LightReadingsRunningStats* stats, int32_t value) {
+  ++stats->sample_count;
+  const double double_value = static_cast<double>(value);
+  const double delta        = double_value - stats->mean;
+  stats->mean += delta / static_cast<double>(stats->sample_count);
+  const double delta2 = double_value - stats->mean;
+  stats->m2 += delta * delta2;
+
+  if (value < stats->min_value) {
+    stats->min_value = value;
+  }
+  if (value > stats->max_value) {
+    stats->max_value = value;
+  }
+}
+
+static void light_readings_populate_summary(const LightReadingsRunningStats& running_stats,
+                                            LightReadingsStatisticSummary*   summary_out) {
+  summary_out->sample_count = running_stats.sample_count;
+  summary_out->has_samples  = running_stats.sample_count > 0u;
+  summary_out->mean         = summary_out->has_samples ? running_stats.mean : 0.0;
+  summary_out->min_value    = summary_out->has_samples ? running_stats.min_value : 0;
+  summary_out->max_value    = summary_out->has_samples ? running_stats.max_value : 0;
+
+  if (running_stats.sample_count > 1u) {
+    summary_out->standard_deviation = sqrt(running_stats.m2 / static_cast<double>(running_stats.sample_count - 1u));
+  }
+  else {
+    summary_out->standard_deviation = 0.0;
+  }
+}
 
 int light_readings_initialize(const LightReadingsConfig* config) {
   // Step 1: Validate the configuration pointer before touching shared state.
@@ -75,20 +127,67 @@ int light_readings_sweep_n(uint32_t sweep_count, LightReadingsSweepCollection* r
   // Step 2: Require initialisation before running a sweep sequence.
   GUARD_INITIALIZED(g_is_initialized);
 
-  // Step 3: Guard against callers requesting more sweeps than the fixed-capacity buffer can hold.
+  // Step 3: Ensure callers provide backing storage when requesting one or more sweeps.
+  if ((results_out->sweeps == NULL) && (sweep_count > 0u)) {
+    return LIGHT_READINGS_ERR_INVALID_ARG;
+  }
+
+  // Step 4: Guard against callers requesting more sweeps than the fixed-capacity buffer can hold.
   if (sweep_count > LIGHT_READINGS_MAX_SWEEP_COUNT) {
     return LIGHT_READINGS_ERR_SWEEP_CAPACITY_EXCEEDED;
   }
 
-  // Reset sweep count index
+  // Step 5: Reset sweep count index.
   results_out->sweep_count = 0u;
 
-  // Step 4: Execute each sweep and store the results until all iterations complete or a dependency fails.
+  // Step 6: Execute each sweep and store the results until all iterations complete or a dependency fails.
   for (uint32_t index = 0u; index < sweep_count; ++index) {
     GUARD(light_readings_sweep(&results_out->sweeps[index]));
 
     results_out->sweep_count = index + 1u;
   }
+
+  return LIGHT_READINGS_OK;
+}
+
+int light_readings_compute_sweep_stats(const LightReadingsSweepCollection* sweep_collection,
+                                       LightReadingsSweepStats*            stats_out) {
+  // Step 1: Validate arguments before touching output storage.
+  GUARD_NONNULL(sweep_collection);
+  GUARD_NONNULL(stats_out);
+
+  if ((sweep_collection->sweeps == NULL) && (sweep_collection->sweep_count > 0u)) {
+    return LIGHT_READINGS_ERR_INVALID_ARG;
+  }
+
+  // Step 2: Clear the output structure so unpopulated fields carry deterministic values.
+  *stats_out             = {};
+  stats_out->sweep_count = sweep_collection->sweep_count;
+
+  // Step 3: Initialise running statistics accumulators for each sweep channel field.
+  LightReadingsRunningStats drain_blue_stats;
+  LightReadingsRunningStats drain_green_stats;
+  LightReadingsRunningStats blue_stats;
+  LightReadingsRunningStats green_stats;
+  light_readings_running_stats_reset(&drain_blue_stats);
+  light_readings_running_stats_reset(&drain_green_stats);
+  light_readings_running_stats_reset(&blue_stats);
+  light_readings_running_stats_reset(&green_stats);
+
+  // Step 4: Fold each sweep sample into the corresponding running statistics accumulator.
+  for (uint32_t index = 0u; index < sweep_collection->sweep_count; ++index) {
+    const LightReadingsSweepSample& sweep = sweep_collection->sweeps[index];
+    light_readings_running_stats_update(&drain_blue_stats, sweep.drain_blue_code);
+    light_readings_running_stats_update(&drain_green_stats, sweep.drain_green_code);
+    light_readings_running_stats_update(&blue_stats, sweep.blue_code);
+    light_readings_running_stats_update(&green_stats, sweep.green_code);
+  }
+
+  // Step 5: Populate caller-visible summaries for each channel.
+  light_readings_populate_summary(drain_blue_stats, &stats_out->drain_blue);
+  light_readings_populate_summary(drain_green_stats, &stats_out->drain_green);
+  light_readings_populate_summary(blue_stats, &stats_out->blue);
+  light_readings_populate_summary(green_stats, &stats_out->green);
 
   return LIGHT_READINGS_OK;
 }

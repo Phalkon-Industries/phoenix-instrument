@@ -16,7 +16,7 @@
 
 // Default sweep capacity used when callers do not provide an override at build time.
 #ifndef LIGHT_READINGS_MAX_SWEEP_COUNT
-#define LIGHT_READINGS_MAX_SWEEP_COUNT 16u
+#define LIGHT_READINGS_MAX_SWEEP_COUNT 500u
 #endif
 
 /**
@@ -61,8 +61,39 @@ struct LightReadingsSweepSample {
  * @brief Fixed-capacity buffer used to accumulate multiple sweep samples.
  */
 struct LightReadingsSweepCollection {
-  uint32_t                 sweep_count; /**< Number of valid sweep entries populated in @p sweeps. */
-  LightReadingsSweepSample sweeps[LIGHT_READINGS_MAX_SWEEP_COUNT];
+  uint32_t                  sweep_count; /**< Number of valid sweep entries populated in @p sweeps. */
+  LightReadingsSweepSample* sweeps;      /**< Pointer to sweep storage allocated by the caller. */
+};
+
+/**
+ * @brief Global sweep storage used when callers do not provide their own backing buffer.
+ *
+ * Applications that cannot dedicate static storage elsewhere may bind @ref LightReadingsSweepCollection::sweeps to
+ * this array before invoking @ref light_readings_sweep_n.
+ */
+extern LightReadingsSweepSample g_light_readings_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
+
+/**
+ * @brief Aggregated statistics derived from a sequence of sweep samples.
+ */
+struct LightReadingsStatisticSummary {
+  uint32_t sample_count;       /**< Number of samples contributing to the metrics. */
+  double   mean;               /**< Sample mean computed across captured values. */
+  double   standard_deviation; /**< Sample standard deviation computed across values. */
+  int32_t  min_value;          /**< Minimum observed code. */
+  int32_t  max_value;          /**< Maximum observed code. */
+  bool     has_samples;        /**< Indicates whether the metrics represent at least one sample. */
+};
+
+/**
+ * @brief Per-channel statistics summarizing an @ref LightReadingsSweepCollection.
+ */
+struct LightReadingsSweepStats {
+  uint32_t                      sweep_count; /**< Number of sweeps represented by the statistics. */
+  LightReadingsStatisticSummary drain_blue;  /**< Drain measurement captured on the blue photodiode. */
+  LightReadingsStatisticSummary drain_green; /**< Drain measurement captured on the green photodiode. */
+  LightReadingsStatisticSummary blue;        /**< Direct measurement with the blue photodiode routed. */
+  LightReadingsStatisticSummary green;       /**< Direct measurement with the green photodiode routed. */
 };
 
 /**
@@ -85,12 +116,24 @@ int light_readings_sweep(LightReadingsSweepSample* result_out);
  * @brief Perform multiple sweeps back-to-back, storing the results in a fixed-capacity buffer.
  *
  * @param sweep_count Number of sweeps to execute.
- * @param results_out Pointer to a statically allocated collection that receives the sweep data.
+ * @param results_out Pointer to a collection that references statically allocated sweep storage via its @p sweeps
+ * field.
  * @return LIGHT_READINGS_OK when all sweeps complete, LIGHT_READINGS_ERR_INVALID_ARG for null pointers,
  *         LIGHT_READINGS_ERR_SWEEP_CAPACITY_EXCEEDED when @p sweep_count exceeds the buffer capacity,
  *         or a propagated error code from dependent modules.
  */
 int light_readings_sweep_n(uint32_t sweep_count, LightReadingsSweepCollection* results_out);
+
+/**
+ * @brief Calculate per-channel statistics from a collection of sweep samples.
+ *
+ * @param sweep_collection Collection of sweep samples previously captured via @ref light_readings_sweep_n. The
+ *        @p sweeps pointer must reference valid storage when @p sweep_collection->sweep_count exceeds zero.
+ * @param stats_out Destination pointer populated with aggregate metrics for each sweep field.
+ * @return LIGHT_READINGS_OK when statistics are computed, LIGHT_READINGS_ERR_INVALID_ARG when pointers are null.
+ */
+int light_readings_compute_sweep_stats(const LightReadingsSweepCollection* sweep_collection,
+                                       LightReadingsSweepStats*            stats_out);
 
 /**
  * @brief Release internal state and park the router in a safe configuration.
