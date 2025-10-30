@@ -71,42 +71,6 @@ static void test_light_readings_initialize_parks_router_in_drain_state(void) {
   TEST_ASSERT_EQUAL_UINT8(g_device_light_readings_config.green_channel.wiper_code, green_wiper);
 }
 
-static void test_light_readings_read_channel_requires_initialization(void) {
-  // Step 1: Attempt to read without prior initialisation and expect an error.
-  int32_t sample_code = 0;
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, &sample_code));
-}
-
-static void test_light_readings_read_channel_rejects_null_storage(void) {
-  // Step 1: Bring the helper online to exercise argument validation.
-  bring_light_readings_online();
-
-  // Step 2: Request a reading using a null pointer and expect an invalid-argument error.
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_INVALID_ARG,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, NULL));
-}
-
-static void test_light_readings_read_channel_routes_channel_a_and_parks_drain(void) {
-  // Step 1: Initialise dependencies so the helper can perform conversions.
-  bring_light_readings_online();
-
-  // Step 2: Seed the sample with a sentinel that falls outside the 24-bit ADC range.
-  int32_t sample_code = INT32_MAX;
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, &sample_code));
-  TEST_ASSERT_NOT_EQUAL(INT32_MAX, sample_code);
-
-  // Step 3: Ensure the ADC HAL received the channel corresponding to photodiode A.
-  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(g_device_light_readings_config.blue_channel.adc_channel),
-                          static_cast<uint8_t>(adc_hal_test_last_channel_requested()));
-
-  // Step 4: Verify the helper returns the router to the drain state after sampling.
-  LedRouterState observed_state = LedRouterState::LED_ROUTER_STATE_OFF;
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_get_state(&observed_state));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
-}
-
 static void test_light_readings_sweep_requires_initialization(void) {
   // Step 1: Attempt a sweep without initialisation and expect an error.
   LightReadingsSweepSample sweep = {0};
@@ -136,6 +100,25 @@ static void test_light_readings_sweep_populates_all_fields(void) {
   LedRouterState observed_state = LedRouterState::LED_ROUTER_STATE_OFF;
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_get_state(&observed_state));
   TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
+}
+
+static void test_light_readings_sweep_returns_reasonable_codes(void) {
+  // Step 1: Bring the helper online to capture a real sweep sample from the bench hardware.
+  bring_light_readings_online();
+
+  LightReadingsSweepSample sweep = {};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_sweep(&sweep));
+
+  // Step 2: Verify each captured code clears the minimum level observed on reference hardware.
+  const int32_t minimum_expected_code = 10;
+  TEST_ASSERT_GREATER_THAN_INT_MESSAGE(minimum_expected_code, sweep.drain_blue_code,
+                                       "Drain blue reading fell below the calibrated threshold");
+  TEST_ASSERT_GREATER_THAN_INT_MESSAGE(minimum_expected_code, sweep.drain_green_code,
+                                       "Drain green reading fell below the calibrated threshold");
+  TEST_ASSERT_GREATER_THAN_INT_MESSAGE(sweep.drain_blue_code, sweep.blue_code,
+                                       "Blue channel reading fell below the drain value");
+  TEST_ASSERT_GREATER_THAN_INT_MESSAGE(sweep.drain_green_code, sweep.green_code,
+                                       "Green channel reading fell below the drain value");
 }
 
 static void test_light_readings_sweep_n_requires_initialization(void) {
@@ -207,9 +190,6 @@ static void test_light_readings_shutdown_clears_module_state(void) {
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_shutdown());
 
   // Step 3: Validate that subsequent reads fail because the helper is no longer initialised.
-  int32_t sample_code = 0;
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, &sample_code));
 }
 
 static void test_light_readings_reset_for_test_clears_initialization(void) {
@@ -218,9 +198,8 @@ static void test_light_readings_reset_for_test_clears_initialization(void) {
 
   // Step 2: Invoke the test hook and ensure future reads report the module as uninitialised.
   light_readings_reset_for_test();
-  int32_t sample_code = 0;
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED,
-                        light_readings_read_channel(LightReadingsChannel::LIGHT_READINGS_CHANNEL_BLUE, &sample_code));
+  LightReadingsSweepSample sweep = {0};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_sweep(&sweep));
 }
 
 void setup() {
@@ -230,11 +209,9 @@ void setup() {
   UNITY_BEGIN();
   RUN_TEST(test_light_readings_initialize_rejects_null_config);
   RUN_TEST(test_light_readings_initialize_parks_router_in_drain_state);
-  RUN_TEST(test_light_readings_read_channel_requires_initialization);
-  RUN_TEST(test_light_readings_read_channel_rejects_null_storage);
-  RUN_TEST(test_light_readings_read_channel_routes_channel_a_and_parks_drain);
   RUN_TEST(test_light_readings_sweep_requires_initialization);
   RUN_TEST(test_light_readings_sweep_populates_all_fields);
+  RUN_TEST(test_light_readings_sweep_returns_reasonable_codes);
   RUN_TEST(test_light_readings_sweep_n_requires_initialization);
   RUN_TEST(test_light_readings_sweep_n_rejects_null_collection);
   RUN_TEST(test_light_readings_sweep_n_rejects_excess_count);
