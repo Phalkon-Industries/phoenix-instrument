@@ -7,13 +7,23 @@
 #include <math.h>
 #include <stddef.h>
 
-static LightReadingsConfig g_light_config   = {};
-static bool                g_is_initialized = false;
+static LightReadingsConfig g_light_config                   = {};
+static bool                g_is_initialized                 = false;
+static bool                g_last_sweep_detected_saturation = false;
+static bool                g_force_saturation_for_test      = false;
 
 static constexpr uint8_t k_light_readings_blue_channel  = 0u;
 static constexpr uint8_t k_light_readings_green_channel = 1u;
+// MCP3564 full-scale boundary codes as documented in datasheet DS20006204.
+static constexpr int32_t k_light_readings_adc_positive_full_scale_code = 8388607;
+static constexpr int32_t k_light_readings_adc_negative_full_scale_code = -8388608;
 
 LightReadingsSweepSample g_light_readings_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT] = {};
+
+static bool light_readings_is_code_saturated(int32_t code) {
+  return (code >= k_light_readings_adc_positive_full_scale_code) ||
+         (code <= k_light_readings_adc_negative_full_scale_code);
+}
 
 struct LightReadingsRunningStats {
   uint32_t sample_count;
@@ -87,6 +97,12 @@ int light_readings_sweep(LightReadingsSweepSample* sweep_out) {
   // Step 2: Ensure the helper has been initialised before manipulating hardware.
   GUARD_INITIALIZED(g_is_initialized);
 
+  bool drain_blue_saturated        = false;
+  bool drain_green_saturated       = false;
+  bool blue_saturated              = false;
+  bool green_saturated             = false;
+  g_last_sweep_detected_saturation = false;
+
   // Step 3: Enter the drain state so both photodiodes share the drain path for the first measurements.
   GUARD(led_router_set_state(g_light_config.drain_state));
 
@@ -117,6 +133,24 @@ int light_readings_sweep(LightReadingsSweepSample* sweep_out) {
   // Step 8: Park the router in the configured drain state so callers see a consistent idle configuration.
   GUARD(led_router_set_state(g_light_config.drain_state));
 
+  // Step 9: check saturation
+  drain_blue_saturated  = light_readings_is_code_saturated(sweep_out->drain_blue_code);
+  drain_green_saturated = light_readings_is_code_saturated(sweep_out->drain_green_code);
+  blue_saturated        = light_readings_is_code_saturated(sweep_out->blue_code);
+  green_saturated       = light_readings_is_code_saturated(sweep_out->green_code);
+  // Force saturation for test if applicable
+  if (g_force_saturation_for_test) {
+    sweep_out->drain_blue_code  = k_light_readings_adc_positive_full_scale_code;
+    sweep_out->drain_green_code = k_light_readings_adc_negative_full_scale_code;
+    sweep_out->blue_code        = k_light_readings_adc_positive_full_scale_code;
+    sweep_out->green_code       = k_light_readings_adc_negative_full_scale_code;
+    drain_blue_saturated        = true;
+    drain_green_saturated       = true;
+    blue_saturated              = true;
+    green_saturated             = true;
+  }
+  g_last_sweep_detected_saturation = drain_blue_saturated || drain_green_saturated || blue_saturated || green_saturated;
+
   return LIGHT_READINGS_OK;
 }
 
@@ -140,14 +174,27 @@ int light_readings_sweep_n(uint32_t sweep_count, LightReadingsSweepCollection* r
   // Step 5: Reset sweep count index.
   results_out->sweep_count = 0u;
 
+  bool saw_saturation = false;
+
   // Step 6: Execute each sweep and store the results until all iterations complete or a dependency fails.
   for (uint32_t index = 0u; index < sweep_count; ++index) {
     GUARD(light_readings_sweep(&results_out->sweeps[index]));
 
     results_out->sweep_count = index + 1u;
+    saw_saturation |= g_last_sweep_detected_saturation;
   }
 
+  g_last_sweep_detected_saturation = saw_saturation;
+
   return LIGHT_READINGS_OK;
+}
+
+void light_readings_force_saturation_for_test(bool enabled) {
+  g_force_saturation_for_test = enabled;
+}
+
+bool light_readings_last_sweep_detected_saturation(void) {
+  return g_last_sweep_detected_saturation;
 }
 
 int light_readings_compute_sweep_stats(const LightReadingsSweepCollection* sweep_collection,
@@ -200,8 +247,10 @@ int light_readings_shutdown(void) {
   const int return_code = led_router_set_state(g_light_config.drain_state);
 
   // Step 3: Clear cached state so future tests or runs start from a blank slate.
-  g_light_config   = {};
-  g_is_initialized = false;
+  g_light_config                   = {};
+  g_is_initialized                 = false;
+  g_last_sweep_detected_saturation = false;
+  g_force_saturation_for_test      = false;
 
   GUARD(return_code);  // Need to wait to guard to enforce that config and initialize clear first
 
@@ -210,6 +259,8 @@ int light_readings_shutdown(void) {
 
 void light_readings_reset_for_test(void) {
   // Step 1: Reset cached state so repeated test cases see a cold-started module.
-  g_light_config   = {};
-  g_is_initialized = false;
+  g_light_config                   = {};
+  g_is_initialized                 = false;
+  g_last_sweep_detected_saturation = false;
+  g_force_saturation_for_test      = false;
 }

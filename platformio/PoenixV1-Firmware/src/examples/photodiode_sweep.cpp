@@ -1,6 +1,7 @@
 #include "adc_hal.hpp"
 #include "led_router.hpp"
 #include "main.hpp"
+#include "power_control.hpp"
 
 struct PhotodiodeSample {
   uint8_t wiper_code;
@@ -29,6 +30,39 @@ static const LedSweepRequest k_led_sweep_sequence[] = {
 };
 static const size_t k_led_sweep_count = sizeof(k_led_sweep_sequence) / sizeof(k_led_sweep_sequence[0]);
 
+static const LedRouterConfig k_led_router_config = {
+    TS5A3359_IN1,
+    TS5A3359_IN2,
+};
+
+static const AdcHalConfig k_adc_hal_config = {
+    PIN_ADC_CS,
+    k_spi_clock_hz,
+    PIN_ADC_IRQ,
+};
+
+#if defined(LED_RED)
+static constexpr int k_indicator_red_pin = LED_RED;
+#else
+static constexpr int k_indicator_red_pin = -1;
+#endif
+
+#if defined(LED_BLUE)
+static constexpr int k_indicator_blue_pin = LED_BLUE;
+#else
+static constexpr int k_indicator_blue_pin = -1;
+#endif
+
+static PowerControlConfig g_power_control_config = {
+    .led_router_config  = &k_led_router_config,
+    .adc_config         = &k_adc_hal_config,
+    .wire_bus           = &Wire,
+    .digipot_address    = AD5242_I2C_ADDRESS,
+    .power_enable_pin   = PIN_ENABLE_POWER,
+    .indicator_red_pin  = k_indicator_red_pin,
+    .indicator_blue_pin = k_indicator_blue_pin,
+};
+
 static void wait_for_serial(void) {
   // Step 1: Remember the start time so we can time out the wait loop.
   unsigned long start_ms = millis();
@@ -36,33 +70,6 @@ static void wait_for_serial(void) {
   while (!Serial && (millis() - start_ms) < 2000UL) {
     delay(50);
   }
-}
-
-static void configure_led_paths_off(void) {
-  // Step 1: Configure the indicator LEDs as outputs.
-  pinMode(LED_RED, OUTPUT);
-  pinMode(LED_BLUE, OUTPUT);
-  // Step 2: Force both LEDs low so the board starts in a dark state.
-  digitalWrite(LED_RED, LOW);
-  digitalWrite(LED_BLUE, LOW);
-}
-
-static bool configure_led_router(void) {
-  // Step 1: Populate the router configuration with the board-specific pins.
-  const LedRouterConfig config = {
-      TS5A3359_IN1,
-      TS5A3359_IN2,
-  };
-
-  // Step 2: Initialize the router and report failures to the console.
-  const int return_code = led_router_initialize(&config);
-  if (return_code != LED_ROUTER_OK) {
-    Serial.print(F("led_router_initialize failed: "));
-    Serial.println(return_code);
-    return false;
-  }
-
-  return true;
 }
 
 static bool select_led_switch_state(LedRouterState state) {
@@ -77,25 +84,9 @@ static bool select_led_switch_state(LedRouterState state) {
   return true;
 }
 
-static void enable_power_domains(void) {
-  // Step 1: Enable the shared power rail so downstream circuitry is energized.
-  pinMode(PIN_ENABLE_POWER, OUTPUT);
-  digitalWrite(PIN_ENABLE_POWER, HIGH);
-}
-
-static bool initialise_ad524x(void) {
-  // Step 1: Start the I2C bus and bring the digi-pot into a known state.
-  Wire.begin();
-  int return_code = ad524x_initialize(AD5242_I2C_ADDRESS, &Wire);
-  if (return_code != AD524X_OK) {
-    Serial.print(F("ad524x_initialize failed: "));
-    Serial.println(return_code);
-    return false;
-  }
-
-  // Step 2: Program all channels to midscale to ensure a predictable baseline.
+static bool configure_digipot_midscale(void) {
   for (size_t i = 0; i < k_digipot_channel_count; ++i) {
-    return_code = ad524x_set_midscale(k_digipot_channels[i]);
+    const int return_code = ad524x_set_midscale(k_digipot_channels[i]);
     if (return_code != AD524X_OK) {
       Serial.print(F("ad524x_set_midscale failed on channel "));
       Serial.print(k_digipot_channels[i]);
@@ -104,33 +95,6 @@ static bool initialise_ad524x(void) {
       return false;
     }
   }
-  return true;
-}
-
-static bool initialise_adc_hal(void) {
-  // Step 1: Configure the ADC HAL with board-specific SPI parameters.
-  const AdcHalConfig config = {
-      .chip_select_pin = PIN_ADC_CS,
-      .spi_clock_hz    = k_spi_clock_hz,
-      .irq_pin         = PIN_ADC_IRQ,  // DRDY routed to this pin on Phoenix mainboard.
-  };
-
-  // Step 2: Initialize the ADC and log configuration failures.
-  int return_code = adc_hal_initialize(&config);
-  if (return_code != ADC_HAL_OK) {
-    Serial.print(F("adc_hal_initialize failed: "));
-    Serial.println(return_code);
-    return false;
-  }
-
-  // Step 3: Apply default register settings expected by the sweep logic.
-  return_code = adc_hal_apply_default_configuration();
-  if (return_code != ADC_HAL_OK) {
-    Serial.print(F("adc_hal_apply_default_configuration failed: "));
-    Serial.println(return_code);
-    return false;
-  }
-
   return true;
 }
 
@@ -231,12 +195,8 @@ static void park_hardware(void) {
     Serial.println(standby_return_code);
   }
 
-  // Step 3: Shut down the LED router gracefully, reporting any issues.
-  const int router_shutdown_return_code = led_router_shutdown();
-  if (router_shutdown_return_code != LED_ROUTER_OK) {
-    Serial.print(F("led_router_shutdown failed: "));
-    Serial.println(router_shutdown_return_code);
-  }
+  // Step 3: Park the router in the drain state for the next run.
+  (void) select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
 }
 
 void setup() {
@@ -244,18 +204,14 @@ void setup() {
   Serial.begin(115200);
   wait_for_serial();
 
-  // Step 2: Power the hardware and leave LED indicators in a known state.
-  enable_power_domains();
-  configure_led_paths_off();
-
-  // Step 3: Initialize each hardware subsystem, aborting on failure.
-  if (!initialise_ad524x()) {
+  // Step 2: Power the hardware domains and initialise shared peripherals.
+  const int power_return_code = power_control_prepare_power_domains(&g_power_control_config);
+  if (power_return_code != POWER_CONTROL_OK) {
+    Serial.print(F("power_control_prepare_power_domains failed: "));
+    Serial.println(power_return_code);
     return;
   }
-  if (!initialise_adc_hal()) {
-    return;
-  }
-  if (!configure_led_router()) {
+  if (!configure_digipot_midscale()) {
     return;
   }
   if (!select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN)) {
@@ -292,9 +248,6 @@ void loop() {
 
   // Step 3: Park the hardware and reinitialize routing for the next sweep.
   park_hardware();
-  if (configure_led_router()) {
-    (void) select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
-  }
   // Step 4: Delay briefly before restarting the sweep cycle.
   delay(1000);
 }

@@ -4,6 +4,7 @@
 #include "adc_hal.hpp"
 #include "command_parser.hpp"
 #include "led_router.hpp"
+#include "power_control.hpp"
 #include <Arduino.h>
 #include <Wire.h>
 #include <cstddef>
@@ -47,6 +48,18 @@ static constexpr int         k_switch_in2_pin          = 18;
 static constexpr std::size_t k_digipot_channel_count   = sizeof(k_digipot_channels) / sizeof(k_digipot_channels[0]);
 static constexpr uint32_t    k_adc_inter_read_delay_us = 100u;
 
+#if defined(LED_RED)
+static constexpr int k_indicator_red_pin = LED_RED;
+#else
+static constexpr int k_indicator_red_pin = -1;
+#endif
+
+#if defined(LED_BLUE)
+static constexpr int k_indicator_blue_pin = LED_BLUE;
+#else
+static constexpr int k_indicator_blue_pin = -1;
+#endif
+
 static constexpr PhoenixBenchmarkChannelMapStateDescriptor
     k_state_descriptors[k_phoenix_benchmark_channel_map_state_descriptor_count] = {
         {"Drain", PhoenixBenchmarkChannel::kUnknown, true, true},
@@ -77,7 +90,6 @@ static constexpr const char* k_error_sampling_failure = "sampling failure";
 static constexpr const char* k_error_adc_saturation   = "adc saturation";
 
 static PhoenixBenchmarkChannelMapDefaults g_defaults                  = {};
-static bool                               g_power_enabled             = false;
 static const char*                        g_last_sample_error         = nullptr;
 static bool                               g_force_saturation_for_test = false;
 static constexpr int32_t  k_positive_full_scale_test_code = k_phoenix_benchmark_adc_positive_full_scale_code;
@@ -88,89 +100,20 @@ static const AdcHalConfig k_adc_config                    = {
                        .irq_pin         = k_pin_adc_irq,  // DRDY routed through the Arduino attachInterrupt path.
 };
 
-static void enable_power_domains(void) {
-  if (g_power_enabled) {
-    return;
-  }
-  // Step 1: Drive the shared power rail so downstream peripherals receive bias power.
-  pinMode(k_pin_enable_power, OUTPUT);
-  digitalWrite(k_pin_enable_power, HIGH);
-  g_power_enabled = true;
-}
+static const LedRouterConfig k_led_router_config = {
+    .switch_in1_pin = k_switch_in1_pin,
+    .switch_in2_pin = k_switch_in2_pin,
+};
 
-static void configure_led_idle(void) {
-  static bool configured = false;
-  if (configured) {
-    return;
-  }
-  // Step 1: Force the status LEDs to a benign idle so measurement states start predictable.
-#ifdef LED_RED
-  pinMode(LED_RED, OUTPUT);
-  digitalWrite(LED_RED, LOW);
-#endif
-#ifdef LED_BLUE
-  pinMode(LED_BLUE, OUTPUT);
-  digitalWrite(LED_BLUE, LOW);
-#endif
-  configured = true;
-}
-
-static bool ensure_led_router_initialised(void) {
-  static bool initialised = false;
-  if (initialised) {
-    return true;
-  }
-
-  // Step 1: Provide the hardware pin map so the router knows how to steer channels.
-  const LedRouterConfig config = {
-      .switch_in1_pin = k_switch_in1_pin,
-      .switch_in2_pin = k_switch_in2_pin,
-  };
-
-  // Step 2: Initialize the router driver before we attempt to move any switches.
-  const int return_code = led_router_initialize(&config);
-  if (return_code != LED_ROUTER_OK) {
-    return false;
-  }
-
-  initialised = true;
-  return true;
-}
-
-static bool ensure_digipot_initialised(void) {
-  if (!ad524x_is_initialized()) {
-    // Step 1: Start the I2C bus so the digi-pot can receive commands.
-    Wire.begin();
-    // Step 2: Initialize the digi-pot at the expected address before setting wipers.
-    const int init_code = ad524x_initialize(k_ad524x_address, &Wire);
-    if (init_code != AD524X_OK) {
-      return false;
-    }
-  }
-  return true;
-}
-
-static bool ensure_adc_initialised(void) {
-  static bool initialised = false;
-  if (initialised) {
-    return true;
-  }
-
-  // Step 1: Bring up the ADC HAL so we can schedule conversions.
-  int return_code = adc_hal_initialize(&k_adc_config);
-  if (return_code != ADC_HAL_OK) {
-    return false;
-  }
-
-  // Step 2: Apply the default register configuration expected by downstream math.
-  return_code = adc_hal_apply_default_configuration();
-  if (return_code != ADC_HAL_OK) {
-    return false;
-  }
-
-  initialised = true;
-  return true;
-}
+static PowerControlConfig g_power_control_config = {
+    .led_router_config  = &k_led_router_config,
+    .adc_config         = &k_adc_config,
+    .wire_bus           = &Wire,
+    .digipot_address    = k_ad524x_address,
+    .power_enable_pin   = k_pin_enable_power,
+    .indicator_red_pin  = k_indicator_red_pin,
+    .indicator_blue_pin = k_indicator_blue_pin,
+};
 
 static void emit_line(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks, const char* message) {
   // Step 1: Forward log lines to the registered callback when both pointers are valid.
@@ -197,18 +140,14 @@ static bool select_led_state(LedRouterState state) {
 }
 
 static bool ensure_hardware_ready(void) {
-  // Step 1: Power up shared rails and park indicator LEDs.
-  enable_power_domains();
-  configure_led_idle();
-
-  // Step 2: Initialise peripheral drivers before sampling.
-  if (!ensure_digipot_initialised() || !ensure_adc_initialised() || !ensure_led_router_initialised()) {
+  const int power_return_code = power_control_prepare_power_domains(&g_power_control_config);
+  if (power_return_code != POWER_CONTROL_OK) {
     return false;
   }
 
-  // Step 3: Default the router to the drain path so downstream code sees a known baseline.
-  (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
-  return true;
+  // Step 1: Default the router to the drain path so downstream code sees a known baseline.
+  const int router_return_code = led_router_set_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
+  return router_return_code == LED_ROUTER_OK;
 }
 
 static bool read_adc_channel(AdcHalChannel channel, int32_t* out_code) {
@@ -461,9 +400,12 @@ PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_comman
 void phoenix_benchmark_channel_map_reset_state(void) {
   // Step 1: Clear persistent defaults and cached hardware status.
   g_defaults                  = PhoenixBenchmarkChannelMapDefaults{};
-  g_power_enabled             = false;
   g_last_sample_error         = nullptr;
   g_force_saturation_for_test = false;
+  power_control_reset_for_test();
+  led_router_reset_for_test();
+  adc_hal_reset_for_test();
+  ad524x_deinitialize();
 }
 
 void phoenix_benchmark_channel_map_set_force_saturation_for_test(bool enabled) {

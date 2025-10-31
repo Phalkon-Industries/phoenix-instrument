@@ -3,6 +3,7 @@
 #include "device_setup.hpp"
 #include "led_router.hpp"
 #include "light_readings.hpp"
+#include "power_control.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
 #include <Wire.h>
@@ -12,25 +13,36 @@
 
 static LightReadingsSweepSample g_test_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
 
-static void bring_light_readings_online(void) {
-  static bool wire_started = false;
-  if (!wire_started) {
-    Wire.begin();
-    wire_started = true;
-  }
+int power_control_prepare_power_domains_for_test(void) {
+  PowerControlConfig power_config = {};
+  power_config.led_router_config  = &g_device_led_router_config;
+  power_config.adc_config         = &g_device_adc_hal_config;
+  power_config.wire_bus           = &Wire;
+  power_config.digipot_address    = AD5242_I2C_ADDRESS;
+  power_config.power_enable_pin   = PIN_ENABLE_POWER;
+#if defined(LED_RED)
+  power_config.indicator_red_pin = LED_RED;
+#else
+  power_config.indicator_red_pin = -1;
+#endif
+#if defined(LED_BLUE)
+  power_config.indicator_blue_pin = LED_BLUE;
+#else
+  power_config.indicator_blue_pin = -1;
+#endif
 
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
-  // Step 1: Initialise the LED router used to steer photodiode channels.
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&g_device_led_router_config));
-  // Step 2: Initialise the ADC HAL so conversions can complete during tests.
-  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&g_device_adc_hal_config));
-  TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
-  // Step 3: Initialise the light readings helper under test.
+  return power_control_prepare_power_domains(&power_config);
+}
+
+static void bring_light_readings_online(void) {
+  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_prepare_power_domains_for_test());
+  // Step 1: Initialise the light readings helper under test.
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&g_device_light_readings_config));
 }
 
 void setUp(void) {
   // Step 1: Reset state so each test exercises a clean instance of every helper.
+  power_control_reset_for_test();
   light_readings_reset_for_test();
   led_router_reset_for_test();
   adc_hal_reset_for_test();
@@ -39,7 +51,9 @@ void setUp(void) {
 
 void tearDown(void) {
   // Step 1: Clear runtime state after each test to avoid cross-test leakage.
+  power_control_reset_for_test();
   light_readings_reset_for_test();
+  light_readings_force_saturation_for_test(false);
   led_router_reset_for_test();
   adc_hal_reset_for_test();
   ad524x_deinitialize();
@@ -77,6 +91,23 @@ static void test_light_readings_sweep_requires_initialization(void) {
   // Step 1: Attempt a sweep without initialisation and expect an error.
   LightReadingsSweepSample sweep = {0};
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_sweep(&sweep));
+}
+
+static void test_light_readings_reports_saturation_metadata(void) {
+  // Step 1: Bring the helper online so we can execute a sweep sequence.
+  bring_light_readings_online();
+
+  LightReadingsSweepCollection collection = {
+      .sweep_count = 0u,
+      .sweeps      = g_test_sweep_storage,
+  };
+
+  light_readings_force_saturation_for_test(true);
+
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_sweep_n(1u, &collection));
+  TEST_ASSERT_EQUAL_UINT32_MESSAGE(1u, collection.sweep_count, "Expected sweep_n to populate one sweep entry");
+  TEST_ASSERT_TRUE_MESSAGE(light_readings_last_sweep_detected_saturation(),
+                           "Expected saturation metadata to flag the forced condition");
 }
 
 static void test_light_readings_sweep_populates_all_fields(void) {
@@ -305,6 +336,7 @@ void setup() {
   RUN_TEST(test_light_readings_initialize_rejects_null_config);
   RUN_TEST(test_light_readings_initialize_parks_router_in_drain_state);
   RUN_TEST(test_light_readings_sweep_requires_initialization);
+  RUN_TEST(test_light_readings_reports_saturation_metadata);
   RUN_TEST(test_light_readings_sweep_populates_all_fields);
   RUN_TEST(test_light_readings_sweep_returns_reasonable_codes);
   RUN_TEST(test_light_readings_sweep_n_requires_initialization);

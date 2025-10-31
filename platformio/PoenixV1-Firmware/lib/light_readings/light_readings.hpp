@@ -136,6 +136,11 @@ int light_readings_compute_sweep_stats(const LightReadingsSweepCollection* sweep
                                        LightReadingsSweepStats*            stats_out);
 
 /**
+ * @brief Report whether the most recent sweep detected ADC saturation.
+ */
+bool light_readings_last_sweep_detected_saturation(void);
+
+/**
  * @brief Release internal state and park the router in a safe configuration.
  */
 int light_readings_shutdown(void);
@@ -144,5 +149,7 @@ int light_readings_shutdown(void);
  * @brief Unit-test hook that clears cached state and counters.
  */
 void light_readings_reset_for_test(void);
+
+void light_readings_force_saturation_for_test(bool enabled);
 
 #endif  // LIGHT_READINGS_HPP
