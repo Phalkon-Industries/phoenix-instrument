@@ -1,6 +1,7 @@
 #include "ad524x.hpp"
 #include "channel_map/channel_map.hpp"
 #include "channel_map/command_parser.hpp"
+#include "light_readings.hpp"
 #include "main.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
@@ -19,6 +20,8 @@ void reset_defaults(void) {
   // Step 1. Clear any prior state and reapply the canonical defaults.
   phoenix_benchmark_channel_map_reset_state();
   phoenix_benchmark_channel_map_initialise(k_defaults);
+  light_readings_reset_for_test();
+  light_readings_force_saturation_for_test(false);
 }
 
 }  // namespace
@@ -31,6 +34,8 @@ void setUp(void) {
 void tearDown(void) {
   // Step 1. Reset residual state so follow-up tests begin cleanly.
   phoenix_benchmark_channel_map_reset_state();
+  light_readings_reset_for_test();
+  light_readings_force_saturation_for_test(false);
 }
 
 static void test_parse_command_accepts_plain_channel_map(void) {
@@ -244,7 +249,7 @@ static void test_channel_map_run_reports_errors(void) {
 
 static void test_channel_map_run_records_saturation_warning(void) {
   // Step 1. Force saturation to test the warning reporting path.
-  phoenix_benchmark_channel_map_set_force_saturation_for_test(true);
+  light_readings_force_saturation_for_test(true);
 
   PhoenixBenchmarkChannelMapOptions options = {
       .sweep_count        = 0u,
@@ -279,7 +284,7 @@ static void test_channel_map_run_records_saturation_warning(void) {
   TEST_ASSERT_GREATER_THAN_UINT32(0u, accumulators[2].channel_a_saturation_count);
   TEST_ASSERT_GREATER_THAN_UINT32(0u, accumulators[2].channel_b_saturation_count);
 
-  phoenix_benchmark_channel_map_set_force_saturation_for_test(false);
+  light_readings_force_saturation_for_test(false);
 }
 
 static void test_channel_map_run_applies_wiper_code(void) {

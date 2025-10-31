@@ -150,12 +150,4 @@ PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_comman
  */
 void phoenix_benchmark_channel_map_reset_state(void);
 
-/**
- * @brief Force synthetic ADC saturation during tests.
- *
- * @param enabled True to clamp future samples to full-scale codes; false to
- * restore normal behavior.
- */
-void phoenix_benchmark_channel_map_set_force_saturation_for_test(bool enabled);
-
 #endif  // PHOENIX_BENCHMARK_CHANNEL_MAP_HPP

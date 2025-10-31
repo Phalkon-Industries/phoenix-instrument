@@ -7,7 +7,6 @@
 #include "light_readings.hpp"
 #include "mcp356x.hpp"
 #include <AD524x.h>
-#include <Adafruit_NeoPixel.h>
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
 #include <SPI.h>
