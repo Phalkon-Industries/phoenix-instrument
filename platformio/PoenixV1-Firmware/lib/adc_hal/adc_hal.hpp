@@ -1,17 +1,18 @@
 #ifndef ADC_HAL_HPP
 #define ADC_HAL_HPP
 
+#include "phoenix_guard.hpp"
 #include <stdint.h>
 
 /**
  * @brief Return codes shared by the generic ADC interface.
  */
-#define ADC_HAL_OK 0
-#define ADC_HAL_ERR_INVALID_ARG -1
-#define ADC_HAL_ERR_NOT_INITIALIZED -2
-#define ADC_HAL_ERR_BACKEND_FAILURE -3
-#define ADC_HAL_ERR_NOT_IMPLEMENTED -4
-#define ADC_HAL_ERR_TIMEOUT -5
+#define ADC_HAL_OK PHX_OK
+#define ADC_HAL_ERR_INVALID_ARG PHX_ERR_INVALID_ARG
+#define ADC_HAL_ERR_NOT_INITIALIZED PHX_ERR_NOT_INITIALIZED
+#define ADC_HAL_ERR_BACKEND_FAILURE PHX_ERR_HARDWARE_FAILURE
+#define ADC_HAL_ERR_NOT_IMPLEMENTED PHX_ERR_NOT_IMPLEMENTED
+#define ADC_HAL_ERR_TIMEOUT PHX_ERR_TIMEOUT
 
 /**
  * @brief Logical ADC channels supported by the abstraction.

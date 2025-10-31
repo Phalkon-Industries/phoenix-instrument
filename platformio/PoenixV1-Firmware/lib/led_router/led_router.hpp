@@ -1,13 +1,14 @@
 #ifndef LED_ROUTER_HPP
 #define LED_ROUTER_HPP
 
+#include "phoenix_guard.hpp"
 #include <stdint.h>
 
 // Return codes for the LED router helper.
-#define LED_ROUTER_OK 0
-#define LED_ROUTER_ERR_INVALID_ARG -1
-#define LED_ROUTER_ERR_NOT_INITIALIZED -2
-#define LED_ROUTER_ERR_INVALID_STATE -3
+#define LED_ROUTER_OK PHX_OK
+#define LED_ROUTER_ERR_INVALID_ARG PHX_ERR_INVALID_ARG
+#define LED_ROUTER_ERR_NOT_INITIALIZED PHX_ERR_NOT_INITIALIZED
+#define LED_ROUTER_ERR_INVALID_STATE (PHX_ERR_MODULE_BASE - 10)
 
 /**
  * @brief Logical routing states for the photodiode LED switch matrix.

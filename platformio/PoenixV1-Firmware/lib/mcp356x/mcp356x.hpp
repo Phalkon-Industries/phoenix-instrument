@@ -1,6 +1,7 @@
 #ifndef MCP356X_HPP
 #define MCP356X_HPP
 
+#include "phoenix_guard.hpp"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -66,12 +67,12 @@
 #define MCP356X_MUX_VCM 0xF
 
 // ===================== Return Codes ============================================
-#define MCP356X_OK 0
-#define MCP356X_ERR_INVALID_ARG -1
-#define MCP356X_ERR_SPI -2
-#define MCP356X_ERR_TIMEOUT -3
-#define MCP356X_ERR_UNSUPPORTED -4
-#define MCP356X_ERR_NOT_INITIALIZED -5
+#define MCP356X_OK PHX_OK
+#define MCP356X_ERR_INVALID_ARG PHX_ERR_INVALID_ARG
+#define MCP356X_ERR_SPI PHX_ERR_COMMUNICATION
+#define MCP356X_ERR_TIMEOUT PHX_ERR_TIMEOUT
+#define MCP356X_ERR_UNSUPPORTED PHX_ERR_UNSUPPORTED
+#define MCP356X_ERR_NOT_INITIALIZED PHX_ERR_NOT_INITIALIZED
 
 // ===================== Minimal Public API =====================================
 // These helpers intentionally mirror the datasheet command encodings and expose

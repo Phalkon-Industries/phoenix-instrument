@@ -30,9 +30,7 @@ static const uint8_t k_instruction_shutdown    = 0x20u;
 
 int ad524x_initialize(uint8_t i2c_address, TwoWire* wire_bus) {
   // Step 1: Reject initialisation with a missing I2C dependency.
-  if (wire_bus == NULL) {
-    return AD524X_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(wire_bus);
 
   // AD0/AD1 strap pins map to addresses 0x2C-0x2F (01011ab). Anything else is a
   // wiring/configuration error that should be surfaced to callers immediately.
@@ -61,9 +59,7 @@ void ad524x_deinitialize(void) {
 
 int ad524x_build_instruction(uint8_t channel, bool midscale, bool shutdown, uint8_t* instruction_out) {
   // Step 1: Guard against missing output storage.
-  if (instruction_out == NULL) {
-    return AD524X_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(instruction_out);
 
   // Step 2: Channels other than 0/1 are not supported on the AD5242 package.
   if (channel > 1u) {
@@ -88,9 +84,7 @@ int ad524x_build_instruction(uint8_t channel, bool midscale, bool shutdown, uint
 
 int ad524x_write_frame(uint8_t instruction, uint8_t data) {
   // Step 1: Ensure the driver was initialised before touching hardware.
-  if (!g_driver_state.initialized) {
-    return AD524X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_driver_state.initialized);
 
   // Step 2: Stage the transaction on the configured I2C address.
   TwoWire* wire = g_driver_state.wire_bus;
@@ -121,14 +115,10 @@ int ad524x_write_frame(uint8_t instruction, uint8_t data) {
 
 int ad524x_read_frame(uint8_t instruction, uint8_t* data_out) {
   // Step 1: Confirm we have somewhere to store the returned byte.
-  if (data_out == NULL) {
-    return AD524X_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(data_out);
 
   // Step 2: All transactions require a prior initialisation call.
-  if (!g_driver_state.initialized) {
-    return AD524X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_driver_state.initialized);
 
   // Step 3: Queue the instruction byte using a repeated-start so we can read the result.
   TwoWire* wire = g_driver_state.wire_bus;
@@ -162,16 +152,11 @@ int ad524x_read_frame(uint8_t instruction, uint8_t* data_out) {
 
 int ad524x_set_wiper(uint8_t channel, uint8_t value) {
   // Step 1: Require initialisation before touching the hardware.
-  if (!g_driver_state.initialized) {
-    return AD524X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_driver_state.initialized);
 
   // Step 2: Build the instruction for the requested channel.
   uint8_t instruction = 0u;
-  int     status      = ad524x_build_instruction(channel, false, false, &instruction);
-  if (status != AD524X_OK) {
-    return status;
-  }
+  GUARD(ad524x_build_instruction(channel, false, false, &instruction));
 
   // Step 3: Dispatch the new wiper value to the device.
   return ad524x_write_frame(instruction, value);
@@ -179,37 +164,25 @@ int ad524x_set_wiper(uint8_t channel, uint8_t value) {
 
 int ad524x_get_wiper(uint8_t channel, uint8_t* value_out) {
   // Step 1: Reject calls lacking storage for the readback value.
-  if (value_out == NULL) {
-    return AD524X_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(value_out);
 
   // Step 2: Ensure the driver has been initialised.
-  if (!g_driver_state.initialized) {
-    return AD524X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_driver_state.initialized);
 
   // Step 3: Build the instruction and issue a read transaction.
   uint8_t instruction = 0u;
-  int     status      = ad524x_build_instruction(channel, false, false, &instruction);
-  if (status != AD524X_OK) {
-    return status;
-  }
+  GUARD(ad524x_build_instruction(channel, false, false, &instruction));
 
   return ad524x_read_frame(instruction, value_out);
 }
 
 int ad524x_set_midscale(uint8_t channel) {
   // Step 1: Ensure the hardware handle was configured.
-  if (!g_driver_state.initialized) {
-    return AD524X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_driver_state.initialized);
 
   // Step 2: Build an instruction that targets the requested channel in midscale mode.
   uint8_t instruction = 0u;
-  int     status      = ad524x_build_instruction(channel, true, false, &instruction);
-  if (status != AD524X_OK) {
-    return status;
-  }
+  GUARD(ad524x_build_instruction(channel, true, false, &instruction));
 
   // Step 3: Write the midscale command; data payload is ignored per datasheet.
   return ad524x_write_frame(instruction, 0x00u);
@@ -217,23 +190,15 @@ int ad524x_set_midscale(uint8_t channel) {
 
 int ad524x_shutdown(uint8_t channel, bool enable) {
   // Step 1: Verify the driver is initialised before issuing commands.
-  if (!g_driver_state.initialized) {
-    return AD524X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_driver_state.initialized);
 
   // Step 2: Capture the current wiper value so shutdown cycles preserve state.
-  uint8_t wiper  = 0u;
-  int     status = ad524x_get_wiper(channel, &wiper);
-  if (status != AD524X_OK) {
-    return status;
-  }
+  uint8_t wiper = 0u;
+  GUARD(ad524x_get_wiper(channel, &wiper));
 
   // Step 3: Construct the shutdown instruction and honour the enable flag.
   uint8_t instruction = 0u;
-  status              = ad524x_build_instruction(channel, false, enable, &instruction);
-  if (status != AD524X_OK) {
-    return status;
-  }
+  GUARD(ad524x_build_instruction(channel, false, enable, &instruction));
 
   // Step 4: Re-send the prior wiper code under the new shutdown configuration.
   return ad524x_write_frame(instruction, wiper);
