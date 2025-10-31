@@ -37,106 +37,105 @@ static void test_parse_command_accepts_plain_command(void) {
 }
 
 static void test_parse_command_supports_key_value_overrides(void) {
-  // Step 1. Provide overrides using key/value tokens.
-  const char* line = "channel_map sweeps=200 dwell_us=75 wiper=0x2A";
+  // Step 1. Provide a sweep override using the key/value syntax.
+  const char* line = "channel_map sweeps=200";
 
   const PhoenixBenchmarkChannelMapParseOutcome outcome =
       phoenix_benchmark_channel_map_parse_command_line(line, k_expected_command);
 
-  // Step 2. Confirm the parser captures each override and clears the error pointer.
-  TEST_ASSERT_TRUE_MESSAGE(outcome.success, "Expected key/value command to parse successfully");
+  // Step 2. Confirm the parser captures the sweep override and leaves other flags untouched.
+  TEST_ASSERT_TRUE_MESSAGE(outcome.success, "Expected sweep override to parse successfully");
   TEST_ASSERT_EQUAL_UINT32(200u, outcome.arguments.sweep_count);
   TEST_ASSERT_TRUE(outcome.arguments.has_sweep_override);
-  TEST_ASSERT_EQUAL_UINT32(75u, outcome.arguments.dwell_us);
-  TEST_ASSERT_TRUE(outcome.arguments.has_dwell_override);
-  TEST_ASSERT_EQUAL_UINT8(0x2Au, outcome.arguments.wiper_code);
-  TEST_ASSERT_TRUE(outcome.arguments.has_wiper_override);
+  TEST_ASSERT_EQUAL_UINT32(0u, outcome.arguments.dwell_us);
+  TEST_ASSERT_FALSE(outcome.arguments.has_dwell_override);
+  TEST_ASSERT_EQUAL_UINT8(0u, outcome.arguments.wiper_code);
+  TEST_ASSERT_FALSE(outcome.arguments.has_wiper_override);
   TEST_ASSERT_NULL(outcome.error_message);
 }
 
-static void test_parse_command_supports_key_value_random_order(void) {
-  // Step 1. Shuffle the key/value tokens and parse the line again.
-  const char* line = "channel_map wiper=0x33 sweeps=175 dwell_us=65";
-
+static void test_parse_command_rejects_key_value_dwell_override(void) {
+  // Step 1. Attempt to provide a dwell override which is no longer supported.
   const PhoenixBenchmarkChannelMapParseOutcome outcome =
-      phoenix_benchmark_channel_map_parse_command_line(line, k_expected_command);
+      phoenix_benchmark_channel_map_parse_command_line("channel_map dwell_us=50", k_expected_command);
 
-  // Step 2. Expect the overrides to match regardless of argument order.
-  TEST_ASSERT_TRUE_MESSAGE(outcome.success, "Expected key/value command with random order to succeed");
-  TEST_ASSERT_EQUAL_UINT32(175u, outcome.arguments.sweep_count);
-  TEST_ASSERT_TRUE(outcome.arguments.has_sweep_override);
-  TEST_ASSERT_EQUAL_UINT32(65u, outcome.arguments.dwell_us);
-  TEST_ASSERT_TRUE(outcome.arguments.has_dwell_override);
-  TEST_ASSERT_EQUAL_UINT8(0x33u, outcome.arguments.wiper_code);
-  TEST_ASSERT_TRUE(outcome.arguments.has_wiper_override);
-  TEST_ASSERT_NULL(outcome.error_message);
+  // Step 2. Expect the parser to reject the command and surface the unknown argument error.
+  TEST_ASSERT_FALSE_MESSAGE(outcome.success, "Dwell override should be rejected");
+  TEST_ASSERT_NOT_NULL(outcome.error_message);
+  TEST_ASSERT_EQUAL_STRING(k_phoenix_benchmark_channel_map_error_unknown_argument, outcome.error_message);
+}
+
+static void test_parse_command_rejects_key_value_wiper_override(void) {
+  // Step 1. Attempt to provide a wiper override which is no longer supported.
+  const PhoenixBenchmarkChannelMapParseOutcome outcome =
+      phoenix_benchmark_channel_map_parse_command_line("channel_map wiper=0x20", k_expected_command);
+
+  // Step 2. Expect the parser to reject the command and surface the unknown argument error.
+  TEST_ASSERT_FALSE_MESSAGE(outcome.success, "Wiper override should be rejected");
+  TEST_ASSERT_NOT_NULL(outcome.error_message);
+  TEST_ASSERT_EQUAL_STRING(k_phoenix_benchmark_channel_map_error_unknown_argument, outcome.error_message);
 }
 
 static void test_parse_command_accepts_json_payload(void) {
-  // Step 1. Supply a JSON payload containing numeric fields.
-  const char* line = "{\"command\":\"channel_map\",\"sweeps\":150,\"dwell_us\":60,\"wiper_code\":0x05}";
+  // Step 1. Supply a JSON payload containing the sweep override.
+  const char* line = "{\"command\":\"channel_map\",\"sweeps\":150}";
 
   const PhoenixBenchmarkChannelMapParseOutcome outcome =
       phoenix_benchmark_channel_map_parse_command_line(line, k_expected_command);
 
-  // Step 2. Verify the JSON path decodes each override.
+  // Step 2. Verify the JSON path decodes the sweep override only.
   TEST_ASSERT_TRUE_MESSAGE(outcome.success, "Expected JSON payload to parse successfully");
   TEST_ASSERT_EQUAL_UINT32(150u, outcome.arguments.sweep_count);
   TEST_ASSERT_TRUE(outcome.arguments.has_sweep_override);
-  TEST_ASSERT_EQUAL_UINT32(60u, outcome.arguments.dwell_us);
-  TEST_ASSERT_TRUE(outcome.arguments.has_dwell_override);
-  TEST_ASSERT_EQUAL_UINT8(0x05u, outcome.arguments.wiper_code);
-  TEST_ASSERT_TRUE(outcome.arguments.has_wiper_override);
+  TEST_ASSERT_EQUAL_UINT32(0u, outcome.arguments.dwell_us);
+  TEST_ASSERT_FALSE(outcome.arguments.has_dwell_override);
+  TEST_ASSERT_EQUAL_UINT8(0u, outcome.arguments.wiper_code);
+  TEST_ASSERT_FALSE(outcome.arguments.has_wiper_override);
   TEST_ASSERT_NULL(outcome.error_message);
 }
 
-static void test_parse_command_accepts_json_with_random_order(void) {
-  // Step 1. Shuffle JSON keys to ensure ordering does not matter.
-  const char* line = "{\"wiper_code\":0x09,\"dwell_us\":80,\"command\":\"channel_map\",\"sweeps\":40}";
-
-  const PhoenixBenchmarkChannelMapParseOutcome outcome =
-      phoenix_benchmark_channel_map_parse_command_line(line, k_expected_command);
-
-  // Step 2. Confirm the parser still succeeds and sets the expected overrides.
-  TEST_ASSERT_TRUE_MESSAGE(outcome.success, "Expected JSON with shuffled keys to parse successfully");
-  TEST_ASSERT_EQUAL_UINT32(40u, outcome.arguments.sweep_count);
-  TEST_ASSERT_TRUE(outcome.arguments.has_sweep_override);
-  TEST_ASSERT_EQUAL_UINT32(80u, outcome.arguments.dwell_us);
-  TEST_ASSERT_TRUE(outcome.arguments.has_dwell_override);
-  TEST_ASSERT_EQUAL_UINT8(0x09u, outcome.arguments.wiper_code);
-  TEST_ASSERT_TRUE(outcome.arguments.has_wiper_override);
-  TEST_ASSERT_NULL(outcome.error_message);
-}
-
-static void test_parse_command_rejects_json_with_unknown_arguments(void) {
-  // Step 1. Include an unexpected key in the JSON payload.
-  const char* line = "{\"command\":\"channel_map\",\"sweeps\":10,\"dwell_us\":25,\"wiper_code\":0x04,\"extra\":1}";
+static void test_parse_command_rejects_json_with_dwell_override(void) {
+  // Step 1. Include a dwell override in the JSON payload which should be rejected.
+  const char* line = "{\"command\":\"channel_map\",\"sweeps\":10,\"dwell_us\":25}";
 
   const PhoenixBenchmarkChannelMapParseOutcome outcome =
       phoenix_benchmark_channel_map_parse_command_line(line, k_expected_command);
 
   // Step 2. Expect a failure and confirm the error message references unknown arguments.
-  TEST_ASSERT_FALSE_MESSAGE(outcome.success, "JSON with unknown key should fail");
+  TEST_ASSERT_FALSE_MESSAGE(outcome.success, "JSON dwell override should fail");
+  TEST_ASSERT_NOT_NULL(outcome.error_message);
+  TEST_ASSERT_EQUAL_STRING(k_phoenix_benchmark_channel_map_error_unknown_argument, outcome.error_message);
+}
+
+static void test_parse_command_rejects_json_with_wiper_override(void) {
+  // Step 1. Include a wiper override in the JSON payload which should be rejected.
+  const char* line = "{\"command\":\"channel_map\",\"sweeps\":10,\"wiper_code\":0x2A}";
+
+  const PhoenixBenchmarkChannelMapParseOutcome outcome =
+      phoenix_benchmark_channel_map_parse_command_line(line, k_expected_command);
+
+  // Step 2. Expect a failure and confirm the error message references unknown arguments.
+  TEST_ASSERT_FALSE_MESSAGE(outcome.success, "JSON wiper override should fail");
   TEST_ASSERT_NOT_NULL(outcome.error_message);
   TEST_ASSERT_EQUAL_STRING(k_phoenix_benchmark_channel_map_error_unknown_argument, outcome.error_message);
 }
 
 static void test_parse_command_rejects_json_with_missing_arguments(void) {
-  // Step 1. Remove a required field from the JSON payload.
-  const char* line = "{\"command\":\"channel_map\",\"sweeps\":25,\"dwell_us\":45}";
+  // Step 1. Remove the required sweeps field from the JSON payload.
+  const char* line = "{\"command\":\"channel_map\"}";
 
   const PhoenixBenchmarkChannelMapParseOutcome outcome =
       phoenix_benchmark_channel_map_parse_command_line(line, k_expected_command);
 
-  // Step 2. Confirm the parser indicates a missing argument error.
-  TEST_ASSERT_FALSE_MESSAGE(outcome.success, "JSON missing required fields should fail");
-  TEST_ASSERT_NOT_NULL(outcome.error_message);
-  TEST_ASSERT_EQUAL_STRING(k_phoenix_benchmark_channel_map_error_missing_argument, outcome.error_message);
+  // Step 2. Confirm the parser falls back to defaults when sweeps are omitted.
+  TEST_ASSERT_TRUE_MESSAGE(outcome.success, "JSON without sweeps should use defaults");
+  assert_no_overrides(outcome.arguments);
+  TEST_ASSERT_NULL(outcome.error_message);
 }
 
 static void test_parse_command_rejects_json_with_invalid_value_types(void) {
   // Step 1. Encode a non-numeric sweeps value in the JSON payload.
-  const char* line = "{\"command\":\"channel_map\",\"sweeps\":\"NaN\",\"dwell_us\":60,\"wiper_code\":0x03}";
+  const char* line = "{\"command\":\"channel_map\",\"sweeps\":\"NaN\"}";
 
   const PhoenixBenchmarkChannelMapParseOutcome outcome =
       phoenix_benchmark_channel_map_parse_command_line(line, k_expected_command);
@@ -171,8 +170,8 @@ static void test_parse_command_rejects_malformed_key_value_token(void) {
 
 static void test_parse_command_rejects_key_value_with_invalid_value(void) {
   // Step 1. Provide a non-numeric value for a numeric override.
-  const PhoenixBenchmarkChannelMapParseOutcome outcome = phoenix_benchmark_channel_map_parse_command_line(
-      "channel_map sweeps=ten dwell_us=50 wiper=0x05", k_expected_command);
+  const PhoenixBenchmarkChannelMapParseOutcome outcome =
+      phoenix_benchmark_channel_map_parse_command_line("channel_map sweeps=ten", k_expected_command);
 
   // Step 2. Confirm the parser rejects the command and reports the invalid value.
   TEST_ASSERT_FALSE_MESSAGE(outcome.success, "Non-numeric value should fail parsing");
@@ -209,10 +208,11 @@ void setup() {
   // Step 2. Execute all command parser scenarios.
   RUN_TEST(test_parse_command_accepts_plain_command);
   RUN_TEST(test_parse_command_supports_key_value_overrides);
-  RUN_TEST(test_parse_command_supports_key_value_random_order);
+  RUN_TEST(test_parse_command_rejects_key_value_dwell_override);
+  RUN_TEST(test_parse_command_rejects_key_value_wiper_override);
   RUN_TEST(test_parse_command_accepts_json_payload);
-  RUN_TEST(test_parse_command_accepts_json_with_random_order);
-  RUN_TEST(test_parse_command_rejects_json_with_unknown_arguments);
+  RUN_TEST(test_parse_command_rejects_json_with_dwell_override);
+  RUN_TEST(test_parse_command_rejects_json_with_wiper_override);
   RUN_TEST(test_parse_command_rejects_json_with_missing_arguments);
   RUN_TEST(test_parse_command_rejects_json_with_invalid_value_types);
   RUN_TEST(test_parse_command_rejects_unknown_arguments);

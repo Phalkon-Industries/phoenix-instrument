@@ -14,7 +14,7 @@ def tmp_plan(tmp_path: Path) -> Path:
         "commands": [
             {
                 "command": "channel_map",
-                "parameters": {"sweeps": 25, "dwell_us": 100, "wiper_code": 180},
+                "parameters": {"sweeps": 25},
             },
             {"command": "unimplemented", "parameters": {"note": "placeholder"}},
         ]
@@ -31,7 +31,7 @@ def test_load_command_plan_normalizes_channel_map(tmp_plan: Path) -> None:
     first = commands[0]
     assert isinstance(first, BenchmarkCommand)
     assert first.name == "channel_map"
-    assert first.parameters == {"sweeps": 25, "dwell_us": 100, "wiper_code": 180}
+    assert first.parameters == {"sweeps": 25}
 
     # Unknown commands should round-trip their payload for future expansion
     second = commands[1]
@@ -50,14 +50,32 @@ def test_load_command_plan_rejects_invalid_entries(tmp_path: Path) -> None:
         load_command_plan(plan_path)
 
 
-def test_load_command_plan_rejects_invalid_wiper(tmp_path: Path) -> None:
+def test_load_command_plan_rejects_channel_map_wiper_override(tmp_path: Path) -> None:
     plan_path = tmp_path / "bad_wiper.json"
     plan_path.write_text(
         json.dumps(
             [
                 {
                     "command": "channel_map",
-                    "parameters": {"sweeps": 10, "wiper_code": 300},
+                    "parameters": {"sweeps": 10, "wiper_code": 150},
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_command_plan(plan_path)
+
+
+def test_load_command_plan_rejects_channel_map_dwell_override(tmp_path: Path) -> None:
+    plan_path = tmp_path / "bad_dwell.json"
+    plan_path.write_text(
+        json.dumps(
+            [
+                {
+                    "command": "channel_map",
+                    "parameters": {"sweeps": 10, "dwell_us": 500},
                 }
             ]
         ),

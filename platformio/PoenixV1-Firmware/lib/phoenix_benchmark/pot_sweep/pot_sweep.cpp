@@ -84,8 +84,8 @@ struct ChannelMapTemplateResult {
 
 ChannelMapTemplateResult load_channel_map_template(void) {
   // Step 1: Attempt to clone the live channel-map defaults so we mirror current settings.
-  const PhoenixBenchmarkChannelMapParseResult parse_result = phoenix_benchmark_channel_map_parse_command(
-      "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":1,\"wiper_code\":0}}");
+  const PhoenixBenchmarkChannelMapParseResult parse_result =
+      phoenix_benchmark_channel_map_parse_command("{\"command\":\"channel_map\"}");
   if (parse_result.success) {
     PhoenixBenchmarkChannelMapOptions baseline = parse_result.options;
     baseline.has_sweep_override                = false;

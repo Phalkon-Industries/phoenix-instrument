@@ -24,6 +24,7 @@ LABEL_WIDTH = 8
 SAMPLES_WIDTH = 9
 CHANNEL_WIDTH = 12
 MAP_WIDTH = 12
+WARNING_WIDTH = 14
 POT_SWEEP_SATURATION_THRESHOLD = 7_549_746
 DWELL_VARIANCE_THRESHOLD = 0.75
 DWELL_SATURATION_MASK = 0x01
@@ -72,6 +73,7 @@ class SummaryRow:
     min_channel_b: float | None
     max_channel_b: float | None
     channel_alignment: str | None
+    warning_label: str | None
     has_channel_metrics: bool
 
     def to_dict(self) -> dict[str, object]:
@@ -87,6 +89,7 @@ class SummaryRow:
             "min_channel_b": self.min_channel_b,
             "max_channel_b": self.max_channel_b,
             "channel_alignment": self.channel_alignment,
+            "warning_label": self.warning_label,
             "has_channel_metrics": self.has_channel_metrics,
         }
 
@@ -1092,7 +1095,9 @@ def _decode_dwell_warning_mask(mask: int) -> str:
 
 
 def _parse_summary_row(line: str) -> SummaryRow:
-    padded = line.ljust(LABEL_WIDTH + SAMPLES_WIDTH + 8 * CHANNEL_WIDTH + MAP_WIDTH)
+    padded = line.ljust(
+        LABEL_WIDTH + SAMPLES_WIDTH + 8 * CHANNEL_WIDTH + MAP_WIDTH + WARNING_WIDTH
+    )
     cursor = 0
 
     def slice_field(width: int) -> str:
@@ -1107,6 +1112,7 @@ def _parse_summary_row(line: str) -> SummaryRow:
 
     channel_values = [slice_field(CHANNEL_WIDTH) for _ in range(8)]
     alignment = slice_field(MAP_WIDTH)
+    warning_field = slice_field(WARNING_WIDTH)
 
     floats = [_parse_float(value) for value in channel_values]
     mean_a, std_a, min_a, max_a, mean_b, std_b, min_b, max_b = floats
@@ -1125,6 +1131,7 @@ def _parse_summary_row(line: str) -> SummaryRow:
         min_channel_b=min_b,
         max_channel_b=max_b,
         channel_alignment=alignment if alignment else None,
+        warning_label=warning_field if warning_field else None,
         has_channel_metrics=has_channel_metrics,
     )
 
@@ -1761,6 +1768,7 @@ def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
         "Min B",
         "Max B",
         "Channel map",
+        "Warnings",
     ]
     table = [
         "| " + " | ".join(headers) + " |",
@@ -1780,6 +1788,7 @@ def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
             _format_optional_float(row.min_channel_b),
             _format_optional_float(row.max_channel_b),
             _format_optional_text(row.channel_alignment),
+            _format_optional_text(row.warning_label),
         ]
         table.append("| " + " | ".join(values) + " |")
 

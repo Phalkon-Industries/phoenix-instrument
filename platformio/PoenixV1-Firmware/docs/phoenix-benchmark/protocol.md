@@ -15,15 +15,17 @@ This document tracks the evolving host ↔ firmware contract. Beginning with Pha
 
 Requests a single sweep that identifies which ADC channel responds to each LED state.
 
-| Field      | Type    | Required | Notes                                                                                    |
-| ---------- | ------- | -------- | ---------------------------------------------------------------------------------------- |
-| `sweeps`   | integer | yes      | Number of complete Drain → LED1 → LED2 cycles to capture. Must be positive.              |
-| `dwell_us` | integer | no       | Optional microsecond dwell override per state. When omitted, firmware defaults are used. |
+| Field    | Type    | Required | Notes                                                                       |
+| -------- | ------- | -------- | --------------------------------------------------------------------------- |
+| `sweeps` | integer | yes      | Number of complete Drain → LED1 → LED2 cycles to capture. Must be positive. |
+
+Channel-map inherits dwell timing and potentiometer settings from the device configuration. Any attempt to provide
+`dwell_us` or `wiper_code` arguments is rejected by the command parser so the sweep matches the light readings defaults.
 
 **Example**
 
 ```json
-{"command": "channel_map", "parameters": {"sweeps": 100, "dwell_us": 100}}
+{"command": "channel_map", "parameters": {"sweeps": 100}}
 ```
 
 ### `adc_speed`
@@ -133,7 +135,7 @@ The CLI translates `nan` tokens into `None` values, persists the aligned samples
 1. Operator invokes the CLI with a plan file. The CLI prints a numbered preview of the JSON lines that will be transmitted.
 2. When `--port` is provided (non dry-run), the CLI opens the serial port at 115200 baud, waits for the firmware's `# phoenix benchmark ready` + `# ready` banner, and stores every line it receives in a transcript buffer while echoing it to stdout.
 3. Each queued command is streamed verbatim as one JSON line followed by `\n`. The firmware's command loop trims the newline, dispatches to the scenario-specific parser (`phoenix_benchmark_channel_map_parse_command`, `phoenix_benchmark_osr_sweep_parse_command`, `phoenix_benchmark_dwell_sweep_parse_command`, `phoenix_benchmark_pot_sweep_parse_command`, or `phoenix_benchmark_adc_speed_parse_command`), and executes the request. Unsupported identifiers emit `# error,unsupported_command` before the dispatcher returns to idle.
-4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit the legacy per-state table; OSR sweeps emit one row per oversampling preset alongside runtime metrics; dwell sweeps emit one row per dwell window with variance, timing, and warning masks; pot sweeps emit wiper recommendations and saturation flags; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
+4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit a per-state table with channel statistics, alignment verdicts, and a new `Warnings` column that reports saturation notices; OSR sweeps emit one row per oversampling preset alongside runtime metrics; dwell sweeps emit one row per dwell window with variance, timing, and warning masks; pot sweeps emit wiper recommendations and saturation flags; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
 5. After each `# benchmark_complete` line, the firmware prints a fresh `# ready` prompt. The CLI stays attached until the plan is exhausted, then persists the transcript, parses every captured table (including the drift-capture metadata/results block), and produces a Markdown report with scenario-tagged sections inside the selected output directory. Artifact file names now embed the scenario list to aid long-term archiving (e.g., `transcript_channel_map_drift_capture_osr_sweep_adc_speed.txt`).
 
 ## Host Expectations
@@ -150,4 +152,4 @@ The CLI translates `nan` tokens into `None` values, persists the aligned samples
 - During Phase 1, channel-to-LED association is reported in the summary table via the new `Channel_Map` column:
   - `A=OK` or `B=OK` indicates that the observed dominant ADC channel matches the expected LED routing.
   - `B!=A`, `A!=B`, or `??!=A/B` highlight mismatches or ambiguous responses.
-- Min/max ADC codes are now included per channel so host automation can surface saturation without parsing the streamed CSV. OSR sweeps report per-preset drain/LED statistics plus sweep timing; dwell sweeps report per-dwell variance, warning masks, and runtime; pot sweeps report LED-specific saturation flags and recommended wiper codes; throughput runs report samples-per-second, loop timing, and ADC error counts per enabled mode; drift captures flag warning masks alongside aligned LED timelines; warnings surface via the `Notes`, `Warning Mask`, or drift warning columns when issues occur.
+- Min/max ADC codes are now included per channel so host automation can surface saturation without parsing the streamed CSV. Channel-map summary rows also embed a `Warnings` column sourced from the saturation detector; OSR sweeps report per-preset drain/LED statistics plus sweep timing; dwell sweeps report per-dwell variance, warning masks, and runtime; pot sweeps report LED-specific saturation flags and recommended wiper codes; throughput runs report samples-per-second, loop timing, and ADC error counts per enabled mode; drift captures flag warning masks alongside aligned LED timelines; warnings surface via the `Warnings`, `Notes`, `Warning Mask`, or drift warning columns when issues occur.

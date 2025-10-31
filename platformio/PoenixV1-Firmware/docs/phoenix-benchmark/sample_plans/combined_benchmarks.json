@@ -3,9 +3,7 @@
         {
             "command": "channel_map",
             "parameters": {
-                "sweeps": 50,
-                "dwell_us": 100,
-                "wiper_code": 223
+                "sweeps": 50
             }
         },
         {

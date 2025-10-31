@@ -130,17 +130,14 @@ static void test_format_channel_alignment_label_formats_mismatch_note(void) {
 }
 
 static void test_parse_channel_map_command_extracts_parameters(void) {
-  // Step 1: Provide a JSON command with explicit dwell and wiper overrides.
-  const char* command_line =
-      "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":25,\"dwell_us\":75,\"wiper_code\":120}}";
-  PhoenixBenchmarkChannelMapRequest request = {};
-  // Step 2: Parse the command and validate each captured field.
+  // Step 1: Provide a JSON command that only specifies the sweep count override.
+  const char*                       command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":25}}";
+  PhoenixBenchmarkChannelMapRequest request      = {};
+  // Step 2: Parse the command and validate the sweep override while confirming optional fields stay unset.
   TEST_ASSERT_TRUE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
   TEST_ASSERT_EQUAL_UINT32(25u, request.sweep_count);
-  TEST_ASSERT_TRUE(request.has_dwell_override);
-  TEST_ASSERT_EQUAL_UINT32(75u, request.dwell_us);
-  TEST_ASSERT_TRUE(request.has_wiper_override);
-  TEST_ASSERT_EQUAL_UINT8(120u, request.wiper_code);
+  TEST_ASSERT_FALSE(request.has_dwell_override);
+  TEST_ASSERT_FALSE(request.has_wiper_override);
 }
 
 static void test_parse_channel_map_command_treats_missing_dwell_as_default(void) {
@@ -154,11 +151,11 @@ static void test_parse_channel_map_command_treats_missing_dwell_as_default(void)
   TEST_ASSERT_FALSE(request.has_wiper_override);
 }
 
-static void test_parse_channel_map_command_rejects_out_of_range_wiper(void) {
-  // Step 1: Attempt to parse a command whose wiper code exceeds the allowed range.
-  const char* command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":5,\"wiper_code\":300}}";
+static void test_parse_channel_map_command_rejects_wiper_override(void) {
+  // Step 1: Attempt to parse a command that now includes a disallowed wiper override.
+  const char* command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":5,\"wiper_code\":42}}";
   PhoenixBenchmarkChannelMapRequest request = {};
-  // Step 2: Expect the helper to reject the payload.
+  // Step 2: Expect the helper to reject the payload because wiper overrides are no longer supported.
   TEST_ASSERT_FALSE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
 }
 
@@ -167,6 +164,14 @@ static void test_parse_channel_map_command_rejects_invalid_payload(void) {
   const char*                       command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":0}}";
   PhoenixBenchmarkChannelMapRequest request      = {};
   // Step 2: Confirm the parser reports failure when validation fails.
+  TEST_ASSERT_FALSE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
+}
+
+static void test_parse_channel_map_command_rejects_dwell_override(void) {
+  // Step 1: Attempt to parse a command that tries to override dwell time.
+  const char* command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":4,\"dwell_us\":50}}";
+  PhoenixBenchmarkChannelMapRequest request = {};
+  // Step 2: Confirm the parser rejects unsupported dwell overrides.
   TEST_ASSERT_FALSE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
 }
 
@@ -1167,8 +1172,9 @@ void setup() {
   RUN_TEST(test_format_channel_alignment_label_formats_mismatch_note);
   RUN_TEST(test_parse_channel_map_command_extracts_parameters);
   RUN_TEST(test_parse_channel_map_command_treats_missing_dwell_as_default);
-  RUN_TEST(test_parse_channel_map_command_rejects_out_of_range_wiper);
+  RUN_TEST(test_parse_channel_map_command_rejects_wiper_override);
   RUN_TEST(test_parse_channel_map_command_rejects_invalid_payload);
+  RUN_TEST(test_parse_channel_map_command_rejects_dwell_override);
   RUN_TEST(test_drift_capture_options_apply_defaults_inherit_initialised_values);
   RUN_TEST(test_drift_capture_options_validate_rejects_inverted_range);
   RUN_TEST(test_drift_capture_options_validate_rejects_schedule_exceeding_buffer);

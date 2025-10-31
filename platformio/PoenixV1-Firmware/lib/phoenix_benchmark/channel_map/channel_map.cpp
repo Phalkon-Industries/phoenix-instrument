@@ -13,9 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <device_setup.hpp>
-
-static constexpr uint8_t     k_digipot_channels[]    = {0u, 1u};
-static constexpr std::size_t k_digipot_channel_count = sizeof(k_digipot_channels) / sizeof(k_digipot_channels[0]);
+#include <limits>
 
 static constexpr PhoenixBenchmarkChannelMapStateDescriptor
     k_state_descriptors[k_phoenix_benchmark_channel_map_state_descriptor_count] = {
@@ -58,17 +56,6 @@ static void emit_line(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks
   }
 }
 
-static bool apply_wiper_code(uint8_t wiper_code) {
-  for (std::size_t index = 0; index < k_digipot_channel_count; ++index) {
-    // Step 1: Program each digi-pot channel so brightness adjustments stay consistent across both LEDs.
-    const int return_code = ad524x_set_wiper(k_digipot_channels[index], wiper_code);
-    if (return_code != AD524X_OK) {
-      return false;
-    }
-  }
-  return true;
-}
-
 static bool ensure_hardware_ready(void) {
   // Step 1: Power the analog front-end before attempting any measurements.
   const int power_return_code = power_control_prepare_power_domains(&g_power_control_config);
@@ -81,57 +68,36 @@ static bool ensure_hardware_ready(void) {
   return router_return_code == LED_ROUTER_OK;
 }
 
-static void accumulate_channel_measurement(PhoenixBenchmarkStateAccumulator& accumulator, bool for_channel_a,
-                                           int32_t code) {
-  // Step 1: Update running statistics for the selected channel with the latest ADC code.
-  if (for_channel_a) {
-    accumulator.channel_a_codes.update(code);
-  }
-  else {
-    accumulator.channel_b_codes.update(code);
-  }
-
-  // Step 2: Track saturation metadata so summaries can report warnings.
-  if (phoenix_benchmark_is_adc_code_saturated(code)) {
-    if (for_channel_a) {
-      ++accumulator.channel_a_saturation_count;
-    }
-    else {
-      ++accumulator.channel_b_saturation_count;
-    }
-  }
-}
-
-static void populate_accumulators_from_sweeps(const LightReadingsSweepCollection& collection,
-                                              PhoenixBenchmarkStateAccumulator*   accumulators) {
-  // Step 1: Fold each sweep sample into the drain, LED1, and LED2 accumulators.
-  for (uint32_t index = 0u; index < collection.sweep_count; ++index) {
-    const LightReadingsSweepSample& sample = collection.sweeps[index];
-
-    accumulate_channel_measurement(accumulators[k_phoenix_benchmark_channel_map_drain_state_index], true,
-                                   sample.drain_blue_code);
-    accumulate_channel_measurement(accumulators[k_phoenix_benchmark_channel_map_drain_state_index], false,
-                                   sample.drain_green_code);
-
-    accumulate_channel_measurement(accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u], true,
-                                   sample.blue_code);
-    // Step 2: Reuse the drain value for the non-routed channel so statistics still capture baseline behaviour.
-    accumulate_channel_measurement(accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u], false,
-                                   sample.drain_green_code);
-
-    // Step 3: Mirror the approach for the LED2 path, keeping channel A anchored to the drain baseline.
-    accumulate_channel_measurement(accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u], true,
-                                   sample.drain_blue_code);
-    accumulate_channel_measurement(accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u], false,
-                                   sample.green_code);
-  }
-}
-
 static void reset_accumulators(PhoenixBenchmarkStateAccumulator* accumulators) {
   for (std::size_t index = 0; index < k_accumulator_count; ++index) {
     // Step 1: Clear each accumulator so a new sweep starts from a blank slate.
     accumulators[index] = PhoenixBenchmarkStateAccumulator{};
   }
+}
+
+static void populate_running_stats_from_summary(const LightReadingsStatisticSummary&   summary,
+                                                PhoenixBenchmarkRunningStats<int32_t>& stats) {
+  stats.count = summary.sample_count;
+
+  if (!summary.has_samples) {
+    stats.mean      = 0.0;
+    stats.m2        = 0.0;
+    stats.min_value = std::numeric_limits<int32_t>::max();
+    stats.max_value = std::numeric_limits<int32_t>::lowest();
+    return;
+  }
+
+  stats.mean = summary.mean;
+  if (summary.sample_count > 1u) {
+    const double variance = summary.standard_deviation * summary.standard_deviation;
+    stats.m2              = variance * static_cast<double>(summary.sample_count - 1u);
+  }
+  else {
+    stats.m2 = 0.0;
+  }
+
+  stats.min_value = summary.min_value;
+  stats.max_value = summary.max_value;
 }
 
 void PhoenixBenchmarkChannelMapOptions::apply_defaults(const PhoenixBenchmarkChannelMapDefaults& defaults) {
@@ -206,12 +172,25 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
     return {false, PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE, k_error_hardware_failure, false};
   }
 
-  // Step 4: Clone the device light readings configuration so dwell overrides can be applied per run.
-  LightReadingsConfig light_config    = g_device_light_readings_config;
-  light_config.blue_channel.dwell_us  = options.dwell_us;
-  light_config.green_channel.dwell_us = options.dwell_us;
+  // Step 4: Clone the device light readings configuration and apply overrides when present.
+  LightReadingsConfig light_config = g_device_light_readings_config;
+  if (options.has_dwell_override) {
+    light_config.blue_channel.dwell_us  = options.dwell_us;
+    light_config.green_channel.dwell_us = options.dwell_us;
+  }
+  else {
+    options.dwell_us = light_config.blue_channel.dwell_us;
+  }
 
-  // Step 5: Bring the light readings helper online using the requested dwell schedule.
+  if (options.has_wiper_override) {
+    light_config.blue_channel.wiper_code  = options.wiper_code;
+    light_config.green_channel.wiper_code = options.wiper_code;
+  }
+  else {
+    options.wiper_code = light_config.blue_channel.wiper_code;
+  }
+
+  // Step 5: Bring the light readings helper online using the configured schedule.
   bool light_readings_initialised = false;
   if (light_readings_initialize(&light_config) != LIGHT_READINGS_OK) {
     emit_line(callbacks, "# channel_map,error=light_readings_initialisation_failed");
@@ -230,14 +209,7 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
   reset_accumulators(accumulators);
   g_last_sample_error = nullptr;
 
-  // Step 7: Apply the requested digipot wiper override before sampling.
-  if (!apply_wiper_code(options.wiper_code)) {
-    emit_line(callbacks, "# channel_map,error=ad524x_failure");
-    shutdown_light_readings();
-    return {false, PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE, k_error_hardware_failure, false};
-  }
-
-  // Step 8: Execute the requested sweep count through the light readings helper.
+  // Step 7: Execute the requested sweep count through the light readings helper.
   LightReadingsSweepCollection sweep_collection = {
       .sweep_count = 0u,
       .sweeps      = g_light_readings_sweep_storage,
@@ -251,20 +223,32 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
     return {false, PHOENIX_BENCHMARK_ERR_SAMPLING_FAILURE, message, false};
   }
 
-  // Step 9: Translate the captured samples into per-state statistics.
-  populate_accumulators_from_sweeps(sweep_collection, accumulators);
-
-  // Step 10: Determine whether any saturation was detected during the sweep.
-  bool run_has_warnings = light_readings_last_sweep_detected_saturation();
-  if (!run_has_warnings) {
-    for (std::size_t index = 0u; index < k_accumulator_count; ++index) {
-      const PhoenixBenchmarkStateAccumulator& accumulator = accumulators[index];
-      if ((accumulator.channel_a_saturation_count > 0u) || (accumulator.channel_b_saturation_count > 0u)) {
-        run_has_warnings = true;
-        break;
-      }
-    }
+  // Step 8: Translate the captured samples into per-state statistics using the light readings helper.
+  LightReadingsSweepStats sweep_stats       = {};
+  const int               stats_return_code = light_readings_compute_sweep_stats(&sweep_collection, &sweep_stats);
+  if (stats_return_code != LIGHT_READINGS_OK) {
+    emit_line(callbacks, "# channel_map,error=statistics_failed");
+    shutdown_light_readings();
+    return {false, PHOENIX_BENCHMARK_ERR_SAMPLING_FAILURE, k_error_sampling_failure, false};
   }
+
+  populate_running_stats_from_summary(sweep_stats.drain_blue,
+                                      accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_a_codes);
+  populate_running_stats_from_summary(sweep_stats.drain_green,
+                                      accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_b_codes);
+
+  populate_running_stats_from_summary(
+      sweep_stats.blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_a_codes);
+  populate_running_stats_from_summary(
+      sweep_stats.drain_green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_b_codes);
+
+  populate_running_stats_from_summary(
+      sweep_stats.drain_blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_a_codes);
+  populate_running_stats_from_summary(
+      sweep_stats.green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_b_codes);
+
+  // Step 9: Determine whether any saturation was detected during the sweep.
+  bool run_has_warnings = light_readings_last_sweep_detected_saturation();
 
   g_last_sample_error = run_has_warnings ? k_error_adc_saturation : nullptr;
 

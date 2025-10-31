@@ -3,6 +3,7 @@
 #include "adc_speed/adc_speed_command_parser.hpp"
 #include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map.hpp"
+#include "device_setup.hpp"
 #include "drift_capture/drift_capture.hpp"
 #include "dwell_sweep/dwell_sweep.hpp"
 #include "dwell_sweep/dwell_sweep_formatter.hpp"

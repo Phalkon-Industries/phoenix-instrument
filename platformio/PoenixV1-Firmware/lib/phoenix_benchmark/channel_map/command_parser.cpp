@@ -122,6 +122,13 @@ bool parse_key_value_arguments(const char* line, const char* expected_command,
     }
 
     if (std::strcmp(key, "dwell_us") == 0) {
+      if ((expected_command != nullptr) && (std::strcmp(expected_command, "channel_map") == 0)) {
+        if (error_message != nullptr) {
+          *error_message = k_phoenix_benchmark_channel_map_error_unknown_argument;
+        }
+        return false;
+      }
+
       uint32_t dwell = 0u;
       if (!parse_unsigned_value(value, 10, &dwell, nullptr)) {
         if (error_message != nullptr) {
@@ -135,6 +142,13 @@ bool parse_key_value_arguments(const char* line, const char* expected_command,
     }
 
     if ((std::strcmp(key, "wiper") == 0) || (std::strcmp(key, "wiper_code") == 0)) {
+      if ((expected_command != nullptr) && (std::strcmp(expected_command, "channel_map") == 0)) {
+        if (error_message != nullptr) {
+          *error_message = k_phoenix_benchmark_channel_map_error_unknown_argument;
+        }
+        return false;
+      }
+
       uint32_t wiper_value = 0u;
       if (!parse_unsigned_value(value, 0, &wiper_value, nullptr) || (wiper_value > 0xFFu)) {
         if (error_message != nullptr) {
@@ -175,7 +189,11 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
   }
   ++cursor;
 
-  const bool allow_optional_arguments = (std::strcmp(expected_command, "osr_sweep") == 0);
+  const bool is_osr_sweep          = (expected_command != nullptr) && (std::strcmp(expected_command, "osr_sweep") == 0);
+  const bool allow_dwell_overrides = is_osr_sweep;
+  const bool allow_wiper_overrides = is_osr_sweep;
+  const bool require_sweeps_argument = false;
+  const bool require_wiper_argument  = false;
 
   bool saw_command = false;
   bool saw_sweeps  = false;
@@ -335,9 +353,9 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
         ++cursor;
         cursor = skip_whitespace(cursor);
 
-        uint32_t parsed_value = 0u;
-        if (!parse_unsigned_value(cursor, (std::strcmp(param_key_buffer, "wiper_code") == 0) ? 0 : 10, &parsed_value,
-                                  &cursor)) {
+        uint32_t   parsed_value = 0u;
+        const bool is_wiper_key = (std::strcmp(param_key_buffer, "wiper_code") == 0);
+        if (!parse_unsigned_value(cursor, is_wiper_key ? 0 : 10, &parsed_value, &cursor)) {
           if (error_message != nullptr) {
             *error_message = k_phoenix_benchmark_channel_map_error_invalid_value;
           }
@@ -356,10 +374,23 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
           saw_sweeps                    = true;
         }
         else if (std::strcmp(param_key_buffer, "dwell_us") == 0) {
+          if (!allow_dwell_overrides) {
+            if (error_message != nullptr) {
+              *error_message = k_phoenix_benchmark_channel_map_error_unknown_argument;
+            }
+            return {false, {}, k_phoenix_benchmark_channel_map_error_unknown_argument};
+          }
           arguments->dwell_us           = parsed_value;
           arguments->has_dwell_override = true;
         }
         else if (std::strcmp(param_key_buffer, "wiper_code") == 0) {
+          if (!allow_wiper_overrides) {
+            if (error_message != nullptr) {
+              *error_message = k_phoenix_benchmark_channel_map_error_unknown_argument;
+            }
+            return {false, {}, k_phoenix_benchmark_channel_map_error_unknown_argument};
+          }
+
           if (parsed_value > 0xFFu) {
             if (error_message != nullptr) {
               *error_message = k_phoenix_benchmark_channel_map_error_invalid_value;
@@ -402,7 +433,22 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
         (std::strcmp(key_buffer, "wiper_code") == 0)) {
       // Step 6: Allow top-level argument overrides outside the parameters wrapper.
       const bool is_wiper_key = (std::strcmp(key_buffer, "wiper_code") == 0);
-      uint32_t   parsed_value = 0u;
+
+      if ((std::strcmp(key_buffer, "dwell_us") == 0) && !allow_dwell_overrides) {
+        if (error_message != nullptr) {
+          *error_message = k_phoenix_benchmark_channel_map_error_unknown_argument;
+        }
+        return {false, {}, k_phoenix_benchmark_channel_map_error_unknown_argument};
+      }
+
+      if (is_wiper_key && !allow_wiper_overrides) {
+        if (error_message != nullptr) {
+          *error_message = k_phoenix_benchmark_channel_map_error_unknown_argument;
+        }
+        return {false, {}, k_phoenix_benchmark_channel_map_error_unknown_argument};
+      }
+
+      uint32_t parsed_value = 0u;
       if (!parse_unsigned_value(cursor, is_wiper_key ? 0 : 10, &parsed_value, &cursor)) {
         if (error_message != nullptr) {
           *error_message = k_phoenix_benchmark_channel_map_error_invalid_value;
@@ -458,20 +504,18 @@ PhoenixBenchmarkChannelMapParseOutcome parse_json_command(const char* line, cons
     return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
   }
 
-  if (!allow_optional_arguments) {
-    if (!saw_sweeps) {
-      if (error_message != nullptr) {
-        *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
-      }
-      return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
+  if (require_sweeps_argument && !saw_sweeps) {
+    if (error_message != nullptr) {
+      *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
     }
+    return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
+  }
 
-    if (!saw_wiper) {
-      if (error_message != nullptr) {
-        *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
-      }
-      return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
+  if (require_wiper_argument && !saw_wiper) {
+    if (error_message != nullptr) {
+      *error_message = k_phoenix_benchmark_channel_map_error_missing_argument;
     }
+    return {false, {}, k_phoenix_benchmark_channel_map_error_missing_argument};
   }
 
   if (saw_wiper && (arguments->wiper_code > 0xFFu)) {
