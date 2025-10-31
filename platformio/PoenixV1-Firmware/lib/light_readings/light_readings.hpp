@@ -42,8 +42,8 @@ struct LightReadingsChannelConfig {
  */
 struct LightReadingsConfig {
   LedRouterState             drain_state;    /**< Router state that exposes the shared drain. */
-  LightReadingsChannelConfig blue_channel;   /**< Runtime configuration for the blue photodiode. */
   LightReadingsChannelConfig green_channel;  /**< Runtime configuration for the green photodiode. */
+  LightReadingsChannelConfig blue_channel;   /**< Runtime configuration for the blue photodiode. */
   uint32_t                   adc_timeout_us; /**< Timeout passed to adc_hal reads. */
 };
 
