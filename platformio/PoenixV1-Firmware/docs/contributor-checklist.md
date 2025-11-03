@@ -38,12 +38,12 @@ Use this checklist whenever you begin work in this repository. It captures the n
 - Inline comments should justify non-obvious steps (for example, reset sequencing, timing delays, datasheet quirks).
 - Update user-facing documentation or READMEs when visible behavior changes.
 
-## 9. Commit cleanly
+## 8. Commit cleanly
 - Use merge-headline format `FW: <message>` when integrating to `main`.
 - Keep topic-branch commits atomic and descriptive (see `docs/git-workflow.md` for details).
 - Stage only related changes per commit and mention the validation you ran if it is not obvious.
 
-## 11. Keep tests honest
+## 9. Keep tests honest
 - Never weaken or delete failing tests just to achieve a green run.
 - Only modify test expectations when the documented requirements change, and explain why in your change notes.
 

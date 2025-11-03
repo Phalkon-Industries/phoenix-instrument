@@ -3,8 +3,8 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
-.github
 __pycache__/
+.github/plans
 *.py[cod]
 python/**/__pycache__/
 python/**/*.py[cod]

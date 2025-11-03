@@ -110,21 +110,7 @@ Create a branch directly in this workspace and keep all work for a change inside
 
 ---
 
-## History navigation aliases
 
-Add these to `~/.gitconfig` for quick insight:
-
-```ini
-[alias]
-  lg  = log --graph --decorate --oneline --abbrev-commit
-  lg1 = log --first-parent --graph --decorate --oneline --abbrev-commit
-
-   ```
-- `git lg1` shows the mainline with merge boundaries only.
-- `git merges` lists just the merge headlines (`FW: …`).
-- `git lg` reveals the full commit graph when you need detail.
-
----
 
 ## Branch lifecycle checklist
 
@@ -153,7 +139,4 @@ git fetch --all --prune && git rebase main
 # Merge with grouped headline
 git switch main && git pull --ff-only
 git merge --no-ff <topic> -m "FW: consolidate benchmark timing\n\nSummary:\n- ...\n"
-
-# Inspect history
-git lg1
 
