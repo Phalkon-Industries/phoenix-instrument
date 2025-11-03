@@ -48,6 +48,16 @@ struct LightReadingsConfig {
 };
 
 /**
+ * @brief Runtime overrides applied after the helper has been initialised.
+ */
+struct LightReadingsRuntimeSettings {
+  bool     apply_dwell_override; /**< When true, updates both channel dwell timings. */
+  uint32_t dwell_us;             /**< Replacement dwell interval expressed in microseconds. */
+  bool     apply_wiper_override; /**< When true, applies a new digipot wiper code to both LEDs. */
+  uint8_t  wiper_code;           /**< Digipot wiper code routed to each colour when overriding. */
+};
+
+/**
  * @brief Raw ADC codes captured for a single sweep.
  */
 struct LightReadingsSweepSample {
@@ -141,6 +151,11 @@ int light_readings_compute_sweep_stats(const LightReadingsSweepCollection* sweep
 bool light_readings_last_sweep_detected_saturation(void);
 
 /**
+ * @brief Apply runtime overrides to dwell timing and wiper settings without reinitialising hardware.
+ */
+int light_readings_modify_settings(const LightReadingsRuntimeSettings* settings);
+
+/**
  * @brief Release internal state and park the router in a safe configuration.
  */
 int light_readings_shutdown(void);
@@ -151,5 +166,7 @@ int light_readings_shutdown(void);
 void light_readings_reset_for_test(void);
 
 void light_readings_force_saturation_for_test(bool enabled);
+
+void light_readings_get_config_for_test(LightReadingsConfig* config_out);
 
 #endif  // LIGHT_READINGS_HPP

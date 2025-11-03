@@ -197,6 +197,33 @@ bool light_readings_last_sweep_detected_saturation(void) {
   return g_last_sweep_detected_saturation;
 }
 
+int light_readings_modify_settings(const LightReadingsRuntimeSettings* settings) {
+  // Step 1: Validate the overrides structure before touching hardware state.
+  GUARD_NONNULL(settings);
+
+  // Step 2: Ensure the helper has been initialised so cached configuration is valid.
+  GUARD_INITIALIZED(g_is_initialized);
+
+  // Step 3: Apply dwell overrides when requested, rejecting out-of-range values.
+  if (settings->apply_dwell_override) {
+    if (settings->dwell_us > 5000000u) {
+      return LIGHT_READINGS_ERR_INVALID_ARG;
+    }
+    g_light_config.blue_channel.dwell_us  = settings->dwell_us;
+    g_light_config.green_channel.dwell_us = settings->dwell_us;
+  }
+
+  // Step 4: Update the digipot wiper configuration when an override is provided.
+  if (settings->apply_wiper_override) {
+    GUARD(ad524x_set_wiper(k_light_readings_blue_channel, settings->wiper_code));
+    GUARD(ad524x_set_wiper(k_light_readings_green_channel, settings->wiper_code));
+    g_light_config.blue_channel.wiper_code  = settings->wiper_code;
+    g_light_config.green_channel.wiper_code = settings->wiper_code;
+  }
+
+  return LIGHT_READINGS_OK;
+}
+
 int light_readings_compute_sweep_stats(const LightReadingsSweepCollection* sweep_collection,
                                        LightReadingsSweepStats*            stats_out) {
   // Step 1: Validate arguments before touching output storage.
@@ -263,4 +290,12 @@ void light_readings_reset_for_test(void) {
   g_is_initialized                 = false;
   g_last_sweep_detected_saturation = false;
   g_force_saturation_for_test      = false;
+}
+
+void light_readings_get_config_for_test(LightReadingsConfig* config_out) {
+  // Step 1: Provide tests with a snapshot of the cached configuration when requested.
+  if (config_out == nullptr) {
+    return;
+  }
+  *config_out = g_light_config;
 }

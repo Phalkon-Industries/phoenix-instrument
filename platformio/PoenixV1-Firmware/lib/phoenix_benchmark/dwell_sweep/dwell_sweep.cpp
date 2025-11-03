@@ -1,5 +1,6 @@
 #include "dwell_sweep.hpp"
 
+#include "../../light_readings/light_readings.hpp"
 #include "../channel_map/channel_map.hpp"
 #include "../channel_map/channel_map_support.hpp"
 #include "../core/phoenix_benchmark_core.hpp"
@@ -10,6 +11,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <device_setup.hpp>
 #include <limits>
 
 namespace {
@@ -31,13 +33,9 @@ constexpr const char k_error_invalid_command[]         = "invalid command";
 constexpr const char k_error_invalid_value[]           = "invalid value";
 constexpr const char k_error_invalid_options[]         = "invalid options";
 constexpr const char k_error_hardware_initialisation[] = "hardware initialisation failed";
-constexpr const char k_error_channel_map_failed[]      = "channel_map failed";
+constexpr const char k_error_sampling_failed[]         = "sampling failed";
 
 PhoenixBenchmarkDwellSweepDefaults g_dwell_defaults = k_default_dwell_sweep_defaults;
-
-PhoenixBenchmarkChannelMapExecutionStatus (*g_channel_map_runner)(
-    const PhoenixBenchmarkChannelMapOptions&, PhoenixBenchmarkStateAccumulator*,
-    const PhoenixBenchmarkChannelMapOutputCallbacks&) = phoenix_benchmark_channel_map_run;
 
 bool (*g_hardware_ready_checker)(void) = phoenix_benchmark_channel_map_ensure_hardware_ready;
 uint32_t (*g_micros_provider)(void)    = ::micros;
@@ -166,32 +164,6 @@ bool parse_optional_field(const char* block_start, const char* block_end, const 
     *present_out = true;
   }
   return true;
-}
-
-struct ChannelMapTemplateResult {
-  PhoenixBenchmarkChannelMapOptions options;
-  bool                              success;
-};
-
-ChannelMapTemplateResult load_channel_map_template(void) {
-  const PhoenixBenchmarkChannelMapParseResult parse_result =
-      phoenix_benchmark_channel_map_parse_command("{\"command\":\"channel_map\"}");
-  if (parse_result.success) {
-    PhoenixBenchmarkChannelMapOptions options = parse_result.options;
-    options.has_sweep_override                = false;
-    options.has_dwell_override                = false;
-    options.has_wiper_override                = false;
-    return {options, true};
-  }
-
-  PhoenixBenchmarkChannelMapOptions fallback = {};
-  fallback.sweep_count                       = 1u;
-  fallback.has_sweep_override                = true;
-  fallback.dwell_us                          = 100u;
-  fallback.has_dwell_override                = true;
-  fallback.wiper_code                        = 0x00u;
-  fallback.has_wiper_override                = true;
-  return {fallback, false};
 }
 
 }  // namespace
@@ -409,56 +381,152 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
     return status;
   }
 
-  const ChannelMapTemplateResult    template_result      = load_channel_map_template();
-  PhoenixBenchmarkChannelMapOptions channel_map_template = template_result.options;
+  LightReadingsConfig light_config = g_device_light_readings_config;
+  if (light_readings_initialize(&light_config) != LIGHT_READINGS_OK) {
+    status.message = k_error_hardware_initialisation;
+    return status;
+  }
 
-  PhoenixBenchmarkChannelMapOutputCallbacks callbacks = {nullptr, nullptr};
-  status.has_warnings                                 = !template_result.success;
+  bool light_readings_initialised = true;
+  auto shutdown_light_readings    = [&]() {
+    if (light_readings_initialised) {
+      (void) light_readings_shutdown();
+      light_readings_initialised = false;
+    }
+  };
 
-  static PhoenixBenchmarkStateAccumulator accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
+  LightReadingsSweepCollection sweep_collection = {
+      .sweep_count = 0u,
+      .sweeps      = g_light_readings_sweep_storage,
+  };
 
   uint32_t rows_generated = 0u;
   uint32_t dwell_value    = options.start_dwell_us;
 
-  while (true) {
-    if (rows_generated >= expected_steps) {
-      break;
-    }
-
-    for (std::size_t index = 0u; index < k_phoenix_benchmark_channel_map_state_descriptor_count; ++index) {
-      accumulators[index] = PhoenixBenchmarkStateAccumulator{};
-    }
-
-    PhoenixBenchmarkChannelMapOptions map_options = channel_map_template;
-    map_options.sweep_count                       = options.sweeps_per_dwell;
-    map_options.has_sweep_override                = true;
-    map_options.dwell_us                          = dwell_value;
-    map_options.has_dwell_override                = true;
-
-    const uint32_t                                  start_micros = g_micros_provider();
-    const PhoenixBenchmarkChannelMapExecutionStatus run_status =
-        g_channel_map_runner(map_options, accumulators, callbacks);
-    const uint32_t end_micros = g_micros_provider();
-
+  while (rows_generated < expected_steps) {
     PhoenixBenchmarkDwellSweepRowMetrics& row = rows[rows_generated];
     row                                       = PhoenixBenchmarkDwellSweepRowMetrics{};
     row.dwell_us                              = dwell_value;
     row.sweeps_requested                      = options.sweeps_per_dwell;
-    row.elapsed_microseconds                  = compute_elapsed_time(start_micros, end_micros);
-    row.drain                                 = accumulators[k_phoenix_benchmark_channel_map_drain_state_index];
-    row.led1                                  = accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u];
-    row.led2                                  = accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u];
+    row.sweeps_completed                      = 0u;
+    row.dominant_channel                      = PhoenixBenchmarkChannel::kUnknown;
 
     bool row_has_warnings = false;
 
-    if (run_status.has_warnings) {
+    LightReadingsRuntimeSettings runtime_settings = {
+        .apply_dwell_override = true,
+        .dwell_us             = dwell_value,
+        .apply_wiper_override = false,
+        .wiper_code           = 0u,
+    };
+
+    const int modify_return_code = light_readings_modify_settings(&runtime_settings);
+    if (modify_return_code != LIGHT_READINGS_OK) {
+      row.error_message     = k_error_invalid_options;
+      status.success        = false;
+      status.message        = k_error_invalid_options;
+      status.has_warnings   = status.has_warnings || row_has_warnings;
+      status.rows_generated = rows_generated + 1u;
+      shutdown_light_readings();
+      return status;
+    }
+
+    const uint32_t start_micros = g_micros_provider != nullptr ? g_micros_provider() : 0u;
+
+    const int sweep_return_code = light_readings_sweep_n(options.sweeps_per_dwell, &sweep_collection);
+
+    const uint32_t end_micros = g_micros_provider != nullptr ? g_micros_provider() : start_micros;
+    row.elapsed_microseconds  = compute_elapsed_time(start_micros, end_micros);
+    row.sweeps_completed      = sweep_collection.sweep_count;
+
+    if (sweep_return_code != LIGHT_READINGS_OK) {
+      row.error_message     = k_error_sampling_failed;
+      status.success        = false;
+      status.message        = k_error_sampling_failed;
+      status.has_warnings   = status.has_warnings || row_has_warnings;
+      status.rows_generated = rows_generated + 1u;
+      shutdown_light_readings();
+      return status;
+    }
+
+    LightReadingsSweepStats sweep_stats       = {};
+    const int               stats_return_code = light_readings_compute_sweep_stats(&sweep_collection, &sweep_stats);
+    if (stats_return_code != LIGHT_READINGS_OK) {
+      row.error_message     = k_error_sampling_failed;
+      status.success        = false;
+      status.message        = k_error_sampling_failed;
+      status.has_warnings   = status.has_warnings || row_has_warnings;
+      status.rows_generated = rows_generated + 1u;
+      shutdown_light_readings();
+      return status;
+    }
+
+    auto assign_summary = [](const LightReadingsStatisticSummary&   summary,
+                             PhoenixBenchmarkRunningStats<int32_t>& destination) {
+      destination.count = summary.sample_count;
+
+      if (!summary.has_samples) {
+        destination.mean      = 0.0;
+        destination.m2        = 0.0;
+        destination.min_value = std::numeric_limits<int32_t>::max();
+        destination.max_value = std::numeric_limits<int32_t>::lowest();
+        return;
+      }
+
+      destination.mean      = summary.mean;
+      destination.m2        = (summary.sample_count > 1u) ? (summary.standard_deviation * summary.standard_deviation *
+                                                      static_cast<double>(summary.sample_count - 1u)) :
+                                                            0.0;
+      destination.min_value = summary.min_value;
+      destination.max_value = summary.max_value;
+    };
+
+    assign_summary(sweep_stats.drain_blue, row.drain.channel_a_codes);
+    assign_summary(sweep_stats.drain_green, row.drain.channel_b_codes);
+    assign_summary(sweep_stats.blue, row.led1.channel_a_codes);
+    assign_summary(sweep_stats.drain_green, row.led1.channel_b_codes);
+    assign_summary(sweep_stats.drain_blue, row.led2.channel_a_codes);
+    assign_summary(sweep_stats.green, row.led2.channel_b_codes);
+
+    row.drain.channel_a_saturation_count = 0u;
+    row.drain.channel_b_saturation_count = 0u;
+    row.led1.channel_a_saturation_count  = 0u;
+    row.led1.channel_b_saturation_count  = 0u;
+    row.led2.channel_a_saturation_count  = 0u;
+    row.led2.channel_b_saturation_count  = 0u;
+
+    bool saw_saturation = false;
+    if ((sweep_collection.sweeps != nullptr) && (sweep_collection.sweep_count > 0u)) {
+      for (uint32_t sample_index = 0u; sample_index < sweep_collection.sweep_count; ++sample_index) {
+        const LightReadingsSweepSample& sample = sweep_collection.sweeps[sample_index];
+
+        if (phoenix_benchmark_is_adc_code_saturated(sample.drain_blue_code)) {
+          ++row.drain.channel_a_saturation_count;
+          ++row.led2.channel_a_saturation_count;
+          saw_saturation = true;
+        }
+        if (phoenix_benchmark_is_adc_code_saturated(sample.drain_green_code)) {
+          ++row.drain.channel_b_saturation_count;
+          ++row.led1.channel_b_saturation_count;
+          saw_saturation = true;
+        }
+        if (phoenix_benchmark_is_adc_code_saturated(sample.blue_code)) {
+          ++row.led1.channel_a_saturation_count;
+          saw_saturation = true;
+        }
+        if (phoenix_benchmark_is_adc_code_saturated(sample.green_code)) {
+          ++row.led2.channel_b_saturation_count;
+          saw_saturation = true;
+        }
+      }
+    }
+
+    if (light_readings_last_sweep_detected_saturation()) {
       row.warning_mask |= k_phoenix_benchmark_dwell_sweep_warning_adc_error;
       row_has_warnings = true;
     }
 
-    if ((row.drain.channel_a_saturation_count > 0u) || (row.drain.channel_b_saturation_count > 0u) ||
-        (row.led1.channel_a_saturation_count > 0u) || (row.led1.channel_b_saturation_count > 0u) ||
-        (row.led2.channel_a_saturation_count > 0u) || (row.led2.channel_b_saturation_count > 0u)) {
+    if (saw_saturation) {
       row.warning_mask |= k_phoenix_benchmark_dwell_sweep_warning_saturation;
       row_has_warnings = true;
     }
@@ -483,19 +551,8 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
       row_has_warnings = true;
     }
 
-    if (!run_status.success) {
-      row.sweeps_completed  = 0u;
-      row.error_message     = run_status.message;
-      status.success        = false;
-      status.message        = (run_status.message != nullptr) ? run_status.message : k_error_channel_map_failed;
-      status.has_warnings   = status.has_warnings || row_has_warnings;
-      status.rows_generated = rows_generated + 1u;
-      return status;
-    }
-
-    row.sweeps_completed = options.sweeps_per_dwell;
-    row.error_message    = nullptr;
-    status.has_warnings  = status.has_warnings || row_has_warnings;
+    row.error_message   = nullptr;
+    status.has_warnings = status.has_warnings || row_has_warnings;
 
     ++rows_generated;
 
@@ -515,13 +572,8 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
   status.success        = true;
   status.rows_generated = rows_generated;
   status.message        = nullptr;
+  shutdown_light_readings();
   return status;
-}
-
-void phoenix_benchmark_dwell_sweep_set_channel_map_runner_for_test(PhoenixBenchmarkChannelMapExecutionStatus (*runner)(
-    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
-    const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks)) {
-  g_channel_map_runner = (runner != nullptr) ? runner : phoenix_benchmark_channel_map_run;
 }
 
 void phoenix_benchmark_dwell_sweep_set_hardware_ready_checker_for_test(bool (*checker)(void)) {
@@ -533,7 +585,6 @@ void phoenix_benchmark_dwell_sweep_set_micros_provider_for_test(uint32_t (*provi
 }
 
 void phoenix_benchmark_dwell_sweep_clear_test_hooks(void) {
-  g_channel_map_runner     = phoenix_benchmark_channel_map_run;
   g_hardware_ready_checker = phoenix_benchmark_channel_map_ensure_hardware_ready;
   g_micros_provider        = ::micros;
 }

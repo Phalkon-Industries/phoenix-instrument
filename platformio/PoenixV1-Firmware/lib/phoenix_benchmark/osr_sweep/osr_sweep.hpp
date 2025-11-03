@@ -2,7 +2,6 @@
 #define PHOENIX_BENCHMARK_OSR_SWEEP_HPP
 
 #include "../../mcp356x/mcp356x.hpp"
-#include "../channel_map/channel_map.hpp"
 #include "../core/phoenix_benchmark_core.hpp"
 #include <cstddef>
 #include <cstdint>
@@ -117,15 +116,6 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(const Ph
                                                                         std::size_t row_capacity);
 
 #if defined(UNIT_TEST)
-/**
- * \brief Overrides the channel-map runner used during unit tests.
- *
- * Passing nullptr restores the production implementation.
- */
-void phoenix_benchmark_osr_sweep_set_channel_map_runner_for_test(PhoenixBenchmarkChannelMapExecutionStatus (*runner)(
-    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
-    const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks));
-
 /**
  * \brief Overrides the MCP356x OSR setter used during unit tests.
  *

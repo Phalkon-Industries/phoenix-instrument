@@ -1,7 +1,9 @@
 #include "pot_sweep.hpp"
 
+#include "../../light_readings/light_readings.hpp"
 #include "../../mcp356x/mcp356x.hpp"
 #include "../channel_map/channel_map.hpp"
+#include "../core/phoenix_benchmark_core.hpp"
 #include <cctype>
 #include <cerrno>
 #include <cmath>
@@ -9,6 +11,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <device_setup.hpp>
 #include <limits>
 
 namespace {
@@ -26,18 +29,16 @@ constexpr const char* k_error_invalid_command   = "invalid command";
 constexpr const char* k_error_invalid_value     = "invalid value";
 constexpr const char* k_error_invalid_options   = "invalid options";
 constexpr const char* k_error_hardware_init     = "hardware initialisation failed";
-constexpr const char* k_error_channel_map_run   = "channel_map failed";
+constexpr const char* k_error_light_runtime     = "light readings runtime update failed";
+constexpr const char* k_error_light_sweep       = "sampling failed";
+constexpr const char* k_error_light_stats       = "statistics computation failed";
+constexpr const char* k_error_light_shutdown    = "light readings shutdown failed";
 constexpr const char* k_error_adc_defaults      = "adc default configuration failed";
-
-typedef PhoenixBenchmarkChannelMapExecutionStatus (*ChannelMapRunner)(
-    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
-    const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks);
 
 typedef bool (*HardwareReadyChecker)(void);
 typedef int (*AdcConfigurator)(void);
 
 PhoenixBenchmarkPotSweepDefaults g_pot_sweep_defaults     = k_default_pot_sweep_defaults;
-ChannelMapRunner                 g_channel_map_runner     = phoenix_benchmark_channel_map_run;
 HardwareReadyChecker             g_hardware_ready_checker = phoenix_benchmark_channel_map_ensure_hardware_ready;
 AdcConfigurator                  g_adc_default_config     = mcp356x_apply_default_config;
 
@@ -75,33 +76,6 @@ bool parse_unsigned_value(const char* cursor, int base, uint32_t* value_out, con
     *end_out = end_ptr;
   }
   return true;
-}
-
-struct ChannelMapTemplateResult {
-  PhoenixBenchmarkChannelMapOptions options;
-  bool                              success;
-};
-
-ChannelMapTemplateResult load_channel_map_template(void) {
-  // Step 1: Attempt to clone the live channel-map defaults so we mirror current settings.
-  const PhoenixBenchmarkChannelMapParseResult parse_result =
-      phoenix_benchmark_channel_map_parse_command("{\"command\":\"channel_map\"}");
-  if (parse_result.success) {
-    PhoenixBenchmarkChannelMapOptions baseline = parse_result.options;
-    baseline.has_sweep_override                = false;
-    baseline.has_wiper_override                = false;
-    return {baseline, true};
-  }
-
-  // Step 2: Fall back to a safe template when parsing fails so pot sweep remains operational.
-  PhoenixBenchmarkChannelMapOptions fallback = {};
-  fallback.sweep_count                       = 1u;
-  fallback.has_sweep_override                = true;
-  fallback.dwell_us           = 100u;  // 100 us dwell chosen to mirror channel_map defaults (docs/style-guide).
-  fallback.has_dwell_override = true;
-  fallback.wiper_code         = 0x00u;
-  fallback.has_wiper_override = true;
-  return {fallback, false};
 }
 
 }  // namespace
@@ -369,7 +343,7 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
     return {false, false, k_error_invalid_arguments, 0u, false, 0u, false, 0u};
   }
 
-  // Step 5: Ensure hardware is initialised before launching channel-map sweeps.
+  // Step 5: Ensure hardware is initialised before launching light readings sweeps.
   if (!g_hardware_ready_checker()) {
     return {false, false, k_error_hardware_init, 0u, false, 0u, false, 0u};
   }
@@ -378,16 +352,43 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
     return {false, false, k_error_adc_defaults, 0u, false, 0u, false, 0u};
   }
 
-  const ChannelMapTemplateResult    template_result      = load_channel_map_template();
-  PhoenixBenchmarkChannelMapOptions channel_map_template = template_result.options;
+  LightReadingsConfig light_config = g_device_light_readings_config;
+  if (light_readings_initialize(&light_config) != LIGHT_READINGS_OK) {
+    return {false, false, k_error_hardware_init, 0u, false, 0u, false, 0u};
+  }
 
-  channel_map_template.dwell_us           = options.dwell_us;
-  channel_map_template.has_dwell_override = true;
+  bool light_readings_initialised = true;
+  auto shutdown_light_readings    = [&]() {
+    if (!light_readings_initialised) {
+      return LIGHT_READINGS_OK;
+    }
+    const int shutdown_result = light_readings_shutdown();
+    if (shutdown_result != LIGHT_READINGS_OK) {
+      return shutdown_result;
+    }
+    light_readings_initialised = false;
+    return LIGHT_READINGS_OK;
+  };
 
-  PhoenixBenchmarkChannelMapOutputCallbacks callbacks = {nullptr, nullptr};
+  LightReadingsRuntimeSettings dwell_settings = {
+      .apply_dwell_override = true,
+      .dwell_us             = options.dwell_us,
+      .apply_wiper_override = false,
+      .wiper_code           = 0u,
+  };
+
+  if (light_readings_modify_settings(&dwell_settings) != LIGHT_READINGS_OK) {
+    (void) shutdown_light_readings();
+    return {false, false, k_error_light_runtime, 0u, false, 0u, false, 0u};
+  }
+
+  LightReadingsSweepCollection sweep_collection = {
+      .sweep_count = 0u,
+      .sweeps      = g_light_readings_sweep_storage,
+  };
 
   uint32_t rows_generated = 0u;
-  bool     has_warnings   = !template_result.success;
+  bool     has_warnings   = false;
 
   bool    led1_recommendation_valid = false;
   uint8_t led1_recommended_wiper    = 0u;
@@ -400,23 +401,18 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
   for (uint32_t wiper = 0u; wiper <= 0xFFu; ++wiper) {
     const uint8_t wiper_code = static_cast<uint8_t>(wiper & 0xFFu);
 
-    // Step 6: Execute the channel-map runner for the current wiper position.
-    PhoenixBenchmarkChannelMapOptions map_options = channel_map_template;
-    map_options.sweep_count                       = options.sweeps_per_wiper;
-    map_options.has_sweep_override                = true;
-    map_options.dwell_us                          = options.dwell_us;
-    map_options.has_dwell_override                = true;
-    map_options.wiper_code                        = wiper_code;
-    map_options.has_wiper_override                = true;
+    LightReadingsRuntimeSettings wiper_settings = {
+        .apply_dwell_override = false,
+        .dwell_us             = 0u,
+        .apply_wiper_override = true,
+        .wiper_code           = wiper_code,
+    };
 
-    PhoenixBenchmarkStateAccumulator accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count] = {};
-
-    const PhoenixBenchmarkChannelMapExecutionStatus run_status =
-        g_channel_map_runner(map_options, accumulators, callbacks);
-    if (!run_status.success) {
+    if (light_readings_modify_settings(&wiper_settings) != LIGHT_READINGS_OK) {
+      (void) shutdown_light_readings();
       return {false,
               has_warnings,
-              k_error_channel_map_run,
+              k_error_light_runtime,
               rows_generated,
               led1_recommendation_valid,
               led1_recommended_wiper,
@@ -424,38 +420,73 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
               led2_recommended_wiper};
     }
 
-    if (run_status.has_warnings) {
-      has_warnings = true;
+    const int sweep_result = light_readings_sweep_n(options.sweeps_per_wiper, &sweep_collection);
+    if (sweep_result != LIGHT_READINGS_OK) {
+      (void) shutdown_light_readings();
+      return {false,
+              has_warnings,
+              k_error_light_sweep,
+              rows_generated,
+              led1_recommendation_valid,
+              led1_recommended_wiper,
+              led2_recommendation_valid,
+              led2_recommended_wiper};
     }
 
-    // Step 7: Capture per-wiper maxima so the formatter can report LED headroom.
+    LightReadingsSweepStats sweep_stats = {};
+    if (light_readings_compute_sweep_stats(&sweep_collection, &sweep_stats) != LIGHT_READINGS_OK) {
+      (void) shutdown_light_readings();
+      return {false,
+              has_warnings,
+              k_error_light_stats,
+              rows_generated,
+              led1_recommendation_valid,
+              led1_recommended_wiper,
+              led2_recommendation_valid,
+              led2_recommended_wiper};
+    }
+
     PhoenixBenchmarkPotSweepRowMetrics& row = rows[rows_generated];
     row                                     = PhoenixBenchmarkPotSweepRowMetrics{};
     row.wiper_code                          = wiper_code;
 
-    const PhoenixBenchmarkStateAccumulator& led1_accumulator =
-        accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u];
-    const PhoenixBenchmarkStateAccumulator& led2_accumulator =
-        accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u];
+    row.led1_max_code = sweep_stats.blue.has_samples ? sweep_stats.blue.max_value : 0;
+    row.led2_max_code = sweep_stats.green.has_samples ? sweep_stats.green.max_value : 0;
 
-    if (led1_accumulator.channel_a_codes.count > 0u) {
-      row.led1_max_code = led1_accumulator.channel_a_codes.max_value;
+    const int32_t led1_abs_code = (row.led1_max_code < 0) ? -row.led1_max_code : row.led1_max_code;
+    const int32_t led2_abs_code = (row.led2_max_code < 0) ? -row.led2_max_code : row.led2_max_code;
+
+    bool led1_sample_saturated = false;
+    bool led2_sample_saturated = false;
+    bool sweep_saw_saturation  = false;
+    if ((sweep_collection.sweeps != nullptr) && (sweep_collection.sweep_count > 0u)) {
+      for (uint32_t sample_index = 0u; sample_index < sweep_collection.sweep_count; ++sample_index) {
+        const LightReadingsSweepSample& sample = sweep_collection.sweeps[sample_index];
+
+        if (phoenix_benchmark_is_adc_code_saturated(sample.drain_blue_code) ||
+            phoenix_benchmark_is_adc_code_saturated(sample.drain_green_code)) {
+          sweep_saw_saturation = true;
+        }
+        if (phoenix_benchmark_is_adc_code_saturated(sample.blue_code)) {
+          led1_sample_saturated = true;
+          sweep_saw_saturation  = true;
+        }
+        if (phoenix_benchmark_is_adc_code_saturated(sample.green_code)) {
+          led2_sample_saturated = true;
+          sweep_saw_saturation  = true;
+        }
+      }
     }
-    if (led2_accumulator.channel_b_codes.count > 0u) {
-      row.led2_max_code = led2_accumulator.channel_b_codes.max_value;
-    }
 
-    const int32_t led1_abs_code = std::abs(row.led1_max_code);
-    const int32_t led2_abs_code = std::abs(row.led2_max_code);
+    const bool adc_reported_saturation = light_readings_last_sweep_detected_saturation();
 
-    row.led1_saturated = (led1_abs_code >= k_pot_sweep_saturation_threshold);
-    row.led2_saturated = (led2_abs_code >= k_pot_sweep_saturation_threshold);
+    row.led1_saturated = (led1_abs_code >= k_pot_sweep_saturation_threshold) || led1_sample_saturated;
+    row.led2_saturated = (led2_abs_code >= k_pot_sweep_saturation_threshold) || led2_sample_saturated;
 
-    if (row.led1_saturated || row.led2_saturated) {
+    if (row.led1_saturated || row.led2_saturated || sweep_saw_saturation || adc_reported_saturation) {
       has_warnings = true;
     }
 
-    // Step 8: Track the best recommended wiper for each LED while avoiding saturated entries.
     if (!row.led1_saturated) {
       if (!led1_recommendation_valid || (led1_abs_code > led1_best_code)) {
         led1_recommendation_valid = true;
@@ -475,7 +506,6 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
     rows_generated += 1u;
   }
 
-  // Step 9: Fall back to the first wiper when saturation prevented recommendation selection.
   if (!led1_recommendation_valid) {
     led1_recommendation_valid = true;
     led1_recommended_wiper    = 0x00u;
@@ -486,9 +516,14 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
     led2_recommended_wiper    = 0x00u;
   }
 
+  const int shutdown_result = shutdown_light_readings();
+  if (shutdown_result != LIGHT_READINGS_OK) {
+    has_warnings = true;
+  }
+
   return {true,
-          has_warnings,
-          nullptr,
+          has_warnings || (shutdown_result != LIGHT_READINGS_OK),
+          (shutdown_result == LIGHT_READINGS_OK) ? nullptr : k_error_light_shutdown,
           rows_generated,
           led1_recommendation_valid,
           led1_recommended_wiper,
@@ -500,12 +535,6 @@ int32_t phoenix_benchmark_pot_sweep_saturation_threshold(void) {
   return k_pot_sweep_saturation_threshold;
 }
 
-void phoenix_benchmark_pot_sweep_set_channel_map_runner_for_test(PhoenixBenchmarkChannelMapExecutionStatus (*runner)(
-    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
-    const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks)) {
-  g_channel_map_runner = (runner != nullptr) ? runner : phoenix_benchmark_channel_map_run;
-}
-
 void phoenix_benchmark_pot_sweep_set_hardware_ready_checker_for_test(bool (*checker)(void)) {
   g_hardware_ready_checker = (checker != nullptr) ? checker : phoenix_benchmark_channel_map_ensure_hardware_ready;
 }
@@ -515,7 +544,6 @@ void phoenix_benchmark_pot_sweep_set_adc_default_configurator_for_test(int (*con
 }
 
 void phoenix_benchmark_pot_sweep_clear_test_hooks(void) {
-  g_channel_map_runner     = phoenix_benchmark_channel_map_run;
   g_hardware_ready_checker = phoenix_benchmark_channel_map_ensure_hardware_ready;
   g_adc_default_config     = mcp356x_apply_default_config;
 }

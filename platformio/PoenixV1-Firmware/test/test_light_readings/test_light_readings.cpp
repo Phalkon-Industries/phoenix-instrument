@@ -305,6 +305,46 @@ static void test_light_readings_compute_sweep_stats_calculates_metrics(void) {
   TEST_ASSERT_EQUAL_INT32(3200, stats.green.max_value);
 }
 
+static void test_light_readings_modify_settings_requires_initialization(void) {
+  // Step 1: Attempt to modify settings prior to initialisation and expect a guard failure.
+  const LightReadingsRuntimeSettings overrides = {
+      .apply_dwell_override = true,
+      .dwell_us             = 250u,
+      .apply_wiper_override = true,
+      .wiper_code           = 0x42u,
+  };
+
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_modify_settings(&overrides));
+}
+
+static void test_light_readings_modify_settings_updates_runtime_configuration(void) {
+  // Step 1: Bring the helper online so runtime overrides can be applied safely.
+  bring_light_readings_online();
+
+  const LightReadingsRuntimeSettings overrides = {
+      .apply_dwell_override = true,
+      .dwell_us             = 250u,
+      .apply_wiper_override = true,
+      .wiper_code           = 0x31u,
+  };
+
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_modify_settings(&overrides));
+
+  // Step 2: Confirm the digi-pot wiper codes were updated for both photodiodes.
+  uint8_t blue_wiper  = 0u;
+  uint8_t green_wiper = 0u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &blue_wiper));
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(1u, &green_wiper));
+  TEST_ASSERT_EQUAL_UINT8(overrides.wiper_code, blue_wiper);
+  TEST_ASSERT_EQUAL_UINT8(overrides.wiper_code, green_wiper);
+
+  // Step 3: Capture the cached configuration so dwell overrides can be validated.
+  LightReadingsConfig config_snapshot = {};
+  light_readings_get_config_for_test(&config_snapshot);
+  TEST_ASSERT_EQUAL_UINT32(overrides.dwell_us, config_snapshot.blue_channel.dwell_us);
+  TEST_ASSERT_EQUAL_UINT32(overrides.dwell_us, config_snapshot.green_channel.dwell_us);
+}
+
 static void test_light_readings_shutdown_requires_initialization(void) {
   // Step 1: Attempt to shut down before initialise and expect an error.
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_shutdown());
@@ -347,6 +387,8 @@ void setup() {
   RUN_TEST(test_light_readings_compute_sweep_stats_requires_arguments);
   RUN_TEST(test_light_readings_compute_sweep_stats_handles_empty_collection);
   RUN_TEST(test_light_readings_compute_sweep_stats_calculates_metrics);
+  RUN_TEST(test_light_readings_modify_settings_requires_initialization);
+  RUN_TEST(test_light_readings_modify_settings_updates_runtime_configuration);
   RUN_TEST(test_light_readings_shutdown_requires_initialization);
   RUN_TEST(test_light_readings_shutdown_clears_module_state);
   RUN_TEST(test_light_readings_reset_for_test_clears_initialization);
