@@ -6,6 +6,7 @@
 #include "core/phoenix_benchmark_core.hpp"
 #include "drift_capture/drift_capture.hpp"
 #include "dwell_sweep/dwell_sweep.hpp"
+#include "light_readings.hpp"
 #include "main.hpp"
 #include "osr_sweep/osr_sweep.hpp"
 #include "osr_sweep/osr_sweep_formatter.hpp"
@@ -130,17 +131,14 @@ static void test_format_channel_alignment_label_formats_mismatch_note(void) {
 }
 
 static void test_parse_channel_map_command_extracts_parameters(void) {
-  // Step 1: Provide a JSON command with explicit dwell and wiper overrides.
-  const char* command_line =
-      "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":25,\"dwell_us\":75,\"wiper_code\":120}}";
-  PhoenixBenchmarkChannelMapRequest request = {};
-  // Step 2: Parse the command and validate each captured field.
+  // Step 1: Provide a JSON command that only specifies the sweep count override.
+  const char*                       command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":25}}";
+  PhoenixBenchmarkChannelMapRequest request      = {};
+  // Step 2: Parse the command and validate the sweep override while confirming optional fields stay unset.
   TEST_ASSERT_TRUE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
   TEST_ASSERT_EQUAL_UINT32(25u, request.sweep_count);
-  TEST_ASSERT_TRUE(request.has_dwell_override);
-  TEST_ASSERT_EQUAL_UINT32(75u, request.dwell_us);
-  TEST_ASSERT_TRUE(request.has_wiper_override);
-  TEST_ASSERT_EQUAL_UINT8(120u, request.wiper_code);
+  TEST_ASSERT_FALSE(request.has_dwell_override);
+  TEST_ASSERT_FALSE(request.has_wiper_override);
 }
 
 static void test_parse_channel_map_command_treats_missing_dwell_as_default(void) {
@@ -154,11 +152,11 @@ static void test_parse_channel_map_command_treats_missing_dwell_as_default(void)
   TEST_ASSERT_FALSE(request.has_wiper_override);
 }
 
-static void test_parse_channel_map_command_rejects_out_of_range_wiper(void) {
-  // Step 1: Attempt to parse a command whose wiper code exceeds the allowed range.
-  const char* command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":5,\"wiper_code\":300}}";
+static void test_parse_channel_map_command_rejects_wiper_override(void) {
+  // Step 1: Attempt to parse a command that now includes a disallowed wiper override.
+  const char* command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":5,\"wiper_code\":42}}";
   PhoenixBenchmarkChannelMapRequest request = {};
-  // Step 2: Expect the helper to reject the payload.
+  // Step 2: Expect the helper to reject the payload because wiper overrides are no longer supported.
   TEST_ASSERT_FALSE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
 }
 
@@ -167,6 +165,14 @@ static void test_parse_channel_map_command_rejects_invalid_payload(void) {
   const char*                       command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":0}}";
   PhoenixBenchmarkChannelMapRequest request      = {};
   // Step 2: Confirm the parser reports failure when validation fails.
+  TEST_ASSERT_FALSE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
+}
+
+static void test_parse_channel_map_command_rejects_dwell_override(void) {
+  // Step 1: Attempt to parse a command that tries to override dwell time.
+  const char* command_line = "{\"command\":\"channel_map\",\"parameters\":{\"sweeps\":4,\"dwell_us\":50}}";
+  PhoenixBenchmarkChannelMapRequest request = {};
+  // Step 2: Confirm the parser rejects unsupported dwell overrides.
   TEST_ASSERT_FALSE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
 }
 
@@ -825,6 +831,115 @@ static void test_adc_speed_run_collects_dual_mode_metrics(void) {
   TEST_ASSERT_EQUAL_UINT32(1u, status.irq_error_count);
 }
 
+static void test_dwell_sweep_run_uses_light_readings_saturation_reporting(void) {
+  // Step 1: Configure a single-step dwell sweep and force saturation via the light readings helper.
+  phoenix_benchmark_dwell_sweep_reset_state();
+  PhoenixBenchmarkDwellSweepOptions options = {
+      .sweeps_per_dwell    = 1u,
+      .has_sweeps_override = true,
+      .start_dwell_us      = 100u,
+      .has_start_override  = true,
+      .end_dwell_us        = 100u,
+      .has_end_override    = true,
+      .dwell_step_us       = 100u,
+      .has_step_override   = true,
+  };
+
+  light_readings_force_saturation_for_test(true);
+
+  // Step 2: Execute the dwell sweep and capture the resulting metrics.
+  PhoenixBenchmarkDwellSweepRowMetrics            rows[1] = {};
+  const PhoenixBenchmarkDwellSweepExecutionStatus status =
+      phoenix_benchmark_dwell_sweep_run(options, rows, sizeof(rows) / sizeof(rows[0]));
+
+  light_readings_force_saturation_for_test(false);
+
+  // Step 3: Confirm the run succeeded and reported saturation via light readings warnings.
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_EQUAL_UINT32(1u, status.rows_generated);
+  TEST_ASSERT_TRUE(status.has_warnings);
+  TEST_ASSERT_EQUAL_UINT32(options.sweeps_per_dwell, rows[0].sweeps_completed);
+  TEST_ASSERT_NULL(rows[0].error_message);
+  TEST_ASSERT_NOT_EQUAL(0u, rows[0].warning_mask & k_phoenix_benchmark_dwell_sweep_warning_saturation);
+  TEST_ASSERT_NOT_EQUAL(0u, rows[0].warning_mask & k_phoenix_benchmark_dwell_sweep_warning_adc_error);
+}
+
+static void test_osr_sweep_run_reports_light_readings_warnings(void) {
+  // Step 1: Configure a minimal OSR sweep and force saturation to exercise light readings integration.
+  phoenix_benchmark_osr_sweep_reset_state();
+  PhoenixBenchmarkOsrSweepOptions options = {
+      .sweep_count        = 1u,
+      .has_sweep_override = true,
+      .dwell_us           = 100u,
+      .has_dwell_override = true,
+      .wiper_code         = 0x20u,
+      .has_wiper_override = true,
+  };
+
+  static PhoenixBenchmarkOsrSweepRowMetrics rows[k_phoenix_benchmark_osr_value_count];
+  for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_value_count; ++index) {
+    rows[index] = PhoenixBenchmarkOsrSweepRowMetrics{};
+  }
+  light_readings_reset_for_test();
+  light_readings_force_saturation_for_test(true);
+  const PhoenixBenchmarkOsrSweepExecutionStatus status =
+      phoenix_benchmark_osr_sweep_run(options, rows, k_phoenix_benchmark_osr_value_count);
+  phoenix_benchmark_osr_sweep_clear_test_hooks();
+
+  light_readings_force_saturation_for_test(false);
+
+  // Step 2: Confirm the sweep succeeded, surfaced the forced saturation, and populated each OSR row.
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(status.has_warnings);
+  TEST_ASSERT_EQUAL_UINT32(k_phoenix_benchmark_osr_value_count, status.rows_generated);
+
+  uint32_t saturated_rows = 0u;
+  for (std::size_t index = 0u; index < status.rows_generated; ++index) {
+    TEST_ASSERT_EQUAL_UINT32(options.sweep_count, rows[index].sweep_count);
+    if ((rows[index].led1.channel_a_saturation_count > 0u) && (rows[index].led2.channel_b_saturation_count > 0u)) {
+      ++saturated_rows;
+    }
+  }
+  TEST_ASSERT_TRUE(saturated_rows > 0u);
+}
+
+static void test_pot_sweep_run_reports_light_readings_saturation(void) {
+  // Step 1: Run a full pot sweep with saturation forced to validate light readings driven logic.
+  phoenix_benchmark_pot_sweep_reset_state();
+  PhoenixBenchmarkPotSweepOptions options = {
+      .sweeps_per_wiper    = 1u,
+      .has_sweeps_override = true,
+      .dwell_us            = 100u,
+      .has_dwell_override  = true,
+  };
+
+  static PhoenixBenchmarkPotSweepRowMetrics rows[k_phoenix_benchmark_pot_sweep_max_wiper_count];
+  for (std::size_t index = 0u; index < k_phoenix_benchmark_pot_sweep_max_wiper_count; ++index) {
+    rows[index] = PhoenixBenchmarkPotSweepRowMetrics{};
+  }
+  light_readings_reset_for_test();
+  light_readings_force_saturation_for_test(true);
+  const PhoenixBenchmarkPotSweepExecutionStatus status =
+      phoenix_benchmark_pot_sweep_run(options, rows, k_phoenix_benchmark_pot_sweep_max_wiper_count);
+  phoenix_benchmark_pot_sweep_clear_test_hooks();
+
+  light_readings_force_saturation_for_test(false);
+
+  // Step 2: Verify the sweep surfaced saturation warnings and fell back to the default recommendations.
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(status.has_warnings);
+  TEST_ASSERT_EQUAL_UINT32(k_phoenix_benchmark_pot_sweep_max_wiper_count, status.rows_generated);
+  TEST_ASSERT_TRUE(status.led1_recommendation_valid);
+  TEST_ASSERT_EQUAL_UINT8(0x00u, status.led1_recommended_wiper);
+  TEST_ASSERT_TRUE(status.led2_recommendation_valid);
+  TEST_ASSERT_EQUAL_UINT8(0x00u, status.led2_recommended_wiper);
+
+  for (uint32_t index = 0u; index < status.rows_generated; ++index) {
+    TEST_ASSERT_TRUE(rows[index].led1_saturated);
+    TEST_ASSERT_TRUE(rows[index].led2_saturated);
+  }
+}
+
 static void test_osr_sweep_parse_command_applies_initialised_defaults(void) {
   // Step 1: Seed OSR sweep defaults and parse a minimal command referencing the sweep.
   phoenix_benchmark_osr_sweep_reset_state();
@@ -1167,8 +1282,9 @@ void setup() {
   RUN_TEST(test_format_channel_alignment_label_formats_mismatch_note);
   RUN_TEST(test_parse_channel_map_command_extracts_parameters);
   RUN_TEST(test_parse_channel_map_command_treats_missing_dwell_as_default);
-  RUN_TEST(test_parse_channel_map_command_rejects_out_of_range_wiper);
+  RUN_TEST(test_parse_channel_map_command_rejects_wiper_override);
   RUN_TEST(test_parse_channel_map_command_rejects_invalid_payload);
+  RUN_TEST(test_parse_channel_map_command_rejects_dwell_override);
   RUN_TEST(test_drift_capture_options_apply_defaults_inherit_initialised_values);
   RUN_TEST(test_drift_capture_options_validate_rejects_inverted_range);
   RUN_TEST(test_drift_capture_options_validate_rejects_schedule_exceeding_buffer);
@@ -1201,11 +1317,14 @@ void setup() {
   RUN_TEST(test_dwell_sweep_options_apply_defaults_inherit_initialised_values);
   RUN_TEST(test_dwell_sweep_options_validate_accepts_nominal_configuration);
   RUN_TEST(test_dwell_sweep_run_rejects_null_row_buffer);
+  RUN_TEST(test_dwell_sweep_run_uses_light_readings_saturation_reporting);
   RUN_TEST(test_pot_sweep_parse_command_applies_defaults);
   RUN_TEST(test_pot_sweep_parse_command_accepts_plain_token);
   RUN_TEST(test_pot_sweep_parse_command_accepts_overrides);
   RUN_TEST(test_pot_sweep_parse_command_rejects_wiper_parameters);
   RUN_TEST(test_pot_sweep_run_rejects_insufficient_row_capacity);
+  RUN_TEST(test_osr_sweep_run_reports_light_readings_warnings);
+  RUN_TEST(test_pot_sweep_run_reports_light_readings_saturation);
   // Step 3: Finalise Unity before idling in loop().
   UNITY_END();
 }

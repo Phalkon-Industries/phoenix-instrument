@@ -151,42 +151,14 @@ bool phoenix_benchmark_channel_map_parse_command(const char*                    
   PhoenixBenchmarkChannelMapRequest request = {};
   request.sweep_count                       = static_cast<uint32_t>(sweeps_long);
 
-  // Step 6: Optionally parse dwell overrides when the JSON payload supplies one.
-  const char* dwell_token = std::strstr(json_line, "\"dwell_us\"");
-  if (dwell_token != nullptr) {
-    const char* dwell_value = std::strchr(dwell_token, ':');
-    if (dwell_value == nullptr) {
-      return false;
-    }
-    ++dwell_value;
-
-    char*      dwell_end  = nullptr;
-    const long dwell_long = std::strtol(dwell_value, &dwell_end, 10);
-    if ((dwell_end == dwell_value) || (dwell_long < 0L)) {
-      return false;
-    }
-
-    request.dwell_us           = static_cast<uint32_t>(dwell_long);
-    request.has_dwell_override = true;
+  // Step 6: Reject dwell overrides now that the channel map command relies on device defaults.
+  if (std::strstr(json_line, "\"dwell_us\"") != nullptr) {
+    return false;
   }
 
-  // Step 7: Optionally parse wiper overrides while guarding against out-of-range values.
-  const char* wiper_token = std::strstr(json_line, "\"wiper_code\"");
-  if (wiper_token != nullptr) {
-    const char* wiper_value = std::strchr(wiper_token, ':');
-    if (wiper_value == nullptr) {
-      return false;
-    }
-    ++wiper_value;
-
-    char*      wiper_end  = nullptr;
-    const long wiper_long = std::strtol(wiper_value, &wiper_end, 0);
-    if ((wiper_end == wiper_value) || (wiper_long < 0L) || (wiper_long > 0xFFL)) {
-      return false;
-    }
-
-    request.wiper_code         = static_cast<uint8_t>(wiper_long & 0xFFL);
-    request.has_wiper_override = true;
+  // Step 7: Reject wiper overrides to enforce the simplified command surface.
+  if (std::strstr(json_line, "\"wiper_code\"") != nullptr) {
+    return false;
   }
 
   // Step 8: Publish the parsed request back to the caller.

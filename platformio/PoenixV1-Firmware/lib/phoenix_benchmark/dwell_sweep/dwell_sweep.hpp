@@ -1,7 +1,7 @@
 #ifndef PHOENIX_BENCHMARK_DWELL_SWEEP_HPP
 #define PHOENIX_BENCHMARK_DWELL_SWEEP_HPP
 
-#include "../channel_map/channel_map.hpp"
+#include "../channel_map/channel_map_support.hpp"
 #include "../core/phoenix_benchmark_core.hpp"
 #include <cstddef>
 #include <cstdint>
@@ -66,9 +66,6 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
     const PhoenixBenchmarkDwellSweepOptions& options, PhoenixBenchmarkDwellSweepRowMetrics* rows,
     std::size_t row_capacity);
 
-void phoenix_benchmark_dwell_sweep_set_channel_map_runner_for_test(PhoenixBenchmarkChannelMapExecutionStatus (*runner)(
-    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
-    const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks));
 void phoenix_benchmark_dwell_sweep_set_hardware_ready_checker_for_test(bool (*checker)(void));
 void phoenix_benchmark_dwell_sweep_set_micros_provider_for_test(uint32_t (*provider)(void));
 void phoenix_benchmark_dwell_sweep_clear_test_hooks(void);

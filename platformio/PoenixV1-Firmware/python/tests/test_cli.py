@@ -10,6 +10,53 @@ import pytest  # type: ignore
 from phoenix_benchmark.cli import main
 
 
+def _channel_map_header() -> str:
+    return (
+        f"{'State':<8}"
+        f"{'Samples':>9}"
+        f"{'Mean_A':>12}"
+        f"{'Std_A':>12}"
+        f"{'Min_A':>12}"
+        f"{'Max_A':>12}"
+        f"{'Mean_B':>12}"
+        f"{'Std_B':>12}"
+        f"{'Min_B':>12}"
+        f"{'Max_B':>12}"
+        f"{'Channel_Map':>12}"
+        f"{'Warnings':>14}"
+    )
+
+
+def _channel_map_row(
+    label: str,
+    samples: int,
+    mean_a: float,
+    std_a: float,
+    min_a: float,
+    max_a: float,
+    mean_b: float,
+    std_b: float,
+    min_b: float,
+    max_b: float,
+    alignment: str,
+    warnings: str,
+) -> str:
+    return (
+        f"{label:<8}"
+        f"{samples:>9d}"
+        f"{mean_a:>12.3f}"
+        f"{std_a:>12.3f}"
+        f"{min_a:>12.3f}"
+        f"{max_a:>12.3f}"
+        f"{mean_b:>12.3f}"
+        f"{std_b:>12.3f}"
+        f"{min_b:>12.3f}"
+        f"{max_b:>12.3f}"
+        f"{alignment:<12}"
+        f"{warnings:<14}"
+    )
+
+
 class DummySerial:
     last_instance: "DummySerial | None" = None
 
@@ -20,8 +67,24 @@ class DummySerial:
         self._line_queue: List[bytes] = [
             b"# phoenix benchmark ready\n",
             b"# summary_table\n",
-            b"State      Samples      Mean_A      Std_A      Min_A      Max_A      Mean_B      Std_B      Min_B      Max_B   Channel_Map\n",
-            b"LED1          10      123.000        2.000      120.000      130.000      321.000        3.000      310.000      330.000   A=OK        \n",
+            (_channel_map_header() + "\n").encode("utf-8"),
+            (
+                _channel_map_row(
+                    "LED1",
+                    10,
+                    123.0,
+                    2.0,
+                    120.0,
+                    130.0,
+                    321.0,
+                    3.0,
+                    310.0,
+                    330.0,
+                    "A=OK",
+                    "--",
+                )
+                + "\n"
+            ).encode("utf-8"),
             b"\n",
             b"# benchmark_complete\n",
             b"# ready\n",
@@ -274,8 +337,6 @@ def test_cli_streams_plan_to_serial_port(
                         "command": "channel_map",
                         "parameters": {
                             "sweeps": 5,
-                            "dwell_us": 10,
-                            "wiper_code": 170,
                         },
                     }
                 ]
@@ -329,7 +390,8 @@ def test_cli_streams_plan_to_serial_port(
     assert len(instance.written) >= 2
     assert instance.written[0] == b"\n"
     assert b'"sweeps":5' in instance.written[1]
-    assert b'"wiper_code":170' in instance.written[1]
+    assert b'"wiper_code"' not in instance.written[1]
+    assert b'"dwell_us"' not in instance.written[1]
 
     assert captured["plan"] == plan
     assert captured["output"] == output_dir

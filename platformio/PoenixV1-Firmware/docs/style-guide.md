@@ -29,6 +29,8 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 - Turn on “format on save” in your IDE when possible.
 - C-style public APIs should live in headers that can be included from C or C++. If a header must be consumed by both,
   add the usual `#ifdef __cplusplus` guard with `extern "C" { ... }`.
+- Give every internal helper or module-level variable internal linkage with `static`; avoid anonymous namespaces so the
+  linkage intent stays obvious to C and C++ consumers alike.
 
 ## 3. Header Layout and Includes
 - Include the module's public header first (e.g. `#include "mcp356x.hpp"`), then a blank line, then Arduino/standard-library headers.
@@ -44,6 +46,7 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 
 ## 5. Error Handling Patterns
 - Return early on invalid arguments or runtime guardrails (e.g. `if (buffer == NULL) return MCP356X_ERR_INVALID_ARG;`).
+- Prefer the shared guard macros from `lib/phoenix_common/phoenix_guard.hpp` (`GUARD`, `GUARD_NONNULL`, `GUARD_INITIALIZED`) for pointer validation and dependency checks so modules share consistent return codes.
 - Propagate driver error codes unchanged so tests can assert on them.
 - Prefer small helper functions over complex branching; for example, register framing lives in `mcp356x_command_byte`.
 

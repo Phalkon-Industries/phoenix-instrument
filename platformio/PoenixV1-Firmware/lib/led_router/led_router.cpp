@@ -64,9 +64,7 @@ void apply_state_to_pins(LedRouterState state) {
 
 int led_router_initialize(const LedRouterConfig* config) {
   // Step 1: Validate the configuration pointer and ensure unique pins.
-  if (config == NULL) {
-    return LED_ROUTER_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(config);
 
   if (config->switch_in1_pin == config->switch_in2_pin) {
     return LED_ROUTER_ERR_INVALID_ARG;
@@ -86,9 +84,7 @@ int led_router_initialize(const LedRouterConfig* config) {
 
 int led_router_set_state(LedRouterState state) {
   // Step 1: Enforce initialisation before manipulating the router.
-  if (!g_is_initialized) {
-    return LED_ROUTER_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_is_initialized);
 
   // Step 2: Reject unknown router states so the TS5A3359 only sees valid combinations.
   if (!is_valid_state(state)) {
@@ -102,14 +98,10 @@ int led_router_set_state(LedRouterState state) {
 
 int led_router_get_state(LedRouterState* state_out) {
   // Step 1: Validate output storage.
-  if (state_out == NULL) {
-    return LED_ROUTER_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(state_out);
 
   // Step 2: Ensure the router has been initialised.
-  if (!g_is_initialized) {
-    return LED_ROUTER_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_is_initialized);
 
   // Step 3: Report the cached state without touching hardware.
   *state_out = g_current_state;
@@ -118,9 +110,7 @@ int led_router_get_state(LedRouterState* state_out) {
 
 int led_router_shutdown(void) {
   // Step 1: Confirm initialisation before toggling hardware pins.
-  if (!g_is_initialized) {
-    return LED_ROUTER_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_is_initialized);
 
   // Step 2: Drive the router lines low so the switch enters the OFF state.
   digitalWrite(g_router_config.switch_in1_pin, LOW);

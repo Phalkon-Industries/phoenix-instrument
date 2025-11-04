@@ -60,15 +60,10 @@ static inline uint8_t mcp356x_config2_with_gain_bits(mcp356x_gain gain) {
 }
 
 static int mcp356x_update_config2_auto_zero(uint8_t bit_mask, bool enable) {
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   uint8_t config2_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL));
 
   if (enable) {
     config2_value |= bit_mask;
@@ -121,15 +116,10 @@ static inline uint8_t mcp356x_data_length_from_format(mcp356x_data_format format
 }
 
 static int mcp356x_update_irq_register(uint8_t mask, uint8_t desired_bits) {
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
-  uint8_t irq_value   = 0u;
-  int     return_code = mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  uint8_t irq_value = 0u;
+  GUARD(mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
 
   desired_bits &= mask;
   const uint8_t preserved_bits = (uint8_t) (irq_value & (uint8_t) (~mask));
@@ -168,12 +158,8 @@ int mcp356x_initialize(int chip_select_pin, uint32_t spi_clock_hz) {
 int mcp356x_send_fast_command(uint8_t command_code, uint8_t* status_byte) {
   // Fast commands always require the driver to be initialised and STATUS storage.
   // Step 1: Reject calls without initialisation or status storage.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
-  if (status_byte == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
+  GUARD_INITIALIZED(g_initialized);
+  GUARD_NONNULL(status_byte);
 
   // Build command byte: [7:6]=device address, [5:2]=command, [1:0]=type (00 for fast command)
   // Step 2: Assemble the on-wire command header according to Table 6-3.
@@ -204,10 +190,9 @@ int mcp356x_read_register(uint8_t register_address, uint8_t* buffer, size_t leng
   // Static read operation (single header followed by 1-4 data bytes clocked out).
   // Validate runtime state and caller parameters before touching the bus.
   // Step 1: Enforce initialisation and parameter bounds before the SPI transfer.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
-  if (buffer == NULL || length == 0 || length > 4) {
+  GUARD_INITIALIZED(g_initialized);
+  GUARD_NONNULL(buffer);
+  if (length == 0 || length > 4) {
     return MCP356X_ERR_INVALID_ARG;
   }
   if (!mcp356x_is_valid_register(register_address)) {
@@ -238,10 +223,9 @@ int mcp356x_write_register(uint8_t register_address, const uint8_t* buffer, size
   // Static write operation (single header followed by 1-4 data bytes clocked in).
   // Validate runtime state and caller parameters before touching the bus.
   // Step 1: Confirm initialisation and validate parameters before writing.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
-  if (buffer == NULL || length == 0 || length > 4) {
+  GUARD_INITIALIZED(g_initialized);
+  GUARD_NONNULL(buffer);
+  if (length == 0 || length > 4) {
     return MCP356X_ERR_INVALID_ARG;
   }
   if (!mcp356x_is_valid_register(register_address)) {
@@ -282,16 +266,11 @@ int mcp356x_select_single_ended_channel(uint8_t channel_index) {
 
 int mcp356x_set_gain(mcp356x_gain gain) {
   // Step 1: Require initialisation before touching configuration registers.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read the existing CONFIG2 register so we can preserve unrelated bits.
   uint8_t config2_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL));
 
   const uint8_t preserved_bits = (uint8_t) (config2_value & k_config2_clear_gain_mask);  // Clear GAIN[5:3].
   const uint8_t gain_bits      = (uint8_t) (static_cast<uint8_t>(gain) & k_config2_gain_field_mask);
@@ -305,19 +284,12 @@ int mcp356x_set_gain(mcp356x_gain gain) {
 
 int mcp356x_get_gain(mcp356x_gain* out_gain) {
   // Step 1: Validate output storage and ensure the driver is initialised.
-  if (out_gain == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_gain);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read CONFIG2 and extract the GAIN bits as a driver enum.
   uint8_t config2_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL));
 
   uint8_t gain_bits = (uint8_t) ((config2_value >> 3) & 0x07u);
   *out_gain         = static_cast<mcp356x_gain>(gain_bits);
@@ -330,18 +302,11 @@ int mcp356x_set_auto_zero_mux(bool enable) {
 }
 
 int mcp356x_get_auto_zero_mux(bool* out_enable) {
-  if (out_enable == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_enable);
+  GUARD_INITIALIZED(g_initialized);
 
   uint8_t config2_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL));
 
   *out_enable = (config2_value & k_config2_az_mux_mask) != 0u;
   return MCP356X_OK;
@@ -352,18 +317,11 @@ int mcp356x_set_auto_zero_reference(bool enable) {
 }
 
 int mcp356x_get_auto_zero_reference(bool* out_enable) {
-  if (out_enable == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_enable);
+  GUARD_INITIALIZED(g_initialized);
 
   uint8_t config2_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG2, &config2_value, 1u, NULL));
 
   *out_enable = (config2_value & k_config2_az_ref_mask) != 0u;
   return MCP356X_OK;
@@ -371,9 +329,7 @@ int mcp356x_get_auto_zero_reference(bool* out_enable) {
 
 int mcp356x_set_irq_mode(mcp356x_irq_mode mode) {
   // Step 1: Require driver initialisation before touching the IRQ register.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Reject bit patterns outside the two-bit IRQ_MODE field.
   const uint8_t mode_bits = static_cast<uint8_t>(mode);
@@ -388,19 +344,12 @@ int mcp356x_set_irq_mode(mcp356x_irq_mode mode) {
 
 int mcp356x_get_irq_mode(mcp356x_irq_mode* out_mode) {
   // Step 1: Validate caller storage and initialisation state.
-  if (out_mode == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_mode);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read the IRQ register and decode the mode bits.
-  uint8_t irq_value   = 0u;
-  int     return_code = mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  uint8_t irq_value = 0u;
+  GUARD(mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
 
   const uint8_t mode_bits = (uint8_t) ((irq_value & MCP356X_IRQ_MODE_MASK) >> 2);
   *out_mode               = static_cast<mcp356x_irq_mode>(mode_bits & 0x03u);
@@ -409,9 +358,7 @@ int mcp356x_get_irq_mode(mcp356x_irq_mode* out_mode) {
 
 int mcp356x_set_irq_fastcmd_enabled(bool enable) {
   // Step 1: Ensure the driver is initialised before updating the IRQ register.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Update the EN_FASTCMD bit while preserving other fields.
   const uint8_t desired_bits = enable ? MCP356X_IRQ_EN_FASTCMD_MASK : 0u;
@@ -420,19 +367,12 @@ int mcp356x_set_irq_fastcmd_enabled(bool enable) {
 
 int mcp356x_get_irq_fastcmd_enabled(bool* out_enable) {
   // Step 1: Validate output storage and initialisation state.
-  if (out_enable == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_enable);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read and decode the EN_FASTCMD bit.
-  uint8_t irq_value   = 0u;
-  int     return_code = mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  uint8_t irq_value = 0u;
+  GUARD(mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
 
   *out_enable = (irq_value & MCP356X_IRQ_EN_FASTCMD_MASK) != 0u;
   return MCP356X_OK;
@@ -440,9 +380,7 @@ int mcp356x_get_irq_fastcmd_enabled(bool* out_enable) {
 
 int mcp356x_set_irq_conversion_start_interrupt_enabled(bool enable) {
   // Step 1: Ensure the driver is initialised before updating the IRQ register.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Update the EN_STP bit while preserving other fields.
   const uint8_t desired_bits = enable ? MCP356X_IRQ_EN_CONV_START_MASK : 0u;
@@ -451,19 +389,12 @@ int mcp356x_set_irq_conversion_start_interrupt_enabled(bool enable) {
 
 int mcp356x_get_irq_conversion_start_interrupt_enabled(bool* out_enable) {
   // Step 1: Validate output storage and initialisation state.
-  if (out_enable == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_enable);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read and decode the EN_STP bit.
-  uint8_t irq_value   = 0u;
-  int     return_code = mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  uint8_t irq_value = 0u;
+  GUARD(mcp356x_read_register(MCP356X_REG_IRQ, &irq_value, 1u, NULL));
 
   *out_enable = (irq_value & MCP356X_IRQ_EN_CONV_START_MASK) != 0u;
   return MCP356X_OK;
@@ -471,9 +402,7 @@ int mcp356x_get_irq_conversion_start_interrupt_enabled(bool* out_enable) {
 
 int mcp356x_set_osr(mcp356x_osr osr) {
   // Step 1: Guard against use before driver initialisation.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Reject bit patterns outside the CONFIG1.OSR[3:0] encoding range.
   if (!mcp356x_osr_is_valid(osr)) {
@@ -482,10 +411,7 @@ int mcp356x_set_osr(mcp356x_osr osr) {
 
   // Step 3: Read CONFIG1 so we can preserve the prescaler bits on update.
   uint8_t config1_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL));
 
   const uint8_t preserved_prescaler = (uint8_t) (config1_value & k_config1_prescaler_mask);
   uint8_t       updated_config1     = mcp356x_config1_with_osr_bits(osr, preserved_prescaler);
@@ -496,19 +422,12 @@ int mcp356x_set_osr(mcp356x_osr osr) {
 
 int mcp356x_get_osr(mcp356x_osr* out_osr) {
   // Step 1: Validate output storage and runtime initialisation.
-  if (out_osr == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_osr);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read CONFIG1 and decode the OSR field.
   uint8_t config1_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL));
 
   const uint8_t osr_bits = (uint8_t) ((config1_value >> 2) & k_config1_osr_mask);
   *out_osr               = static_cast<mcp356x_osr>(osr_bits);
@@ -517,9 +436,7 @@ int mcp356x_get_osr(mcp356x_osr* out_osr) {
 
 int mcp356x_set_prescaler(mcp356x_prescaler prescaler) {
   // Step 1: Prevent configuration updates before driver initialisation.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Reject undefined prescaler encodings so CONFIG1.PRE stays in-range.
   if (!mcp356x_prescaler_is_valid(prescaler)) {
@@ -528,10 +445,7 @@ int mcp356x_set_prescaler(mcp356x_prescaler prescaler) {
 
   // Step 3: Read CONFIG1 so OSR bits and reserved LSBs can be preserved.
   uint8_t config1_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL));
 
   const uint8_t preserved_osr_bits = (uint8_t) (config1_value & (uint8_t) (~k_config1_prescaler_mask));
   uint8_t       updated_config1    = mcp356x_config1_with_prescaler_bits(prescaler, preserved_osr_bits);
@@ -542,19 +456,12 @@ int mcp356x_set_prescaler(mcp356x_prescaler prescaler) {
 
 int mcp356x_get_prescaler(mcp356x_prescaler* out_prescaler) {
   // Step 1: Validate pointer arguments and initialisation state.
-  if (out_prescaler == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_prescaler);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read CONFIG1 and extract the prescaler field.
   uint8_t config1_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG1, &config1_value, 1u, NULL));
 
   const uint8_t prescaler_bits = (uint8_t) ((config1_value >> 6) & k_config1_prescaler_value_mask);
   *out_prescaler               = static_cast<mcp356x_prescaler>(prescaler_bits);
@@ -563,9 +470,7 @@ int mcp356x_get_prescaler(mcp356x_prescaler* out_prescaler) {
 
 int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_format format) {
   // Step 1: Require initialisation before touching CONFIG3.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Reject reserved conversion-mode encodings so we never clock invalid bits into CONFIG3.
   if (!mcp356x_conversion_mode_is_valid(mode)) {
@@ -574,15 +479,12 @@ int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_for
 
   // Step 3: Read CONFIG3 to preserve CRC configuration and reserved bits in the lower nibble.
   uint8_t config3_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL));
 
   const uint8_t updated_config3 = mcp356x_config3_with_mode_format(mode, format, config3_value);
 
   // Step 4: Write the updated CONFIG3 image back to the device.
-  return_code = mcp356x_write_register(MCP356X_REG_CONFIG3, &updated_config3, 1u, NULL);
+  const int return_code = mcp356x_write_register(MCP356X_REG_CONFIG3, &updated_config3, 1u, NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
@@ -593,19 +495,13 @@ int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_for
 
 int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_data_format* out_format) {
   // Step 1: Validate output storage and ensure the driver has been initialised.
-  if (out_mode == NULL || out_format == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_mode);
+  GUARD_NONNULL(out_format);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read CONFIG3 and decode the conversion mode/data format fields.
   uint8_t config3_value = 0u;
-  int     return_code   = mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  GUARD(mcp356x_read_register(MCP356X_REG_CONFIG3, &config3_value, 1u, NULL));
 
   const uint8_t mode_bits = (uint8_t) ((config3_value & k_config3_mode_mask) >> 6);
   if (mode_bits == 0x03u) {
@@ -636,12 +532,8 @@ int mcp356x_apply_default_config(void) {
 
 int mcp356x_apply_settings(const mcp356x_settings* settings) {
   // Step 1: Reject NULL inputs and ensure the driver has been initialised.
-  if (settings == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(settings);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Validate enum encodings before altering CONFIG registers.
   if (!mcp356x_osr_is_valid(settings->osr)) {
@@ -708,9 +600,7 @@ int mcp356x_apply_settings(const mcp356x_settings* settings) {
 
 int mcp356x_set_offset_calibration(int32_t code) {
   // Step 1: Guard against use before driver initialisation.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Enforce the signed 24-bit range documented for OFFSETCAL.
   if (code < -0x00800000 || code > 0x007FFFFF) {
@@ -729,19 +619,12 @@ int mcp356x_set_offset_calibration(int32_t code) {
 
 int mcp356x_get_offset_calibration(int32_t* out_code) {
   // Step 1: Validate pointer arguments and initialisation state.
-  if (out_code == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_code);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read the 24-bit OFFSETCAL register image.
-  uint8_t buffer[3]   = {0u};
-  int     return_code = mcp356x_read_register(MCP356X_REG_OFFSETCAL, buffer, sizeof(buffer), NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  uint8_t buffer[3] = {0u};
+  GUARD(mcp356x_read_register(MCP356X_REG_OFFSETCAL, buffer, sizeof(buffer), NULL));
 
   // Step 3: Sign-extend the two's-complement value to 32 bits for the caller.
   int32_t value = (int32_t) ((buffer[0] << 16) | (buffer[1] << 8) | buffer[2]);
@@ -755,9 +638,7 @@ int mcp356x_get_offset_calibration(int32_t* out_code) {
 
 int mcp356x_set_gain_calibration(uint32_t code) {
   // Step 1: Guard against use before driver initialisation.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Ensure the unsigned 24-bit field does not overflow.
   if ((code & 0xFF000000u) != 0u) {
@@ -775,19 +656,12 @@ int mcp356x_set_gain_calibration(uint32_t code) {
 
 int mcp356x_get_gain_calibration(uint32_t* out_code) {
   // Step 1: Validate pointer arguments and initialisation state.
-  if (out_code == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_NONNULL(out_code);
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 2: Read the 24-bit GAINCAL register and decode it.
-  uint8_t buffer[3]   = {0u};
-  int     return_code = mcp356x_read_register(MCP356X_REG_GAINCAL, buffer, sizeof(buffer), NULL);
-  if (return_code != MCP356X_OK) {
-    return return_code;
-  }
+  uint8_t buffer[3] = {0u};
+  GUARD(mcp356x_read_register(MCP356X_REG_GAINCAL, buffer, sizeof(buffer), NULL));
 
   *out_code = ((uint32_t) buffer[0] << 16) | ((uint32_t) buffer[1] << 8) | buffer[2];
   return MCP356X_OK;
@@ -819,13 +693,9 @@ int mcp356x_full_reset(uint8_t* status_byte) {
 
 int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result) {
   // Step 1: Ensure we have a destination for the conversion result.
-  if (result == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(result);
   // Step 2: Require driver initialisation.
-  if (!g_initialized) {
-    return MCP356X_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_initialized);
 
   // Step 3: Program the mux to the requested single-ended channel.
   int return_code = mcp356x_select_single_ended_channel(channel_index);

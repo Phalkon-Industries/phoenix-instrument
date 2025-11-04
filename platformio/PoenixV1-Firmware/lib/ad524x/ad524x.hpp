@@ -1,17 +1,42 @@
 #ifndef AD524X_HPP
 #define AD524X_HPP
 
+#include "phoenix_guard.hpp"
+#include <AD524x.h>
 #include <stdint.h>
 
 class TwoWire;
 
 // ===================== Return Codes ============================================
-#define AD524X_OK 0
-#define AD524X_ERR_INVALID_ARG -1
-#define AD524X_ERR_I2C -2
-#define AD524X_ERR_TIMEOUT -3
-#define AD524X_ERR_NOT_INITIALIZED -4
-#define AD524X_ERR_NOT_IMPLEMENTED -5
+#ifdef AD524X_OK
+#undef AD524X_OK
+#endif
+#define AD524X_OK PHX_OK
+
+#ifdef AD524X_ERR_INVALID_ARG
+#undef AD524X_ERR_INVALID_ARG
+#endif
+#define AD524X_ERR_INVALID_ARG PHX_ERR_INVALID_ARG
+
+#ifdef AD524X_ERR_I2C
+#undef AD524X_ERR_I2C
+#endif
+#define AD524X_ERR_I2C PHX_ERR_COMMUNICATION
+
+#ifdef AD524X_ERR_TIMEOUT
+#undef AD524X_ERR_TIMEOUT
+#endif
+#define AD524X_ERR_TIMEOUT PHX_ERR_TIMEOUT
+
+#ifdef AD524X_ERR_NOT_INITIALIZED
+#undef AD524X_ERR_NOT_INITIALIZED
+#endif
+#define AD524X_ERR_NOT_INITIALIZED PHX_ERR_NOT_INITIALIZED
+
+#ifdef AD524X_ERR_NOT_IMPLEMENTED
+#undef AD524X_ERR_NOT_IMPLEMENTED
+#endif
+#define AD524X_ERR_NOT_IMPLEMENTED PHX_ERR_NOT_IMPLEMENTED
 
 /**
  * @brief Initialise shared driver state for the dual-channel AD524x family.

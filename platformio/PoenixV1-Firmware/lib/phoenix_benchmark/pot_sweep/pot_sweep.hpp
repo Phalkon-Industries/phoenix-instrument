@@ -1,8 +1,6 @@
 #ifndef PHOENIX_BENCHMARK_POT_SWEEP_HPP
 #define PHOENIX_BENCHMARK_POT_SWEEP_HPP
 
-#include "../channel_map/channel_map.hpp"
-#include "../core/phoenix_benchmark_core.hpp"
 #include <cstddef>
 #include <cstdint>
 
@@ -117,14 +115,6 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(const Ph
  * @return Absolute ADC code corresponding to 90% of full scale.
  */
 int32_t phoenix_benchmark_pot_sweep_saturation_threshold(void);
-/**
- * @brief Inject a custom channel map runner for deterministic unit testing.
- *
- * @param runner Replacement function pointer or nullptr to restore defaults.
- */
-void phoenix_benchmark_pot_sweep_set_channel_map_runner_for_test(PhoenixBenchmarkChannelMapExecutionStatus (*runner)(
-    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
-    const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks));
 /**
  * @brief Override the hardware readiness check to avoid real device dependencies during tests.
  *

@@ -36,9 +36,7 @@ static volatile int            g_irq_last_error            = MCP356X_OK;
 
 int adc_hal_initialize(const AdcHalConfig* config) {
   // Step 1: Reject calls that forget required configuration (SPI pins and IRQ line).
-  if (config == NULL) {
-    return ADC_HAL_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(config);
 
   if (config->irq_pin < 0) {
     return ADC_HAL_ERR_INVALID_ARG;
@@ -64,9 +62,7 @@ int adc_hal_initialize(const AdcHalConfig* config) {
 
 int adc_hal_apply_default_configuration(void) {
   // Step 1: Ensure the HAL is active before attempting to program registers.
-  if (!g_state.initialized) {
-    return ADC_HAL_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_state.initialized);
 
   // Step 2: Skip work when defaults already match the requested configuration.
   if (g_state.defaults_programmed) {
@@ -89,14 +85,10 @@ int adc_hal_apply_default_configuration(void) {
 
 int adc_hal_read_single_ended(AdcHalChannel channel, uint32_t timeout_us, int32_t* code_out) {
   // Step 1: Confirm the caller provided storage for the conversion code.
-  if (code_out == NULL) {
-    return ADC_HAL_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(code_out);
 
   // Step 2: Require driver initialisation before attempting a conversion.
-  if (!g_state.initialized) {
-    return ADC_HAL_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_state.initialized);
 
   // Step 3: Validate the channel selection against the hardware's supported range.
   const uint8_t channel_index = static_cast<uint8_t>(channel);
@@ -119,14 +111,10 @@ int adc_hal_read_single_ended(AdcHalChannel channel, uint32_t timeout_us, int32_
 
 int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t* code_out) {
   // Step 1: Guard against null result storage.
-  if (code_out == NULL) {
-    return ADC_HAL_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(code_out);
 
   // Step 2: Require driver initialisation before arming interrupts.
-  if (!g_state.initialized) {
-    return ADC_HAL_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_state.initialized);
 
   // Step 3: Validate the channel selection against the hardware's supported range.
   const uint8_t channel_index = static_cast<uint8_t>(channel);
@@ -204,9 +192,7 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
 
 int adc_hal_enter_standby(void) {
   // Step 1: Ensure the HAL is initialised before forwarding power commands.
-  if (!g_state.initialized) {
-    return ADC_HAL_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_state.initialized);
 
   // Step 2: Ask the MCP356x driver to enter standby and translate failures.
   const int return_code = mcp356x_enter_standby(NULL);
@@ -219,9 +205,7 @@ int adc_hal_enter_standby(void) {
 
 int adc_hal_shutdown(void) {
   // Step 1: Require an active driver before issuing shutdown.
-  if (!g_state.initialized) {
-    return ADC_HAL_ERR_NOT_INITIALIZED;
-  }
+  GUARD_INITIALIZED(g_state.initialized);
 
   // Step 2: Forward the shutdown to the MCP356x backend and propagate failures.
   const int return_code = mcp356x_enter_full_shutdown(NULL);

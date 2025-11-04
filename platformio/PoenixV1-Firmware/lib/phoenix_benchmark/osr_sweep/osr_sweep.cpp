@@ -1,5 +1,6 @@
 #include "osr_sweep.hpp"
 
+#include "../../light_readings/light_readings.hpp"
 #include "../../mcp356x/mcp356x.hpp"
 #include "../channel_map/channel_map.hpp"
 #include "../channel_map/command_parser.hpp"
@@ -7,7 +8,8 @@
 #include <Arduino.h>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include <device_setup.hpp>
+#include <limits>
 
 namespace {
 
@@ -17,16 +19,16 @@ constexpr PhoenixBenchmarkOsrSweepDefaults k_default_osr_sweep_defaults = {
     .wiper_code  = 0x00u,
 };
 
-constexpr const char* k_error_invalid_arguments  = "invalid arguments";
-constexpr const char* k_error_invalid_options    = "invalid options";
-constexpr const char* k_error_set_osr_failed     = "osr configuration failed";
-constexpr const char* k_error_channel_map_run    = "channel_map failed";
-constexpr const char* k_error_hardware_init      = "hardware initialisation failed";
-constexpr const char* k_error_restore_osr_failed = "osr restore failed";
-
-typedef PhoenixBenchmarkChannelMapExecutionStatus (*ChannelMapRunner)(
-    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
-    const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks);
+constexpr const char* k_error_invalid_arguments    = "invalid arguments";
+constexpr const char* k_error_invalid_options      = "invalid options";
+constexpr const char* k_error_set_osr_failed       = "osr configuration failed";
+constexpr const char* k_error_light_initialisation = "hardware initialisation failed";
+constexpr const char* k_error_light_runtime_update = "light readings runtime update failed";
+constexpr const char* k_error_light_sweep          = "sampling failed";
+constexpr const char* k_error_light_stats          = "statistics computation failed";
+constexpr const char* k_error_restore_osr_failed   = "osr restore failed";
+constexpr const char* k_error_invalid_row_capacity = "invalid arguments";
+constexpr const char* k_error_light_shutdown       = "light readings shutdown failed";
 
 typedef int (*OsrSetter)(mcp356x_osr value);
 
@@ -34,11 +36,10 @@ typedef uint32_t (*MicrosProvider)(void);
 
 typedef bool (*HardwareReadyChecker)(void);
 
-PhoenixBenchmarkOsrSweepDefaults g_osr_defaults       = k_default_osr_sweep_defaults;
-ChannelMapRunner                 g_channel_map_runner = phoenix_benchmark_channel_map_run;
-OsrSetter                        g_osr_setter         = mcp356x_set_osr;
-MicrosProvider                   g_micros_provider    = ::micros;
-HardwareReadyChecker             g_hardware_ready     = phoenix_benchmark_channel_map_ensure_hardware_ready;
+PhoenixBenchmarkOsrSweepDefaults g_osr_defaults    = k_default_osr_sweep_defaults;
+OsrSetter                        g_osr_setter      = mcp356x_set_osr;
+MicrosProvider                   g_micros_provider = ::micros;
+HardwareReadyChecker             g_hardware_ready  = phoenix_benchmark_channel_map_ensure_hardware_ready;
 
 constexpr mcp356x_osr k_osr_values[k_phoenix_benchmark_osr_value_count] = {
     mcp356x_osr::osr_32,    mcp356x_osr::osr_64,    mcp356x_osr::osr_128,   mcp356x_osr::osr_256,
@@ -145,7 +146,7 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
   };
 
   if ((rows == nullptr) || (row_capacity < k_phoenix_benchmark_osr_value_count)) {
-    return finalize_status(false, {false, false, k_error_invalid_arguments, 0u});
+    return finalize_status(false, {false, false, k_error_invalid_row_capacity, 0u});
   }
 
   PhoenixBenchmarkOsrSweepOptions options = input_options;
@@ -157,11 +158,44 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
         false, {false, false, (validation_message != nullptr) ? validation_message : k_error_invalid_options, 0u});
   }
 
-  PhoenixBenchmarkChannelMapOutputCallbacks callbacks = {nullptr, nullptr};
-
   if (!g_hardware_ready()) {
-    return finalize_status(false, {false, false, k_error_hardware_init, 0u});
+    return finalize_status(false, {false, false, k_error_light_initialisation, 0u});
   }
+
+  LightReadingsConfig light_config = g_device_light_readings_config;
+  if (light_readings_initialize(&light_config) != LIGHT_READINGS_OK) {
+    return finalize_status(false, {false, false, k_error_light_initialisation, 0u});
+  }
+
+  bool light_readings_initialised = true;
+  auto shutdown_light_readings    = [&]() {
+    if (!light_readings_initialised) {
+      return LIGHT_READINGS_OK;
+    }
+    const int shutdown_result = light_readings_shutdown();
+    if (shutdown_result != LIGHT_READINGS_OK) {
+      return shutdown_result;
+    }
+    light_readings_initialised = false;
+    return LIGHT_READINGS_OK;
+  };
+
+  LightReadingsRuntimeSettings runtime_settings = {
+      .apply_dwell_override = true,
+      .dwell_us             = options.dwell_us,
+      .apply_wiper_override = true,
+      .wiper_code           = options.wiper_code,
+  };
+
+  if (light_readings_modify_settings(&runtime_settings) != LIGHT_READINGS_OK) {
+    (void) shutdown_light_readings();
+    return finalize_status(false, {false, false, k_error_light_runtime_update, 0u});
+  }
+
+  LightReadingsSweepCollection sweep_collection = {
+      .sweep_count = 0u,
+      .sweeps      = g_light_readings_sweep_storage,
+  };
 
   uint32_t rows_generated        = 0u;
   bool     has_warnings          = false;
@@ -175,49 +209,105 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
     }
     attempted_osr_updates = true;
 
-    PhoenixBenchmarkStateAccumulator accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count] = {};
-
-    PhoenixBenchmarkChannelMapOptions map_options = {
-        .sweep_count        = options.sweep_count,
-        .has_sweep_override = true,
-        .dwell_us           = options.dwell_us,
-        .has_dwell_override = true,
-        .wiper_code         = options.wiper_code,
-        .has_wiper_override = true,
-    };
-
     const uint32_t start_micros = g_micros_provider();
 
-    const PhoenixBenchmarkChannelMapExecutionStatus run_status =
-        g_channel_map_runner(map_options, accumulators, callbacks);
-    const uint32_t end_micros = g_micros_provider();
+    const int      sweep_result = light_readings_sweep_n(options.sweep_count, &sweep_collection);
+    const uint32_t end_micros   = g_micros_provider();
 
-    if (!run_status.success) {
-      return finalize_status(attempted_osr_updates, {false, has_warnings, k_error_channel_map_run, rows_generated});
+    if (sweep_result != LIGHT_READINGS_OK) {
+      (void) shutdown_light_readings();
+      return finalize_status(attempted_osr_updates, {false, has_warnings, k_error_light_sweep, rows_generated});
     }
 
-    if (run_status.has_warnings) {
-      has_warnings = true;
+    LightReadingsSweepStats sweep_stats = {};
+    if (light_readings_compute_sweep_stats(&sweep_collection, &sweep_stats) != LIGHT_READINGS_OK) {
+      (void) shutdown_light_readings();
+      return finalize_status(attempted_osr_updates, {false, has_warnings, k_error_light_stats, rows_generated});
     }
 
     PhoenixBenchmarkOsrSweepRowMetrics& row = rows[rows_generated];
+    row                                     = PhoenixBenchmarkOsrSweepRowMetrics{};
     row.osr_value                           = current_osr;
-    row.drain                               = accumulators[0];
-    row.led1                                = accumulators[1];
-    row.led2                                = accumulators[2];
-    row.sweep_count                         = options.sweep_count;
+    row.sweep_count                         = sweep_collection.sweep_count;
     row.elapsed_microseconds                = compute_elapsed_time(start_micros, end_micros);
+
+    auto assign_summary = [](const LightReadingsStatisticSummary&   summary,
+                             PhoenixBenchmarkRunningStats<int32_t>& destination) {
+      destination.count = summary.sample_count;
+
+      if (!summary.has_samples) {
+        destination.mean      = 0.0;
+        destination.m2        = 0.0;
+        destination.min_value = std::numeric_limits<int32_t>::max();
+        destination.max_value = std::numeric_limits<int32_t>::lowest();
+        return;
+      }
+
+      destination.mean      = summary.mean;
+      destination.m2        = (summary.sample_count > 1u) ? (summary.standard_deviation * summary.standard_deviation *
+                                                      static_cast<double>(summary.sample_count - 1u)) :
+                                                            0.0;
+      destination.min_value = summary.min_value;
+      destination.max_value = summary.max_value;
+    };
+
+    assign_summary(sweep_stats.drain_blue, row.drain.channel_a_codes);
+    assign_summary(sweep_stats.drain_green, row.drain.channel_b_codes);
+    assign_summary(sweep_stats.blue, row.led1.channel_a_codes);
+    assign_summary(sweep_stats.drain_green, row.led1.channel_b_codes);
+    assign_summary(sweep_stats.drain_blue, row.led2.channel_a_codes);
+    assign_summary(sweep_stats.green, row.led2.channel_b_codes);
+
+    row.drain.channel_a_saturation_count = 0u;
+    row.drain.channel_b_saturation_count = 0u;
+    row.led1.channel_a_saturation_count  = 0u;
+    row.led1.channel_b_saturation_count  = 0u;
+    row.led2.channel_a_saturation_count  = 0u;
+    row.led2.channel_b_saturation_count  = 0u;
+
+    bool saturation_detected = false;
+    if ((sweep_collection.sweeps != nullptr) && (sweep_collection.sweep_count > 0u)) {
+      for (uint32_t sample_index = 0u; sample_index < sweep_collection.sweep_count; ++sample_index) {
+        const LightReadingsSweepSample& sample = sweep_collection.sweeps[sample_index];
+
+        if (phoenix_benchmark_is_adc_code_saturated(sample.drain_blue_code)) {
+          ++row.drain.channel_a_saturation_count;
+          ++row.led2.channel_a_saturation_count;
+          saturation_detected = true;
+        }
+        if (phoenix_benchmark_is_adc_code_saturated(sample.drain_green_code)) {
+          ++row.drain.channel_b_saturation_count;
+          ++row.led1.channel_b_saturation_count;
+          saturation_detected = true;
+        }
+        if (phoenix_benchmark_is_adc_code_saturated(sample.blue_code)) {
+          ++row.led1.channel_a_saturation_count;
+          saturation_detected = true;
+        }
+        if (phoenix_benchmark_is_adc_code_saturated(sample.green_code)) {
+          ++row.led2.channel_b_saturation_count;
+          saturation_detected = true;
+        }
+      }
+    }
+
+    const bool adc_reported_saturation = light_readings_last_sweep_detected_saturation();
+
+    if (saturation_detected || adc_reported_saturation) {
+      has_warnings = true;
+    }
 
     rows_generated += 1u;
   }
 
-  return finalize_status(attempted_osr_updates, {true, has_warnings, nullptr, rows_generated});
-}
+  const int shutdown_result = shutdown_light_readings();
+  if (shutdown_result != LIGHT_READINGS_OK) {
+    has_warnings = true;
+  }
 
-void phoenix_benchmark_osr_sweep_set_channel_map_runner_for_test(PhoenixBenchmarkChannelMapExecutionStatus (*runner)(
-    const PhoenixBenchmarkChannelMapOptions& options, PhoenixBenchmarkStateAccumulator* accumulators,
-    const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks)) {
-  g_channel_map_runner = (runner != nullptr) ? runner : phoenix_benchmark_channel_map_run;
+  return finalize_status(attempted_osr_updates,
+                         {true, has_warnings || (shutdown_result != LIGHT_READINGS_OK),
+                          (shutdown_result == LIGHT_READINGS_OK) ? nullptr : k_error_light_shutdown, rows_generated});
 }
 
 void phoenix_benchmark_osr_sweep_set_osr_setter_for_test(int (*setter)(mcp356x_osr value)) {
@@ -233,8 +323,7 @@ void phoenix_benchmark_osr_sweep_set_hardware_ready_checker_for_test(bool (*chec
 }
 
 void phoenix_benchmark_osr_sweep_clear_test_hooks(void) {
-  g_channel_map_runner = phoenix_benchmark_channel_map_run;
-  g_osr_setter         = mcp356x_set_osr;
-  g_micros_provider    = ::micros;
-  g_hardware_ready     = phoenix_benchmark_channel_map_ensure_hardware_ready;
+  g_osr_setter      = mcp356x_set_osr;
+  g_micros_provider = ::micros;
+  g_hardware_ready  = phoenix_benchmark_channel_map_ensure_hardware_ready;
 }

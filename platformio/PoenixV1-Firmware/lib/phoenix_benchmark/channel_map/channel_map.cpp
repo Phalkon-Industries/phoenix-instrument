@@ -4,48 +4,16 @@
 #include "adc_hal.hpp"
 #include "command_parser.hpp"
 #include "led_router.hpp"
+#include "light_readings.hpp"
+#include "power_control.hpp"
 #include <Arduino.h>
 #include <Wire.h>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-
-static constexpr uint32_t k_adc_timeout_us     = 1000000u;
-static constexpr uint32_t k_spi_clock_hz       = 500000UL;
-static constexpr uint8_t  k_digipot_channels[] = {0u, 1u};
-
-#ifdef AD5242_I2C_ADDRESS
-static_assert(AD5242_I2C_ADDRESS == 0x2Cu, "AD5242 address changed; update channel_map constants");
-#endif
-static constexpr uint8_t k_ad524x_address = 0x2Cu;
-
-#ifdef PIN_ADC_CS
-static_assert(PIN_ADC_CS == 13, "ADC CS pin changed; update channel_map constants");
-#endif
-static constexpr int k_pin_adc_cs = 13;
-
-#ifdef PIN_ADC_IRQ
-static_assert(PIN_ADC_IRQ = 9, "ADC IRQ pin changed; update channel_map constants");
-#endif
-static constexpr int k_pin_adc_irq = 9;
-
-#ifdef PIN_ENABLE_POWER
-static_assert(PIN_ENABLE_POWER == 12, "Power enable pin changed; update channel_map constants");
-#endif
-static constexpr int k_pin_enable_power = 12;
-
-#ifdef TS5A3359_IN1
-static_assert(TS5A3359_IN1 == 17, "Switch IN1 pin changed; update channel_map constants");
-#endif
-static constexpr int k_switch_in1_pin = 17;
-
-#ifdef TS5A3359_IN2
-static_assert(TS5A3359_IN2 == 18, "Switch IN2 pin changed; update channel_map constants");
-#endif
-static constexpr int         k_switch_in2_pin          = 18;
-static constexpr std::size_t k_digipot_channel_count   = sizeof(k_digipot_channels) / sizeof(k_digipot_channels[0]);
-static constexpr uint32_t    k_adc_inter_read_delay_us = 100u;
+#include <device_setup.hpp>
+#include <limits>
 
 static constexpr PhoenixBenchmarkChannelMapStateDescriptor
     k_state_descriptors[k_phoenix_benchmark_channel_map_state_descriptor_count] = {
@@ -54,21 +22,6 @@ static constexpr PhoenixBenchmarkChannelMapStateDescriptor
         {"LED2", PhoenixBenchmarkChannel::kChannelB, true, false},
 };
 
-struct PhoenixBenchmarkChannelMapStateRequest {
-  LedRouterState router_state;
-  std::size_t    accumulator_index;
-};
-
-static constexpr PhoenixBenchmarkChannelMapStateRequest k_state_sequence[] = {
-    {LedRouterState::LED_ROUTER_STATE_DRAIN, 0u},
-    {LedRouterState::LED_ROUTER_STATE_LED1, 1u},
-    {LedRouterState::LED_ROUTER_STATE_LED2, 2u},
-};
-
-static_assert(k_phoenix_benchmark_channel_map_state_descriptor_count ==
-                  (sizeof(k_state_sequence) / sizeof(k_state_sequence[0])),
-              "State sequence and descriptor tables must remain aligned");
-
 static constexpr std::size_t k_accumulator_count = k_phoenix_benchmark_channel_map_state_descriptor_count;
 
 static constexpr const char* k_error_invalid_options  = "invalid options";
@@ -76,101 +29,25 @@ static constexpr const char* k_error_hardware_failure = "hardware failure";
 static constexpr const char* k_error_sampling_failure = "sampling failure";
 static constexpr const char* k_error_adc_saturation   = "adc saturation";
 
-static PhoenixBenchmarkChannelMapDefaults g_defaults                  = {};
-static bool                               g_power_enabled             = false;
-static const char*                        g_last_sample_error         = nullptr;
-static bool                               g_force_saturation_for_test = false;
-static constexpr int32_t  k_positive_full_scale_test_code = k_phoenix_benchmark_adc_positive_full_scale_code;
-static constexpr int32_t  k_negative_full_scale_test_code = k_phoenix_benchmark_adc_negative_full_scale_code;
-static const AdcHalConfig k_adc_config                    = {
-                       .chip_select_pin = k_pin_adc_cs,
-                       .spi_clock_hz    = k_spi_clock_hz,
-                       .irq_pin         = k_pin_adc_irq,  // DRDY routed through the Arduino attachInterrupt path.
+static PhoenixBenchmarkChannelMapDefaults g_defaults             = {};
+static const char*                        g_last_sample_error    = nullptr;
+static PowerControlConfig                 g_power_control_config = {
+                    .led_router_config = &g_device_led_router_config,
+                    .adc_config        = &g_device_adc_hal_config,
+                    .wire_bus          = &Wire,
+                    .digipot_address   = AD5242_I2C_ADDRESS,
+                    .power_enable_pin  = PIN_ENABLE_POWER,
+#if defined(LED_RED)
+    .indicator_red_pin = LED_RED,
+#else
+    .indicator_red_pin = -1,
+#endif
+#if defined(LED_BLUE)
+    .indicator_blue_pin = LED_BLUE,
+#else
+    .indicator_blue_pin = -1,
+#endif
 };
-
-static void enable_power_domains(void) {
-  if (g_power_enabled) {
-    return;
-  }
-  // Step 1: Drive the shared power rail so downstream peripherals receive bias power.
-  pinMode(k_pin_enable_power, OUTPUT);
-  digitalWrite(k_pin_enable_power, HIGH);
-  g_power_enabled = true;
-}
-
-static void configure_led_idle(void) {
-  static bool configured = false;
-  if (configured) {
-    return;
-  }
-  // Step 1: Force the status LEDs to a benign idle so measurement states start predictable.
-#ifdef LED_RED
-  pinMode(LED_RED, OUTPUT);
-  digitalWrite(LED_RED, LOW);
-#endif
-#ifdef LED_BLUE
-  pinMode(LED_BLUE, OUTPUT);
-  digitalWrite(LED_BLUE, LOW);
-#endif
-  configured = true;
-}
-
-static bool ensure_led_router_initialised(void) {
-  static bool initialised = false;
-  if (initialised) {
-    return true;
-  }
-
-  // Step 1: Provide the hardware pin map so the router knows how to steer channels.
-  const LedRouterConfig config = {
-      .switch_in1_pin = k_switch_in1_pin,
-      .switch_in2_pin = k_switch_in2_pin,
-  };
-
-  // Step 2: Initialize the router driver before we attempt to move any switches.
-  const int return_code = led_router_initialize(&config);
-  if (return_code != LED_ROUTER_OK) {
-    return false;
-  }
-
-  initialised = true;
-  return true;
-}
-
-static bool ensure_digipot_initialised(void) {
-  if (!ad524x_is_initialized()) {
-    // Step 1: Start the I2C bus so the digi-pot can receive commands.
-    Wire.begin();
-    // Step 2: Initialize the digi-pot at the expected address before setting wipers.
-    const int init_code = ad524x_initialize(k_ad524x_address, &Wire);
-    if (init_code != AD524X_OK) {
-      return false;
-    }
-  }
-  return true;
-}
-
-static bool ensure_adc_initialised(void) {
-  static bool initialised = false;
-  if (initialised) {
-    return true;
-  }
-
-  // Step 1: Bring up the ADC HAL so we can schedule conversions.
-  int return_code = adc_hal_initialize(&k_adc_config);
-  if (return_code != ADC_HAL_OK) {
-    return false;
-  }
-
-  // Step 2: Apply the default register configuration expected by downstream math.
-  return_code = adc_hal_apply_default_configuration();
-  if (return_code != ADC_HAL_OK) {
-    return false;
-  }
-
-  initialised = true;
-  return true;
-}
 
 static void emit_line(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks, const char* message) {
   // Step 1: Forward log lines to the registered callback when both pointers are valid.
@@ -179,133 +56,16 @@ static void emit_line(const PhoenixBenchmarkChannelMapOutputCallbacks& callbacks
   }
 }
 
-static bool apply_wiper_code(uint8_t wiper_code) {
-  for (std::size_t index = 0; index < k_digipot_channel_count; ++index) {
-    // Step 1: Program each digi-pot channel so brightness adjustments stay consistent across both LEDs.
-    const int return_code = ad524x_set_wiper(k_digipot_channels[index], wiper_code);
-    if (return_code != AD524X_OK) {
-      return false;
-    }
-  }
-  return true;
-}
-
-static bool select_led_state(LedRouterState state) {
-  // Step 1: Command the router to the requested LED path before sampling.
-  const int return_code = led_router_set_state(state);
-  return return_code == LED_ROUTER_OK;
-}
-
 static bool ensure_hardware_ready(void) {
-  // Step 1: Power up shared rails and park indicator LEDs.
-  enable_power_domains();
-  configure_led_idle();
-
-  // Step 2: Initialise peripheral drivers before sampling.
-  if (!ensure_digipot_initialised() || !ensure_adc_initialised() || !ensure_led_router_initialised()) {
+  // Step 1: Power the analog front-end before attempting any measurements.
+  const int power_return_code = power_control_prepare_power_domains(&g_power_control_config);
+  if (power_return_code != POWER_CONTROL_OK) {
     return false;
   }
 
-  // Step 3: Default the router to the drain path so downstream code sees a known baseline.
-  (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
-  return true;
-}
-
-static bool read_adc_channel(AdcHalChannel channel, int32_t* out_code) {
-  // Step 1: Request a single-ended conversion and capture the resulting code.
-  const int return_code = adc_hal_read_single_ended(channel, k_adc_timeout_us, out_code);
-  // Step 2: Report success only when the HAL confirms the read completed.
-  return return_code == ADC_HAL_OK;
-}
-
-static bool sample_state(const PhoenixBenchmarkChannelMapStateRequest& request, uint32_t dwell_us,
-                         PhoenixBenchmarkStateAccumulator* accumulators, bool* out_saturation_detected,
-                         bool* out_sample_captured) {
-  g_last_sample_error = nullptr;
-
-  // Step 1: Reset caller-observed flags so each measurement reports fresh state.
-  if (out_saturation_detected != nullptr) {
-    *out_saturation_detected = false;
-  }
-  if (out_sample_captured != nullptr) {
-    *out_sample_captured = false;
-  }
-
-  // Step 2: Move the router to the requested LED channel before any dwell.
-  if (!select_led_state(request.router_state)) {
-    g_last_sample_error = "led router state change failed";
-    return false;
-  }
-
-  // Step 3: Allow the analog path to settle so the ADC sees a stable signal.
-  if (dwell_us > 0u) {
-    delayMicroseconds(dwell_us);
-  }
-
-  // Step 4: Grab the accumulator for this state so we can store statistics.
-  PhoenixBenchmarkStateAccumulator& accumulator = accumulators[request.accumulator_index];
-
-  // Step 5: Capture both ADC channels with deterministic timing.
-  int32_t channel_a_code = 0;
-  // Step 5a: Sample channel A and bail if the ADC reports a failure.
-  if (!read_adc_channel(AdcHalChannel::ADC_HAL_CHANNEL_4, &channel_a_code)) {
-    g_last_sample_error = "adc read failed (channel A)";
-    return false;
-  }
-
-  // Step 5b: Insert a fixed guard delay so every state shares identical timing.
-  if (k_adc_inter_read_delay_us > 0u) {
-    delayMicroseconds(k_adc_inter_read_delay_us);
-  }
-
-  int32_t channel_b_code = 0;
-  // Step 5c: Sample channel B and bail if failure occurs.
-  if (!read_adc_channel(AdcHalChannel::ADC_HAL_CHANNEL_5, &channel_b_code)) {
-    g_last_sample_error = "adc read failed (channel B)";
-    return false;
-  }
-
-  // Step 5d: Apply a matching guard delay to keep the total dwell deterministic.
-  if (k_adc_inter_read_delay_us > 0u) {
-    delayMicroseconds(k_adc_inter_read_delay_us);
-  }
-
-  // Step 5e: Inject synthetic saturation when tests request it.
-  if (g_force_saturation_for_test) {
-    channel_a_code = k_positive_full_scale_test_code;
-    channel_b_code = k_negative_full_scale_test_code;
-  }
-
-  const bool a_saturated = phoenix_benchmark_is_adc_code_saturated(channel_a_code);
-  const bool b_saturated = phoenix_benchmark_is_adc_code_saturated(channel_b_code);
-  // Step 5f: Handle saturation detection and statistics.
-  bool saturated = false;
-  if (a_saturated) {
-    ++accumulator.channel_a_saturation_count;
-    saturated = true;
-  }
-  if (b_saturated) {
-    ++accumulator.channel_b_saturation_count;
-    saturated = true;
-  }
-  if (out_saturation_detected != nullptr) {
-    *out_saturation_detected = saturated;
-  }
-  if (saturated) {
-    g_last_sample_error = k_error_adc_saturation;
-  }
-
-  // Step 5g: Update accumulators with the sampled codes.
-  accumulator.channel_a_codes.update(channel_a_code);
-  accumulator.channel_b_codes.update(channel_b_code);
-
-  // Step 5h: Mark that we captured a sample.
-  if (out_sample_captured != nullptr) {
-    *out_sample_captured = true;
-  }
-
-  // Step 5i: Return after the single deterministic sampling sequence.
-  return true;
+  // Step 2: Park the router in the drain path so downstream helpers see a known baseline.
+  const int router_return_code = led_router_set_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
+  return router_return_code == LED_ROUTER_OK;
 }
 
 static void reset_accumulators(PhoenixBenchmarkStateAccumulator* accumulators) {
@@ -313,6 +73,31 @@ static void reset_accumulators(PhoenixBenchmarkStateAccumulator* accumulators) {
     // Step 1: Clear each accumulator so a new sweep starts from a blank slate.
     accumulators[index] = PhoenixBenchmarkStateAccumulator{};
   }
+}
+
+static void populate_running_stats_from_summary(const LightReadingsStatisticSummary&   summary,
+                                                PhoenixBenchmarkRunningStats<int32_t>& stats) {
+  stats.count = summary.sample_count;
+
+  if (!summary.has_samples) {
+    stats.mean      = 0.0;
+    stats.m2        = 0.0;
+    stats.min_value = std::numeric_limits<int32_t>::max();
+    stats.max_value = std::numeric_limits<int32_t>::lowest();
+    return;
+  }
+
+  stats.mean = summary.mean;
+  if (summary.sample_count > 1u) {
+    const double variance = summary.standard_deviation * summary.standard_deviation;
+    stats.m2              = variance * static_cast<double>(summary.sample_count - 1u);
+  }
+  else {
+    stats.m2 = 0.0;
+  }
+
+  stats.min_value = summary.min_value;
+  stats.max_value = summary.max_value;
 }
 
 void PhoenixBenchmarkChannelMapOptions::apply_defaults(const PhoenixBenchmarkChannelMapDefaults& defaults) {
@@ -381,49 +166,93 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
     return {false, PHOENIX_BENCHMARK_ERR_INVALID_ARGUMENT, k_error_invalid_options, false};
   }
 
-  // Step 3: Power domains and initialise peripherals before starting the sweep.
+  // Step 3: Power the hardware stack before attempting light readings initialisation.
   if (!ensure_hardware_ready()) {
     emit_line(callbacks, "# channel_map,error=hardware_initialisation_failed");
     return {false, PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE, k_error_hardware_failure, false};
   }
 
-  // Step 4: Reset the per-state statistics before recording measurements.
-  reset_accumulators(accumulators);
+  // Step 4: Clone the device light readings configuration and apply overrides when present.
+  LightReadingsConfig light_config = g_device_light_readings_config;
+  if (options.has_dwell_override) {
+    light_config.blue_channel.dwell_us  = options.dwell_us;
+    light_config.green_channel.dwell_us = options.dwell_us;
+  }
+  else {
+    options.dwell_us = light_config.blue_channel.dwell_us;
+  }
 
-  // Step 5: Apply the requested digitpot value.
-  if (!apply_wiper_code(options.wiper_code)) {
-    emit_line(callbacks, "# channel_map,error=ad524x_failure");
+  if (options.has_wiper_override) {
+    light_config.blue_channel.wiper_code  = options.wiper_code;
+    light_config.green_channel.wiper_code = options.wiper_code;
+  }
+  else {
+    options.wiper_code = light_config.blue_channel.wiper_code;
+  }
+
+  // Step 5: Bring the light readings helper online using the configured schedule.
+  bool light_readings_initialised = false;
+  if (light_readings_initialize(&light_config) != LIGHT_READINGS_OK) {
+    emit_line(callbacks, "# channel_map,error=light_readings_initialisation_failed");
     return {false, PHOENIX_BENCHMARK_ERR_HARDWARE_FAILURE, k_error_hardware_failure, false};
   }
+  light_readings_initialised = true;
 
-  // Step 8: Track whether any saturation occurs so the caller can surface warnings.
-  bool run_has_warnings = false;
-
-  // Step 9: Perform the requested number of sweeps across each LED state.
-  for (uint32_t sweep_index = 0u; sweep_index < options.sweep_count; ++sweep_index) {
-    // Step 9a: Walk the ordered state sequence for this sweep.
-    for (std::size_t state_index = 0u; state_index < (sizeof(k_state_sequence) / sizeof(k_state_sequence[0]));
-         ++state_index) {
-      // Grab current desired state
-      const PhoenixBenchmarkChannelMapStateRequest& requested_state = k_state_sequence[state_index];
-      bool                                          saw_saturation  = false;
-      // Step 9b: Sample the current state and capture whether saturation occurred.
-      if (!sample_state(requested_state, options.dwell_us, accumulators, &saw_saturation, nullptr)) {
-        emit_line(callbacks, "# channel_map,error=sampling_failed");
-        (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
-        const char* message = (g_last_sample_error != nullptr) ? g_last_sample_error : k_error_sampling_failure;
-        return {false, PHOENIX_BENCHMARK_ERR_SAMPLING_FAILURE, message, run_has_warnings};
-      }
-
-      if (saw_saturation) {
-        // Step 9c: Elevate the warning flag so summaries can highlight saturation.
-        run_has_warnings = true;
-      }
+  auto shutdown_light_readings = [&]() {
+    if (light_readings_initialised) {
+      (void) light_readings_shutdown();
+      light_readings_initialised = false;
     }
+  };
+
+  // Step 6: Reset accumulator state so the sweep starts from a blank slate.
+  reset_accumulators(accumulators);
+  g_last_sample_error = nullptr;
+
+  // Step 7: Execute the requested sweep count through the light readings helper.
+  LightReadingsSweepCollection sweep_collection = {
+      .sweep_count = 0u,
+      .sweeps      = g_light_readings_sweep_storage,
+  };
+
+  const int sweep_return_code = light_readings_sweep_n(options.sweep_count, &sweep_collection);
+  if (sweep_return_code != LIGHT_READINGS_OK) {
+    emit_line(callbacks, "# channel_map,error=sampling_failed");
+    const char* message = (g_last_sample_error != nullptr) ? g_last_sample_error : k_error_sampling_failure;
+    shutdown_light_readings();
+    return {false, PHOENIX_BENCHMARK_ERR_SAMPLING_FAILURE, message, false};
   }
 
-  // Step 10: Park the router in drain when the sweep completes.
-  (void) select_led_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
+  // Step 8: Translate the captured samples into per-state statistics using the light readings helper.
+  LightReadingsSweepStats sweep_stats       = {};
+  const int               stats_return_code = light_readings_compute_sweep_stats(&sweep_collection, &sweep_stats);
+  if (stats_return_code != LIGHT_READINGS_OK) {
+    emit_line(callbacks, "# channel_map,error=statistics_failed");
+    shutdown_light_readings();
+    return {false, PHOENIX_BENCHMARK_ERR_SAMPLING_FAILURE, k_error_sampling_failure, false};
+  }
+
+  populate_running_stats_from_summary(sweep_stats.drain_blue,
+                                      accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_a_codes);
+  populate_running_stats_from_summary(sweep_stats.drain_green,
+                                      accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_b_codes);
+
+  populate_running_stats_from_summary(
+      sweep_stats.blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_a_codes);
+  populate_running_stats_from_summary(
+      sweep_stats.drain_green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_b_codes);
+
+  populate_running_stats_from_summary(
+      sweep_stats.drain_blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_a_codes);
+  populate_running_stats_from_summary(
+      sweep_stats.green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_b_codes);
+
+  // Step 9: Determine whether any saturation was detected during the sweep.
+  bool run_has_warnings = light_readings_last_sweep_detected_saturation();
+
+  g_last_sample_error = run_has_warnings ? k_error_adc_saturation : nullptr;
+
+  shutdown_light_readings();
   return {true, PHOENIX_BENCHMARK_OK, nullptr, run_has_warnings};
 }
 
@@ -460,13 +289,12 @@ PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_comman
 
 void phoenix_benchmark_channel_map_reset_state(void) {
   // Step 1: Clear persistent defaults and cached hardware status.
-  g_defaults                  = PhoenixBenchmarkChannelMapDefaults{};
-  g_power_enabled             = false;
-  g_last_sample_error         = nullptr;
-  g_force_saturation_for_test = false;
-}
-
-void phoenix_benchmark_channel_map_set_force_saturation_for_test(bool enabled) {
-  // Step 1: Toggle the synthetic saturation flag so tests can manipulate ADC codes.
-  g_force_saturation_for_test = enabled;
+  g_defaults          = PhoenixBenchmarkChannelMapDefaults{};
+  g_last_sample_error = nullptr;
+  power_control_reset_for_test();
+  light_readings_reset_for_test();
+  light_readings_force_saturation_for_test(false);
+  led_router_reset_for_test();
+  adc_hal_reset_for_test();
+  ad524x_deinitialize();
 }
