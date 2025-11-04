@@ -1,6 +1,8 @@
 #ifndef PH_EQUATIONS_HPP
 #define PH_EQUATIONS_HPP
 
+#include "phoenix_guard.hpp"
+
 /**
  * \file ph_equations.hpp
  * \brief Spectrophotometric pH equations utilities.
@@ -22,9 +24,9 @@ extern "C" {
 // Values chosen to align with project conventions (OK >= 0; errors < 0).
 
 enum PhEquationsError {
-  PH_EQUATIONS_OK            = 0,
-  PH_EQUATIONS_ERR_INVALID_ARG = -1,
-  PH_EQUATIONS_ERR_DOMAIN      = -2,
+  PH_EQUATIONS_OK              = PHX_OK,
+  PH_EQUATIONS_ERR_INVALID_ARG = PHX_ERR_INVALID_ARG,
+  PH_EQUATIONS_ERR_DOMAIN      = PHX_ERR_MODULE_BASE - 1,
 };
 
 /**
@@ -41,9 +43,7 @@ enum PhEquationsError {
  * - PH_EQUATIONS_OK on success and writes to out_absorbance.
  * - PH_EQUATIONS_ERR_INVALID_ARG for null pointer or non-positive inputs.
  */
-int ph_equations_calc_absorbance(double reference_intensity,
-                                 double sample_intensity,
-                                 double* out_absorbance);
+int ph_equations_calc_absorbance(double reference_intensity, double sample_intensity, double* out_absorbance);
 
 /**
  * Compute the dual-wavelength R-ratio.
@@ -60,9 +60,7 @@ int ph_equations_calc_absorbance(double reference_intensity,
  * - PH_EQUATIONS_ERR_INVALID_ARG if out_r_ratio is null.
  * - PH_EQUATIONS_ERR_DOMAIN if absorbance_blue <= 0 (division by zero or sign invalid).
  */
-int ph_equations_calc_r_ratio(double absorbance_green,
-                              double absorbance_blue,
-                              double* out_r_ratio);
+int ph_equations_calc_r_ratio(double absorbance_green, double absorbance_blue, double* out_r_ratio);
 
 /**
  * Compute pH given R-ratio, temperature, and salinity using the Byrne 2017 formulation.
@@ -78,10 +76,7 @@ int ph_equations_calc_r_ratio(double absorbance_green,
  * - PH_EQUATIONS_ERR_INVALID_ARG for null out pointer or invalid physical inputs.
  * - PH_EQUATIONS_ERR_DOMAIN if intermediate terms are outside valid domain (e.g., log argument <= 0).
  */
-int ph_equations_compute_ph(double r_ratio,
-                            double temperature_c,
-                            double salinity_psu,
-                            double* out_ph);
+int ph_equations_compute_ph(double r_ratio, double temperature_c, double salinity_psu, double* out_ph);
 
 /**
  * Compute intermediate coefficients used by the pH equation (Byrne 2017 form).
@@ -102,10 +97,7 @@ int ph_equations_compute_ph(double r_ratio,
  * - PH_EQUATIONS_OK on success and writes all outputs.
  * - PH_EQUATIONS_ERR_INVALID_ARG for null outputs or invalid physical inputs.
  */
-int ph_equations_compute_coefficients(double temperature_c,
-                                      double salinity_psu,
-                                      double* out_e1,
-                                      double* out_e3_over_e2,
+int ph_equations_compute_coefficients(double temperature_c, double salinity_psu, double* out_e1, double* out_e3_over_e2,
                                       double* out_pk1_over_e2);
 
 #ifdef __cplusplus
