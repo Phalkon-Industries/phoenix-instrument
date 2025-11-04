@@ -4,6 +4,7 @@
 	- Naming quick refs: files/use `lower_snake_case`; types/enums/structs/classes use `CamelCase`; functions and local variables use `lower_snake_case`; static globals are prefixed with `g_`.
 	- Constants: macros use `UPPER_SNAKE_CASE`; file- or function-local constants use `k_` + `lower_snake_case` (e.g. `k_spi_clock_hz`); enum values use `UPPER_SNAKE_CASE`.
 	- Namespaces are generally avoided; prefer `static` linkage unless integrating with Arduino/third-party quirks that require namespaces.
+	- Guard helpers live in `lib/phoenix_common/phoenix_guard.hpp`; prefer the shared `GUARD`/`GUARD_NONNULL`/`GUARD_INITIALIZED` macros over ad-hoc pointer checks so modules surface consistent Phoenix error codes.
 	- Phoenix Benchmark public APIs: export `phoenix_benchmark_<module>_<verb>` C-style entry points (e.g. `phoenix_benchmark_channel_map_run`) and match structs/enums with `PhoenixBenchmark<Module><Role>` (e.g. `PhoenixBenchmarkChannelMapDefaults`). Keep these in plain headers without namespaces for clean C/C++ linkage.
 	- Unity tests: name tests in descriptive `lower_snake_case` (e.g. `test_adc_read_returns_error_on_null_buffer`).
 2. **Review the git workflow before you open a branch.** `.github/git-workflow-copilot.md` captures the assistant-specific summary; the full, human-facing guide lives in `docs/git-workflow.md`. Refresh both when you start a feature or bugfix so branch names, commit styles, and merge headlines stay consistent.

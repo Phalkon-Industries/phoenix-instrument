@@ -46,6 +46,7 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 
 ## 5. Error Handling Patterns
 - Return early on invalid arguments or runtime guardrails (e.g. `if (buffer == NULL) return MCP356X_ERR_INVALID_ARG;`).
+- Prefer the shared guard macros from `lib/phoenix_common/phoenix_guard.hpp` (`GUARD`, `GUARD_NONNULL`, `GUARD_INITIALIZED`) for pointer validation and dependency checks so modules share consistent return codes.
 - Propagate driver error codes unchanged so tests can assert on them.
 - Prefer small helper functions over complex branching; for example, register framing lives in `mcp356x_command_byte`.
 
