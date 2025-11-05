@@ -6,6 +6,7 @@
 #include "led_router.hpp"
 #include "light_readings.hpp"
 #include "mcp356x.hpp"
+#include "power_control.hpp"
 #include <AD524x.h>
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
@@ -44,5 +45,8 @@ H   H   NO2(Drain)
 extern const LedRouterConfig     g_device_led_router_config;
 extern const AdcHalConfig        g_device_adc_hal_config;
 extern const LightReadingsConfig g_device_light_readings_config;
+extern const PowerControlConfig  g_device_power_control_config;
+
+int device_setup_initialize(void);
 
 #endif  // DEVICE_SETTINGS_HPP
