@@ -106,14 +106,13 @@ int light_readings_sweep(LightReadingsSweepSample* sweep_out) {
   // Step 3: Enter the drain state so both photodiodes share the drain path for the first measurements.
   GUARD(led_router_set_state(g_light_config.drain_state));
 
-  // Step 4: Sample the blue photodiode while the router remains in the drain configuration.
-  GUARD(adc_hal_read_single_ended(g_light_config.blue_channel.adc_channel, g_light_config.adc_timeout_us,
-                                  &sweep_out->drain_blue_code));
-
   // Step 5: Sample the green photodiode without altering the routing state.
   GUARD(adc_hal_read_single_ended(g_light_config.green_channel.adc_channel, g_light_config.adc_timeout_us,
                                   &sweep_out->drain_green_code));
 
+  // Step 4: Sample the blue photodiode while the router remains in the drain configuration.
+  GUARD(adc_hal_read_single_ended(g_light_config.blue_channel.adc_channel, g_light_config.adc_timeout_us,
+                                  &sweep_out->drain_blue_code));
   // Step 6: Route to the blue photodiode, honour its dwell period, and capture a direct reading.
   GUARD(led_router_set_state(g_light_config.blue_channel.router_state));
   if (g_light_config.blue_channel.dwell_us > 0u) {
@@ -121,7 +120,6 @@ int light_readings_sweep(LightReadingsSweepSample* sweep_out) {
   }
   GUARD(adc_hal_read_single_ended(g_light_config.blue_channel.adc_channel, g_light_config.adc_timeout_us,
                                   &sweep_out->blue_code));
-
   // Step 7: Route to the green photodiode, honour its dwell period, and capture a direct reading.
   GUARD(led_router_set_state(g_light_config.green_channel.router_state));
   if (g_light_config.green_channel.dwell_us > 0u) {
