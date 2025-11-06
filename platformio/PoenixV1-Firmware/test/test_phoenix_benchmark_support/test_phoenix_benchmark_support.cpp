@@ -3,6 +3,7 @@
 #include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map_formatter.hpp"
 #include "channel_map/channel_map_support.hpp"
+#include "cold_sweep/cold_sweep.hpp"
 #include "core/phoenix_benchmark_core.hpp"
 #include "drift_capture/drift_capture.hpp"
 #include "dwell_sweep/dwell_sweep.hpp"
@@ -174,6 +175,179 @@ static void test_parse_channel_map_command_rejects_dwell_override(void) {
   PhoenixBenchmarkChannelMapRequest request = {};
   // Step 2: Confirm the parser rejects unsupported dwell overrides.
   TEST_ASSERT_FALSE(phoenix_benchmark_channel_map_parse_command(command_line, &request));
+}
+
+static uint32_t g_cold_sweep_fake_timestamp_us      = 0u;
+static uint32_t g_cold_sweep_runner_calls           = 0u;
+static uint32_t g_cold_sweep_stats_calls            = 0u;
+static uint32_t g_cold_sweep_saturation_checks      = 0u;
+static bool     g_cold_sweep_force_saturation_check = false;
+
+static void cold_sweep_reset_fakes(void) {
+  g_cold_sweep_fake_timestamp_us      = 123456u;
+  g_cold_sweep_runner_calls           = 0u;
+  g_cold_sweep_stats_calls            = 0u;
+  g_cold_sweep_saturation_checks      = 0u;
+  g_cold_sweep_force_saturation_check = false;
+  phoenix_benchmark_cold_sweep_clear_test_hooks();
+}
+
+static int cold_sweep_fake_light_readings_runner(uint32_t sweep_count, LightReadingsSweepCollection* collection) {
+  // Step 1: Track invocation counts and populate deterministic sweep entries.
+  ++g_cold_sweep_runner_calls;
+  TEST_ASSERT_NOT_NULL(collection);
+  TEST_ASSERT_NOT_NULL(collection->sweeps);
+
+  collection->sweep_count = sweep_count;
+  for (uint32_t index = 0u; index < sweep_count; ++index) {
+    LightReadingsSweepSample& sample = collection->sweeps[index];
+    sample.drain_blue_code           = static_cast<int32_t>(1000 + static_cast<int32_t>(index));
+    sample.drain_green_code          = static_cast<int32_t>(2000 + static_cast<int32_t>(index));
+    sample.blue_code                 = static_cast<int32_t>(3000 + static_cast<int32_t>(index));
+    sample.green_code                = static_cast<int32_t>(4000 + static_cast<int32_t>(index));
+  }
+
+  return LIGHT_READINGS_OK;
+}
+
+static int cold_sweep_fake_stats_calculator(const LightReadingsSweepCollection* collection,
+                                            LightReadingsSweepStats*            stats_out) {
+  // Step 1: Record the calculation request and fabricate per-channel summaries.
+  ++g_cold_sweep_stats_calls;
+  TEST_ASSERT_NOT_NULL(collection);
+  TEST_ASSERT_NOT_NULL(stats_out);
+
+  *stats_out             = {};
+  stats_out->sweep_count = collection->sweep_count;
+
+  stats_out->drain_blue.sample_count       = collection->sweep_count;
+  stats_out->drain_blue.mean               = 1100.0;
+  stats_out->drain_blue.standard_deviation = 10.0;
+  stats_out->drain_blue.min_value          = 1000;
+  stats_out->drain_blue.max_value          = 1200;
+  stats_out->drain_blue.has_samples        = true;
+
+  stats_out->drain_green.sample_count       = collection->sweep_count;
+  stats_out->drain_green.mean               = 2100.0;
+  stats_out->drain_green.standard_deviation = 20.0;
+  stats_out->drain_green.min_value          = 2000;
+  stats_out->drain_green.max_value          = 2200;
+  stats_out->drain_green.has_samples        = true;
+
+  stats_out->blue.sample_count       = collection->sweep_count;
+  stats_out->blue.mean               = 3100.0;
+  stats_out->blue.standard_deviation = 30.0;
+  stats_out->blue.min_value          = 3000;
+  stats_out->blue.max_value          = 3200;
+  stats_out->blue.has_samples        = true;
+
+  stats_out->green.sample_count       = collection->sweep_count;
+  stats_out->green.mean               = 4100.0;
+  stats_out->green.standard_deviation = 40.0;
+  stats_out->green.min_value          = 4000;
+  stats_out->green.max_value          = 4200;
+  stats_out->green.has_samples        = true;
+
+  return LIGHT_READINGS_OK;
+}
+
+static bool cold_sweep_fake_saturation_checker(void) {
+  // Step 1: Track how many times saturation metadata was queried and return the forced flag.
+  ++g_cold_sweep_saturation_checks;
+  return g_cold_sweep_force_saturation_check;
+}
+
+static uint32_t cold_sweep_fake_timestamp_provider(void) {
+  // Step 1: Surface a deterministic timestamp so the runner can attribute sweeps.
+  return g_cold_sweep_fake_timestamp_us;
+}
+
+static void test_cold_sweep_run_populates_samples_and_statistics(void) {
+  // Step 1: Configure the cold sweep hooks to return deterministic sweep data and summaries.
+  cold_sweep_reset_fakes();
+  phoenix_benchmark_cold_sweep_set_light_readings_runner_for_test(cold_sweep_fake_light_readings_runner);
+  phoenix_benchmark_cold_sweep_set_stats_calculator_for_test(cold_sweep_fake_stats_calculator);
+  phoenix_benchmark_cold_sweep_set_saturation_checker_for_test(cold_sweep_fake_saturation_checker);
+  phoenix_benchmark_cold_sweep_set_timestamp_provider_for_test(cold_sweep_fake_timestamp_provider);
+
+  static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
+  LightReadingsSweepCollection    sweep_collection = {
+         .sweep_count = 0u,
+         .sweeps      = sweep_storage,
+  };
+  LightReadingsSweepStats stats = {};
+
+  const PhoenixBenchmarkColdSweepOptions options = {
+      .sweep_count        = 4u,
+      .has_sweep_override = true,
+      .dwell_override_us  = 0u,
+      .has_dwell_override = false,
+  };
+
+  // Step 2: Execute the cold sweep and capture the resulting status payload.
+  const PhoenixBenchmarkColdSweepExecutionStatus status =
+      phoenix_benchmark_cold_sweep_run(options, &sweep_collection, &stats);
+
+  phoenix_benchmark_cold_sweep_clear_test_hooks();
+
+  // Step 3: Validate that sweep metrics, statistics, and timestamps surfaced as expected.
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_FALSE(status.has_warnings);
+  TEST_ASSERT_EQUAL_UINT32(options.sweep_count, status.captured_sweeps);
+  TEST_ASSERT_EQUAL_UINT32(g_cold_sweep_fake_timestamp_us, status.timestamp_us);
+  TEST_ASSERT_EQUAL_UINT32(options.sweep_count, sweep_collection.sweep_count);
+  TEST_ASSERT_EQUAL_INT32(1000, sweep_collection.sweeps[0].drain_blue_code);
+  TEST_ASSERT_EQUAL_INT32(4000, sweep_collection.sweeps[0].green_code);
+  TEST_ASSERT_EQUAL_INT32(1003, sweep_collection.sweeps[3].drain_blue_code);
+  TEST_ASSERT_EQUAL_INT32(4003, sweep_collection.sweeps[3].green_code);
+
+  TEST_ASSERT_EQUAL_UINT32(options.sweep_count, stats.sweep_count);
+  TEST_ASSERT_TRUE(stats.blue.has_samples);
+  TEST_ASSERT_TRUE(stats.green.has_samples);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 3100.0f, static_cast<float>(stats.blue.mean));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 4100.0f, static_cast<float>(stats.green.mean));
+  TEST_ASSERT_EQUAL_INT32(3000, stats.blue.min_value);
+  TEST_ASSERT_EQUAL_INT32(4200, stats.green.max_value);
+
+  TEST_ASSERT_EQUAL_UINT32(1u, g_cold_sweep_runner_calls);
+  TEST_ASSERT_EQUAL_UINT32(1u, g_cold_sweep_stats_calls);
+  TEST_ASSERT_NOT_EQUAL(0u, g_cold_sweep_saturation_checks);
+}
+
+static void test_cold_sweep_run_reports_saturation_warning(void) {
+  // Step 1: Enable the saturation flag so the warning plumbing can be exercised.
+  cold_sweep_reset_fakes();
+  g_cold_sweep_force_saturation_check = true;
+  phoenix_benchmark_cold_sweep_set_light_readings_runner_for_test(cold_sweep_fake_light_readings_runner);
+  phoenix_benchmark_cold_sweep_set_stats_calculator_for_test(cold_sweep_fake_stats_calculator);
+  phoenix_benchmark_cold_sweep_set_saturation_checker_for_test(cold_sweep_fake_saturation_checker);
+  phoenix_benchmark_cold_sweep_set_timestamp_provider_for_test(cold_sweep_fake_timestamp_provider);
+
+  static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
+  LightReadingsSweepCollection    sweep_collection = {
+         .sweep_count = 0u,
+         .sweeps      = sweep_storage,
+  };
+  LightReadingsSweepStats stats = {};
+
+  const PhoenixBenchmarkColdSweepOptions options = {
+      .sweep_count        = 2u,
+      .has_sweep_override = true,
+      .dwell_override_us  = 0u,
+      .has_dwell_override = false,
+  };
+
+  // Step 2: Execute the cold sweep and confirm the saturation warning surfaces in the status payload.
+  const PhoenixBenchmarkColdSweepExecutionStatus status =
+      phoenix_benchmark_cold_sweep_run(options, &sweep_collection, &stats);
+
+  phoenix_benchmark_cold_sweep_clear_test_hooks();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_TRUE(status.has_warnings);
+  TEST_ASSERT_NOT_EQUAL(0u, status.warning_mask & k_phoenix_benchmark_cold_sweep_warning_saturation);
+  TEST_ASSERT_EQUAL_UINT32(options.sweep_count, status.captured_sweeps);
+  TEST_ASSERT_EQUAL_UINT32(options.sweep_count, sweep_collection.sweep_count);
 }
 
 static uint32_t                        g_drift_capture_fake_micros             = 0u;
@@ -1323,6 +1497,8 @@ void setup() {
   RUN_TEST(test_pot_sweep_parse_command_accepts_overrides);
   RUN_TEST(test_pot_sweep_parse_command_rejects_wiper_parameters);
   RUN_TEST(test_pot_sweep_run_rejects_insufficient_row_capacity);
+  RUN_TEST(test_cold_sweep_run_populates_samples_and_statistics);
+  RUN_TEST(test_cold_sweep_run_reports_saturation_warning);
   RUN_TEST(test_osr_sweep_run_reports_light_readings_warnings);
   RUN_TEST(test_pot_sweep_run_reports_light_readings_saturation);
   // Step 3: Finalise Unity before idling in loop().

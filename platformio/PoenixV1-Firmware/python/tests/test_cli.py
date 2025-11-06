@@ -291,6 +291,18 @@ class DriftCaptureSerial(DummySerial):
         ]
 
 
+class ColdSweepSerial(DummySerial):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._line_queue = [
+            b"# phoenix benchmark ready\n",
+            b"# running,scenario=cold_sweep,sweeps=4,dwell_us=750\n",
+            b"# cold_sweep_summary,timestamp_us=123456,samples=4,warnings=0x00\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+        ]
+
+
 def test_cli_dry_run_emits_preview(tmp_path: Path, capsys) -> None:
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -398,6 +410,79 @@ def test_cli_streams_plan_to_serial_port(
     recorded_lines = captured["lines"]
     assert isinstance(recorded_lines, list)
     assert "# summary_table" in recorded_lines
+
+
+def test_cli_streams_cold_sweep_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "cold_sweep",
+                        "parameters": {
+                            "sweeps": 4,
+                            "dwell_us": 750,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", ColdSweepSerial)
+
+    captured: dict[str, object] = {}
+
+    class DummyArtifacts:
+        def __init__(self, directory: Path) -> None:
+            self.output_dir = directory
+            self.transcript_path = directory / "transcript.txt"
+            self.summary_json_path = directory / "summary.json"
+            self.plot_path = directory / "cold_sweep.png"
+            self.report_markdown_path = directory / "report.md"
+            self.scenarios = ["cold_sweep"]
+            self.plot_paths = {"cold_sweep": [self.plot_path]}
+            self.csv_paths = {}
+            self.pot_sweep_recommendations = {}
+            self.pot_sweep_warning = None
+            self.dwell_sweep_recommendations = {}
+            self.dwell_sweep_warning = None
+
+    def fake_create_report(lines, plan_path, output_dir, drift_captures=None):  # type: ignore[no-untyped-def]
+        captured["lines"] = list(lines)
+        captured["plan"] = plan_path
+        captured["output"] = output_dir
+        captured["drift_captures"] = drift_captures
+        return DummyArtifacts(output_dir)
+
+    monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
+
+    output_dir = tmp_path / "reports"
+
+    exit_code = main([str(plan), "--port", "COM7", "--output", str(output_dir)])
+    assert exit_code == 0
+
+    stdout = capsys.readouterr().out
+    assert "# running,scenario=cold_sweep" in stdout
+    assert "# cold_sweep_summary" in stdout
+
+    instance = DummySerial.last_instance
+    assert instance is not None
+    assert instance.args[0] == "COM7"
+    payload = b"".join(instance.written)
+    assert b'"command":"cold_sweep"' in payload
+    assert b'"sweeps":4' in payload
+    assert b'"dwell_us":750' in payload
+
+    recorded_lines = captured.get("lines", [])
+    assert isinstance(recorded_lines, list)
+    assert any(line.startswith("# cold_sweep_summary") for line in recorded_lines)
+    assert captured["plan"] == plan
+    assert captured["output"] == output_dir
 
 
 def test_cli_streams_adc_speed_command(

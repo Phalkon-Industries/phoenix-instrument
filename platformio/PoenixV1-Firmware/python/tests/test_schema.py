@@ -249,6 +249,92 @@ def test_load_command_plan_rejects_invalid_pot_sweep(
         load_command_plan(plan_path)
 
 
+def test_load_command_plan_normalizes_cold_sweep(tmp_path: Path) -> None:
+    plan_path = tmp_path / "cold_sweep.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "cold_sweep",
+                        "parameters": {
+                            "sweeps": 120,
+                            "dwell_us": 500,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    cold_command = commands[0]
+    assert cold_command.name == "cold_sweep"
+    assert cold_command.parameters == {"sweeps": 120, "dwell_us": 500}
+
+
+def test_load_command_plan_defaults_cold_sweep_sweeps(tmp_path: Path) -> None:
+    plan_path = tmp_path / "cold_sweep_defaults.json"
+    plan_path.write_text(
+        json.dumps({"commands": [{"command": "cold_sweep"}]}),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    cold_command = commands[0]
+    assert cold_command.name == "cold_sweep"
+    assert cold_command.parameters == {"sweeps": 500}
+
+
+def test_load_command_plan_rejects_invalid_cold_sweep_payload(tmp_path: Path) -> None:
+    plan_path = tmp_path / "cold_sweep_invalid.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "cold_sweep",
+                        "parameters": {
+                            "sweeps": 0,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_command_plan(plan_path)
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"sweeps": 501},
+        {"sweeps": -1},
+        {"sweeps": 10, "dwell_us": -5},
+        {"sweeps": 10, "unexpected": True},
+    ],
+)
+def test_load_command_plan_rejects_out_of_range_cold_sweep(
+    parameters: dict[str, object], tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "cold_sweep_bounds.json"
+    plan_path.write_text(
+        json.dumps({"commands": [{"command": "cold_sweep", "parameters": parameters}]}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_command_plan(plan_path)
+
+
 def test_load_command_plan_normalizes_dwell_sweep(tmp_path: Path) -> None:
     plan_path = tmp_path / "dwell_sweep.json"
     plan_path.write_text(
