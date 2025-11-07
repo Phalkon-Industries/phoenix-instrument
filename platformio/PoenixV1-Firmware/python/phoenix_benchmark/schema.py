@@ -138,6 +138,14 @@ class DriftCaptureCommand:
 
 
 @dataclass(frozen=True)
+class ColdSweepCommand:
+    """Requests a cold-start sweep using firmware defaults."""
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {}
+
+
+@dataclass(frozen=True)
 class BenchmarkCommand:
     """Envelope describing a single host-to-firmware request."""
 
@@ -390,6 +398,12 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
         )
         return BenchmarkCommand(name=name, parameters=command.to_payload())
 
+    if name == "cold_sweep":
+        if parameters:
+            raise ValueError("cold_sweep does not accept parameters")
+        command = ColdSweepCommand()
+        return BenchmarkCommand(name=name, parameters=command.to_payload())
+
     # Unknown commands pass-through for future phases
     return BenchmarkCommand(name=name, parameters=parameters)
 
@@ -425,6 +439,7 @@ __all__ = [
     "AdcSpeedCommand",
     "BenchmarkCommand",
     "ChannelMapCommand",
+    "ColdSweepCommand",
     "DRIFT_CAPTURE_ALLOWED_OSR_VALUES",
     "DRIFT_CAPTURE_DEFAULT_END_US",
     "DRIFT_CAPTURE_DEFAULT_START_US",

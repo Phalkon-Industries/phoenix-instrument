@@ -34,6 +34,13 @@ DWELL_WARNING_LABELS = (
     (0x04, "alignment"),
 )
 
+COLD_SWEEP_CHANNELS = (
+    ("blue", "Blue", "#0057FF", "blue", "-"),
+    ("green", "Green", "#2ECC71", "green", "-"),
+    ("drain_blue", "Drain blue", "#0057FF", "db", "--"),
+    ("drain_green", "Drain green", "#2ECC71", "dg", "--"),
+)
+
 DRIFT_CAPTURE_WARNING_BUFFER_OVERFLOW = 0x01
 DRIFT_CAPTURE_WARNING_SATURATION = 0x02
 DRIFT_CAPTURE_WARNING_RESTORE_FAILED = 0x04
@@ -48,6 +55,8 @@ DRIFT_CAPTURE_DEFAULT_OSR = min(DRIFT_CAPTURE_ALLOWED_OSR_VALUES)
 
 __all__ = [
     "AdcSpeedSummaryRow",
+    "ColdSweepSummaryRow",
+    "ColdSweepSampleRow",
     "DwellSweepSummaryRow",
     "OsrSweepSummaryRow",
     "PotSweepSummaryRow",
@@ -111,6 +120,50 @@ class AdcSpeedSummaryRow:
             "error_count": self.error_count,
             "notes": self.notes,
             "has_metrics": self.has_metrics,
+        }
+
+
+@dataclass(frozen=True)
+class ColdSweepSummaryRow:
+    channel: str
+    sample_count: int
+    mean: float | None
+    stddev: float | None
+    min_code: int | None
+    max_code: int | None
+    saturated: bool
+    has_metrics: bool
+
+    def to_dict(self) -> dict[str, object | None]:
+        return {
+            "channel": self.channel,
+            "sample_count": self.sample_count,
+            "mean": self.mean,
+            "stddev": self.stddev,
+            "min_code": self.min_code,
+            "max_code": self.max_code,
+            "saturated": self.saturated,
+            "has_metrics": self.has_metrics,
+        }
+
+
+@dataclass(frozen=True)
+class ColdSweepSampleRow:
+    index: int
+    drain_blue_code: int
+    drain_green_code: int
+    blue_code: int
+    green_code: int
+    saturation: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "index": self.index,
+            "drain_blue_code": self.drain_blue_code,
+            "drain_green_code": self.drain_green_code,
+            "blue_code": self.blue_code,
+            "green_code": self.green_code,
+            "saturation": self.saturation,
         }
 
 
@@ -237,6 +290,7 @@ class _SummarySection:
 ParsedSummary = Union[
     SummaryRow,
     AdcSpeedSummaryRow,
+    ColdSweepSummaryRow,
     OsrSweepSummaryRow,
     PotSweepSummaryRow,
     DwellSweepSummaryRow,
@@ -402,6 +456,79 @@ def _extract_dwell_sweep_warning(lines: Iterable[str]) -> str | None:
     return None
 
 
+def _parse_cold_sweep_samples(lines: List[str]) -> List[ColdSweepSampleRow]:
+    samples: List[ColdSweepSampleRow] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        if line != "# cold_sweep_samples":
+            index += 1
+            continue
+
+        index += 1
+        if index >= len(lines):
+            break
+
+        header_line = lines[index].strip()
+        if not header_line.startswith("Index"):
+            continue
+
+        index += 1
+        while index < len(lines):
+            row_line = lines[index]
+            stripped = row_line.strip()
+            if stripped == "":
+                index += 1
+                break
+            if stripped.startswith("#"):
+                break
+
+            parts = row_line.split()
+            if len(parts) < 6:
+                raise ValueError(f"Invalid cold_sweep sample row: '{row_line.strip()}'")
+
+            saturation_token = " ".join(parts[5:]) if len(parts) > 6 else parts[5]
+            samples.append(
+                ColdSweepSampleRow(
+                    index=int(parts[0]),
+                    drain_blue_code=int(parts[1]),
+                    drain_green_code=int(parts[2]),
+                    blue_code=int(parts[3]),
+                    green_code=int(parts[4]),
+                    saturation=saturation_token.strip(),
+                )
+            )
+            index += 1
+        break
+
+    return samples
+
+
+def _extract_cold_sweep_metadata(lines: Iterable[str]) -> Dict[str, object]:
+    captured_sweeps: int | None = None
+    timestamp_us: int | None = None
+    warning: str | None = None
+
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("# cold_sweep_metadata"):
+            tokens = _extract_metadata(line)
+            captured_sweeps = _parse_optional_int_token(tokens.get("captured_sweeps"))
+            timestamp_us = _parse_optional_int_token(tokens.get("timestamp_us"))
+        elif line.startswith("# cold_sweep_warnings"):
+            tokens = _extract_metadata(line)
+            warning = tokens.get("reason")
+
+    metadata: Dict[str, object] = {}
+    if captured_sweeps is not None:
+        metadata["captured_sweeps"] = captured_sweeps
+    if timestamp_us is not None:
+        metadata["timestamp_us"] = timestamp_us
+    if warning is not None:
+        metadata["warning"] = warning
+    return metadata
+
+
 def parse_summary_table(lines: Iterable[str]) -> Dict[str, List[ParsedSummary]]:
     sections = _collect_summary_sections(list(lines))
     return _parse_sections(sections)
@@ -454,6 +581,8 @@ def create_report(
 
     pot_recommendations, pot_warning = _extract_pot_sweep_metadata(transcript_lines)
     dwell_warning = _extract_dwell_sweep_warning(transcript_lines)
+    cold_samples = _parse_cold_sweep_samples(transcript_lines)
+    cold_metadata = _extract_cold_sweep_metadata(transcript_lines)
     scenario_extras: Dict[str, Dict[str, object]] = {}
     if "pot_sweep" in summaries:
         scenario_extras["pot_sweep"] = {
@@ -461,6 +590,38 @@ def create_report(
             "warning": pot_warning or "none",
             "saturation_threshold": POT_SWEEP_SATURATION_THRESHOLD,
         }
+
+    cold_summary_rows: List[ColdSweepSummaryRow] = [
+        row
+        for row in summaries.get("cold_sweep", [])
+        if isinstance(row, ColdSweepSummaryRow)
+    ]
+    cold_run_metadata: Dict[str, str] = {}
+    for section in sections:
+        if section.scenario == "cold_sweep":
+            cold_run_metadata = section.metadata.copy()
+            break
+
+    if cold_summary_rows or cold_metadata or cold_samples:
+        saturated_channels = sorted(
+            {row.channel for row in cold_summary_rows if row.saturated}
+        )
+        cold_extras: Dict[str, object] = {
+            "warning": cold_metadata.get("warning", "none"),
+            "sample_count": len(cold_samples),
+        }
+        captured = cold_metadata.get("captured_sweeps")
+        if captured is not None:
+            cold_extras["captured_sweeps"] = captured
+        timestamp = cold_metadata.get("timestamp_us")
+        if timestamp is not None:
+            cold_extras["timestamp_us"] = timestamp
+        if saturated_channels:
+            cold_extras["saturated_channels"] = saturated_channels
+        if cold_run_metadata:
+            cold_extras["run_metadata"] = dict(sorted(cold_run_metadata.items()))
+
+        scenario_extras["cold_sweep"] = cold_extras
 
     dwell_rows: List[DwellSweepSummaryRow] = [
         row
@@ -541,6 +702,15 @@ def create_report(
         slug = scenario_slug_map.get("osr_sweep", "osr_sweep")
         osr_plot_paths = _render_osr_sweep_plots(osr_rows, output_dir, slug)
         plot_paths["osr_sweep"] = osr_plot_paths
+
+    if cold_summary_rows or cold_samples:
+        slug = scenario_slug_map.get("cold_sweep", "cold_sweep")
+        plot_path = output_dir / f"{slug}_samples.png"
+        _render_cold_sweep_plot(cold_samples, cold_summary_rows, plot_path)
+        plot_paths["cold_sweep"] = [plot_path]
+        csv_path = output_dir / f"{slug}_samples.csv"
+        _write_cold_sweep_csv(cold_samples, csv_path)
+        csv_paths.setdefault("cold_sweep", []).append(csv_path)
 
     if "pot_sweep" in summaries:
         pot_rows = [
@@ -688,6 +858,8 @@ def _parse_sections(sections: List[_SummarySection]) -> Dict[str, List[ParsedSum
             rows = _parse_channel_map_rows(section)
         elif section.header.startswith("Mode"):
             rows = _parse_adc_speed_rows(section)
+        elif section.header.startswith("Channel"):
+            rows = _parse_cold_sweep_rows(section)
         elif section.header.startswith("Value"):
             rows = _parse_osr_sweep_rows(section)
         elif section.header.startswith("Wiper"):
@@ -891,6 +1063,46 @@ def _parse_adc_speed_rows(section: _SummarySection) -> List[AdcSpeedSummaryRow]:
                 loop_microseconds=loop,
                 error_count=error_count,
                 notes=notes,
+                has_metrics=has_metrics,
+            )
+        )
+    return parsed
+
+
+def _parse_cold_sweep_rows(section: _SummarySection) -> List[ColdSweepSummaryRow]:
+    parsed: List[ColdSweepSummaryRow] = []
+    for entry in section.rows:
+        data = entry.strip()
+        if not data:
+            continue
+
+        parts = data.split()
+        if len(parts) < 7:
+            raise ValueError(f"Invalid cold_sweep summary row: '{entry}'")
+
+        channel = parts[0]
+        sample_count = _parse_int(parts[1])
+        mean = _parse_float(parts[2])
+        stddev = _parse_float(parts[3])
+        min_code = _parse_optional_int(parts[4])
+        max_code = _parse_optional_int(parts[5])
+        saturated = parts[6].lower() == "yes"
+        has_metrics = (
+            mean is not None
+            and stddev is not None
+            and min_code is not None
+            and max_code is not None
+        )
+
+        parsed.append(
+            ColdSweepSummaryRow(
+                channel=channel,
+                sample_count=sample_count,
+                mean=mean,
+                stddev=stddev,
+                min_code=min_code,
+                max_code=max_code,
+                saturated=saturated,
                 has_metrics=has_metrics,
             )
         )
@@ -1143,6 +1355,22 @@ def _parse_int(value: str) -> int:
         raise ValueError(f"Invalid integer field in summary row: '{value}'") from exc
 
 
+def _parse_optional_int(value: str) -> int | None:
+    token = value.strip()
+    if token in {"", "--"}:
+        return None
+    try:
+        return int(token)
+    except ValueError as exc:  # pragma: no cover - guard against malformed logs
+        raise ValueError(f"Invalid integer field in summary row: '{value}'") from exc
+
+
+def _parse_optional_int_token(value: str | None) -> int | None:
+    if value is None:
+        return None
+    return _parse_optional_int(value)
+
+
 def _parse_float(value: str) -> float | None:
     if value in {"", "--"}:
         return None
@@ -1217,6 +1445,87 @@ def _render_adc_speed_plot(rows: List[AdcSpeedSummaryRow], output_path: Path) ->
                 va="bottom",
                 fontsize=8,
             )
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def _render_cold_sweep_plot(
+    samples: List[ColdSweepSampleRow],
+    summary_rows: List[ColdSweepSummaryRow],
+    output_path: Path,
+) -> None:
+    has_samples = bool(samples)
+    metric_rows = [row for row in summary_rows if row.has_metrics]
+    has_metrics = bool(metric_rows)
+
+    if not has_samples:
+        message = (
+            "Cold sweep captured summary metrics only"
+            if has_metrics
+            else "No cold_sweep data available"
+        )
+        _render_placeholder_plot(message, output_path)
+        return
+
+    fig, axes = plt.subplots(
+        len(COLD_SWEEP_CHANNELS),
+        1,
+        figsize=(10, 2.5 * len(COLD_SWEEP_CHANNELS)),
+        sharex=True,
+    )
+
+    if isinstance(axes, plt.Axes):
+        axes_list = [axes]
+    else:
+        axes_iterable = getattr(axes, "flat", axes)
+        axes_list = list(axes_iterable)
+
+    indices = [row.index for row in samples]
+
+    for axis, (channel, label, color, token, linestyle) in zip(
+        axes_list, COLD_SWEEP_CHANNELS
+    ):
+        attr = f"{channel}_code"
+        values = [getattr(row, attr) for row in samples]
+        axis.plot(
+            indices,
+            values,
+            color=color,
+            linestyle=linestyle,
+            linewidth=1.5,
+        )
+
+        saturated_indices: List[int] = []
+        saturated_values: List[int] = []
+        for row, value in zip(samples, values):
+            saturation_tokens = {
+                part.strip()
+                for part in row.saturation.split("|")
+                if part.strip() and row.saturation.lower() != "none"
+            }
+            if token in saturation_tokens:
+                saturated_indices.append(row.index)
+                saturated_values.append(value)
+
+        if saturated_indices:
+            axis.scatter(
+                saturated_indices,
+                saturated_values,
+                color=color,
+                edgecolors="black",
+                zorder=3,
+                marker="o",
+                s=25,
+            )
+
+        axis.set_ylabel("ADC code")
+        axis.set_title(label)
+        axis.grid(axis="both", linestyle="--", alpha=0.4)
+        axis.label_outer()
+
+    axes_list[-1].set_xlabel("Sweep index")
+
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
@@ -1398,6 +1707,25 @@ def _render_osr_duration_plot(
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+
+
+def _write_cold_sweep_csv(rows: List[ColdSweepSampleRow], output_path: Path) -> None:
+    header = "index,drain_blue_code,drain_green_code,blue_code,green_code,saturation"
+    lines = [header]
+    for row in rows:
+        lines.append(
+            ",".join(
+                [
+                    str(row.index),
+                    str(row.drain_blue_code),
+                    str(row.drain_green_code),
+                    str(row.blue_code),
+                    str(row.green_code),
+                    row.saturation,
+                ]
+            )
+        )
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _write_pot_sweep_csv(rows: List[PotSweepSummaryRow], output_path: Path) -> None:
@@ -1751,6 +2079,40 @@ def _render_dwell_duration_plot(
     plt.close(fig)
 
 
+def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
+    cold_rows = [row for row in rows if isinstance(row, ColdSweepSummaryRow)]
+    if not cold_rows:
+        return []
+
+    headers = [
+        "Channel",
+        "Samples",
+        "Mean",
+        "StdDev",
+        "Min",
+        "Max",
+        "Saturated",
+    ]
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+
+    for row in cold_rows:
+        values = [
+            row.channel,
+            str(row.sample_count),
+            _format_optional_float(row.mean),
+            _format_optional_float(row.stddev),
+            _format_optional_int(row.min_code),
+            _format_optional_int(row.max_code),
+            "yes" if row.saturated else "no",
+        ]
+        table.append("| " + " | ".join(values) + " |")
+
+    return table
+
+
 def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
     channel_rows = [row for row in rows if isinstance(row, SummaryRow)]
     if not channel_rows:
@@ -1940,6 +2302,8 @@ def _render_section_table(scenario: str, rows: List[ParsedSummary]) -> List[str]
         return _build_channel_map_table(rows)
     if scenario == "adc_speed":
         return _build_adc_speed_table(rows)
+    if scenario == "cold_sweep":
+        return _build_cold_sweep_table(rows)
     if scenario == "osr_sweep":
         return _build_osr_sweep_table(rows)
     if scenario == "pot_sweep":
@@ -1947,6 +2311,76 @@ def _render_section_table(scenario: str, rows: List[ParsedSummary]) -> List[str]
     if scenario == "dwell_sweep":
         return _build_dwell_sweep_table(rows)
     return []
+
+
+def _render_cold_sweep_section(
+    rows: List[ParsedSummary],
+    plot_paths: List[Path],
+    extras: Dict[str, object],
+    csv_paths: List[Path],
+) -> List[str]:
+    lines: List[str] = ["## Summary Table (cold_sweep)"]
+
+    lines.append(
+        "_Warm-up guidance_: Run the cold sweep immediately after power-on to confirm the sensors settle before longer captures. Review the sample plot to check that the ADC codes converge without saturation."
+    )
+    lines.append("")
+
+    captured = extras.get("captured_sweeps") if isinstance(extras, dict) else None
+    timestamp = extras.get("timestamp_us") if isinstance(extras, dict) else None
+    sample_count = extras.get("sample_count") if isinstance(extras, dict) else None
+    warning = extras.get("warning") if isinstance(extras, dict) else "none"
+    run_metadata = extras.get("run_metadata") if isinstance(extras, dict) else {}
+    saturated = extras.get("saturated_channels") if isinstance(extras, dict) else []
+
+    detail_tokens = []
+    if captured is not None:
+        detail_tokens.append(f"captured sweeps: {captured}")
+    if sample_count is not None:
+        detail_tokens.append(f"samples parsed: {sample_count}")
+    if timestamp is not None:
+        detail_tokens.append(f"timestamp: {timestamp} µs")
+    if detail_tokens:
+        lines.append(
+            "_Run details_: " + " · ".join(str(token) for token in detail_tokens)
+        )
+        lines.append("")
+
+    if isinstance(run_metadata, dict) and run_metadata:
+        config_summary = ", ".join(
+            f"{key}={value}" for key, value in sorted(run_metadata.items())
+        )
+        lines.append(f"_Requested configuration_: {config_summary}")
+        lines.append("")
+
+    warning_label = warning if isinstance(warning, str) and warning else "none"
+    lines.append(f"_Warnings_: {warning_label}")
+    lines.append("")
+
+    if isinstance(saturated, list) and saturated:
+        channels = ", ".join(str(channel) for channel in saturated)
+        lines.append(f"_Saturated channels_: {channels}")
+        lines.append("")
+
+    table_lines = _build_cold_sweep_table(rows)
+    if table_lines:
+        lines.extend(table_lines)
+    else:
+        lines.append("_(no cold sweep metrics)_")
+    lines.append("")
+
+    if csv_paths:
+        csv_link = csv_paths[0].as_posix()
+        lines.append(f"[Download CSV]({csv_link})")
+        lines.append("")
+
+    if plot_paths:
+        for index, path in enumerate(plot_paths, start=1):
+            suffix = f" #{index}" if len(plot_paths) > 1 else ""
+            lines.append(f"![cold_sweep plot{suffix}]({path.as_posix()})")
+        lines.append("")
+
+    return lines
 
 
 def _render_pot_sweep_section(
@@ -2067,6 +2501,15 @@ def _render_markdown_report(
     if sections:
         for section in sections:
             extras = scenario_extras.get(section.scenario, {})
+            if section.scenario == "cold_sweep":
+                cold_lines = _render_cold_sweep_section(
+                    summaries.get(section.scenario, []),
+                    plot_paths.get(section.scenario, []),
+                    extras,
+                    csv_paths.get(section.scenario, []),
+                )
+                lines.extend(cold_lines)
+                continue
             if section.scenario == "pot_sweep":
                 pot_lines = _render_pot_sweep_section(
                     summaries.get(section.scenario, []),

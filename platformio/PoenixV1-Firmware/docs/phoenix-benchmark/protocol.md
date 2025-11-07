@@ -1,6 +1,6 @@
 # Phoenix Benchmark Serial Protocol
 
-This document tracks the evolving host ↔ firmware contract. Beginning with Phase 1, the firmware idles after boot, waits for structured commands issued by the host CLI, and returns to an idle `# ready` prompt after every run. Phase 2 adds the high-speed ADC throughput scenario while preserving the original framing rules, Phase 3 introduces the OSR sweep to characterise oversampling noise behaviour, Phase 4 adds the potentiometer saturation sweep, Phase 5 layers on dwell-time studies, and Phase 6 adds rapid drift capture bursts without altering the underlying transport.
+This document tracks the evolving host ↔ firmware contract. Beginning with Phase 1, the firmware idles after boot, waits for structured commands issued by the host CLI, and returns to an idle `# ready` prompt after every run. Phase 2 adds the high-speed ADC throughput scenario while preserving the original framing rules, Phase 3 introduces the OSR sweep to characterise oversampling noise behaviour, Phase 4 adds the potentiometer saturation sweep, Phase 5 layers on dwell-time studies, Phase 6 adds rapid drift capture bursts without altering the underlying transport, and Phase 7 layers on a cold-start sweep captured immediately after power-on.
 
 ## Message Framing
 
@@ -26,6 +26,22 @@ Channel-map inherits dwell timing and potentiometer settings from the device con
 
 ```json
 {"command": "channel_map", "parameters": {"sweeps": 100}}
+```
+
+### `cold_sweep`
+
+Captures the first light-reading sweeps immediately after power-up to confirm that the sensor stack has settled before longer captures run.
+
+| Field  | Type | Required | Notes                                                                                                                            |
+| ------ | ---- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| _none_ | —    | —        | The firmware runs with its compiled defaults; parameter overrides are currently rejected by the host schema and firmware parser. |
+
+Cold sweeps inherit dwell configuration and sweep count directly from the light-readings defaults baked into the firmware image. Run headers surface the resolved sweep count and dwell timings so lab notes capture the exact warm-up window.
+
+**Example**
+
+```json
+{"command": "cold_sweep"}
 ```
 
 ### `adc_speed`
@@ -134,9 +150,9 @@ The CLI translates `nan` tokens into `None` values, persists the aligned samples
 
 1. Operator invokes the CLI with a plan file. The CLI prints a numbered preview of the JSON lines that will be transmitted.
 2. When `--port` is provided (non dry-run), the CLI opens the serial port at 115200 baud, waits for the firmware's `# phoenix benchmark ready` + `# ready` banner, and stores every line it receives in a transcript buffer while echoing it to stdout.
-3. Each queued command is streamed verbatim as one JSON line followed by `\n`. The firmware's command loop trims the newline, dispatches to the scenario-specific parser (`phoenix_benchmark_channel_map_parse_command`, `phoenix_benchmark_osr_sweep_parse_command`, `phoenix_benchmark_dwell_sweep_parse_command`, `phoenix_benchmark_pot_sweep_parse_command`, or `phoenix_benchmark_adc_speed_parse_command`), and executes the request. Unsupported identifiers emit `# error,unsupported_command` before the dispatcher returns to idle.
-4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit a per-state table with channel statistics, alignment verdicts, and a new `Warnings` column that reports saturation notices; OSR sweeps emit one row per oversampling preset alongside runtime metrics; dwell sweeps emit one row per dwell window with variance, timing, and warning masks; pot sweeps emit wiper recommendations and saturation flags; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
-5. After each `# benchmark_complete` line, the firmware prints a fresh `# ready` prompt. The CLI stays attached until the plan is exhausted, then persists the transcript, parses every captured table (including the drift-capture metadata/results block), and produces a Markdown report with scenario-tagged sections inside the selected output directory. Artifact file names now embed the scenario list to aid long-term archiving (e.g., `transcript_channel_map_drift_capture_osr_sweep_adc_speed.txt`).
+3. Each queued command is streamed verbatim as one JSON line followed by `\n`. The firmware's command loop trims the newline, dispatches to the scenario-specific parser (`phoenix_benchmark_channel_map_parse_command`, `phoenix_benchmark_cold_sweep_parse_command`, `phoenix_benchmark_osr_sweep_parse_command`, `phoenix_benchmark_dwell_sweep_parse_command`, `phoenix_benchmark_pot_sweep_parse_command`, or `phoenix_benchmark_adc_speed_parse_command`), and executes the request. Unsupported identifiers emit `# error,unsupported_command` before the dispatcher returns to idle.
+4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit a per-state table with channel statistics, alignment verdicts, and a new `Warnings` column that reports saturation notices; cold sweeps emit per-channel statistics and a raw-sample timeline annotated with saturation tokens; OSR sweeps emit one row per oversampling preset alongside runtime metrics; dwell sweeps emit one row per dwell window with variance, timing, and warning masks; pot sweeps emit wiper recommendations and saturation flags; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
+5. After each `# benchmark_complete` line, the firmware prints a fresh `# ready` prompt. The CLI stays attached until the plan is exhausted, then persists the transcript, parses every captured table (including cold-sweep metadata, raw samples, and the drift-capture metadata/results block), and produces a Markdown report with scenario-tagged sections inside the selected output directory. Artifact file names now embed the scenario list to aid long-term archiving (e.g., `transcript_cold_sweep_channel_map_drift_capture_osr_sweep_adc_speed.txt`).
 
 ## Host Expectations
 
@@ -144,11 +160,12 @@ The CLI translates `nan` tokens into `None` values, persists the aligned samples
 - Host plans store an ordered list of command objects under a `commands` (or `sequence`) array.
 - Tooling serialises each entry with compact separators so commands remain single-line friendly for terminal usage.
 - The CLI awaits the firmware's `# ready` prompt before issuing the first command and prints every line the device emits so logs can be redirected or parsed downstream.
-- After a run completes, the CLI writes a `transcript_<scenarios>.txt`, `summary_<scenarios>.json`, and `report.md` bundle (plus scenario-specific plots and CSV exports) to the chosen output folder. The Markdown report embeds every summary table—including OSR, dwell, pot sweeps, and drift captures—and links plots with scenario-specific axes (log₂ for OSR, linear dwell, wiper code for potentiometer, elapsed microseconds for drift capture).
+- After a run completes, the CLI writes a `transcript_<scenarios>.txt`, `summary_<scenarios>.json`, and `report.md` bundle (plus scenario-specific plots and CSV exports) to the chosen output folder. The Markdown report embeds every summary table—including cold sweeps, OSR, dwell, pot sweeps, and drift captures—and links plots with scenario-specific axes (log₂ for OSR, linear dwell, wiper code for potentiometer, elapsed microseconds for drift capture, sweep index for cold-start timelines).
 
 ## Firmware Expectations
 
-- Firmware now waits for supported commands (`channel_map`, `osr_sweep`, `dwell_sweep`, `pot_sweep`, `adc_speed`, `drift_capture`) before executing work. Upon receiving the request it echoes a `# running` metadata line, performs the scenario, and prints `# benchmark_complete` followed by a renewed `# ready` prompt.
+- Firmware now waits for supported commands (`channel_map`, `cold_sweep`, `osr_sweep`, `dwell_sweep`, `pot_sweep`, `adc_speed`, `drift_capture`) before executing work. Upon receiving the request it echoes a `# running` metadata line, performs the scenario, and prints `# benchmark_complete` followed by a renewed `# ready` prompt.
+- Cold sweeps emit a summary table covering drain/LED means, standard deviations, min/max codes, and saturation flags, followed by a raw-sample table that lists every sweep entry with per-sample saturation tokens. Metadata lines (`# cold_sweep_metadata,...`, `# cold_sweep_warnings,...`) capture captured sweep counts, dwell settings, capture timestamps, and warning reasons so hosts can surface warm-up diagnostics.
 - During Phase 1, channel-to-LED association is reported in the summary table via the new `Channel_Map` column:
   - `A=OK` or `B=OK` indicates that the observed dominant ADC channel matches the expected LED routing.
   - `B!=A`, `A!=B`, or `??!=A/B` highlight mismatches or ambiguous responses.
