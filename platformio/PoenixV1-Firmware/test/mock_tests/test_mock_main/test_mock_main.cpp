@@ -1,4 +1,4 @@
-#include "examples/mock_main_controller.hpp"
+#include "mocks/mock_main_controller.hpp"
 #include "unity_config.h"
 #include <Adafruit_TinyUSB.h>
 #include <string.h>
