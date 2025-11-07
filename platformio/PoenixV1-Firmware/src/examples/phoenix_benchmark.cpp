@@ -3,6 +3,8 @@
 #include "adc_speed/adc_speed_command_parser.hpp"
 #include "adc_speed/adc_speed_formatter.hpp"
 #include "channel_map/channel_map.hpp"
+#include "cold_sweep/cold_sweep.hpp"
+#include "cold_sweep/cold_sweep_formatter.hpp"
 #include "device_setup.hpp"
 #include "drift_capture/drift_capture.hpp"
 #include "dwell_sweep/dwell_sweep.hpp"
@@ -867,6 +869,215 @@ bool execute_pot_sweep_command(const PhoenixBenchmarkPotSweepOptions& options) {
   return true;
 }
 
+uint8_t compute_cold_sweep_saturation_mask(const LightReadingsSweepCollection& sweeps) {
+  // Step 1: Skip evaluation when no sweeps completed.
+  if ((sweeps.sweeps == nullptr) || (sweeps.sweep_count == 0u)) {
+    return 0u;
+  }
+
+  // Step 2: Aggregate saturation state across each channel.
+  uint8_t saturation_mask = 0u;
+  for (uint32_t index = 0u; index < sweeps.sweep_count; ++index) {
+    const LightReadingsSweepSample& sample = sweeps.sweeps[index];
+    if (phoenix_benchmark_is_adc_code_saturated(sample.drain_blue_code)) {
+      saturation_mask |= k_phoenix_benchmark_cold_sweep_saturation_drain_blue;
+    }
+    if (phoenix_benchmark_is_adc_code_saturated(sample.drain_green_code)) {
+      saturation_mask |= k_phoenix_benchmark_cold_sweep_saturation_drain_green;
+    }
+    if (phoenix_benchmark_is_adc_code_saturated(sample.blue_code)) {
+      saturation_mask |= k_phoenix_benchmark_cold_sweep_saturation_blue;
+    }
+    if (phoenix_benchmark_is_adc_code_saturated(sample.green_code)) {
+      saturation_mask |= k_phoenix_benchmark_cold_sweep_saturation_green;
+    }
+  }
+
+  return saturation_mask;
+}
+
+bool print_cold_sweep_summary(const LightReadingsSweepStats& stats, uint8_t saturation_mask) {
+  // Step 1: Separate the summary from prior logs and emit the banner.
+  Serial.println();
+  Serial.println(F("# summary_table"));
+
+  char line_buffer[k_phoenix_benchmark_cold_sweep_summary_buffer_bytes] = {};
+  if (!phoenix_benchmark_cold_sweep_format_summary_header(line_buffer, sizeof(line_buffer))) {
+    Serial.println(F("# summary_table_format_failed"));
+    return false;
+  }
+  Serial.println(line_buffer);
+
+  // Step 2: Print the per-channel metrics so host tooling can digest the results.
+  const struct {
+    const char*                          label;
+    const LightReadingsStatisticSummary* summary;
+    uint8_t                              saturation_bit;
+  } rows[] = {
+      {"drain_blue", &stats.drain_blue, k_phoenix_benchmark_cold_sweep_saturation_drain_blue},
+      {"drain_green", &stats.drain_green, k_phoenix_benchmark_cold_sweep_saturation_drain_green},
+      {"blue", &stats.blue, k_phoenix_benchmark_cold_sweep_saturation_blue},
+      {"green", &stats.green, k_phoenix_benchmark_cold_sweep_saturation_green},
+  };
+
+  for (const auto& row : rows) {
+    const LightReadingsStatisticSummary&            summary = *row.summary;
+    const PhoenixBenchmarkColdSweepSummaryRowValues values  = {
+         .label              = row.label,
+         .sample_count       = summary.sample_count,
+         .mean               = summary.mean,
+         .standard_deviation = summary.standard_deviation,
+         .min_code           = summary.min_value,
+         .max_code           = summary.max_value,
+         .has_samples        = summary.has_samples,
+         .saturated          = (saturation_mask & row.saturation_bit) != 0u,
+    };
+
+    if (!phoenix_benchmark_cold_sweep_format_summary_row(values, line_buffer, sizeof(line_buffer))) {
+      Serial.println(F("# summary_table_row_format_failed"));
+      continue;
+    }
+
+    Serial.println(line_buffer);
+  }
+
+  Serial.println();
+  return true;
+}
+
+bool print_cold_sweep_samples(const LightReadingsSweepCollection& sweeps) {
+  // Step 1: Emit the sample banner and render the header for downstream parsing.
+  Serial.println(F("# cold_sweep_samples"));
+
+  char line_buffer[k_phoenix_benchmark_cold_sweep_sample_buffer_bytes] = {};
+  if (!phoenix_benchmark_cold_sweep_format_sample_header(line_buffer, sizeof(line_buffer))) {
+    Serial.println(F("# cold_sweep_sample_header_format_failed"));
+    return false;
+  }
+  Serial.println(line_buffer);
+
+  // Step 2: Handle the edge case where the sweep captured no samples.
+  if ((sweeps.sweeps == nullptr) || (sweeps.sweep_count == 0u)) {
+    Serial.println(F("# cold_sweep_samples_empty"));
+    Serial.println();
+    return true;
+  }
+
+  // Step 3: Emit each sweep with per-channel codes and saturation metadata.
+  for (uint32_t index = 0u; index < sweeps.sweep_count; ++index) {
+    const LightReadingsSweepSample& sample = sweeps.sweeps[index];
+
+    uint8_t saturation_mask = 0u;
+    if (phoenix_benchmark_is_adc_code_saturated(sample.drain_blue_code)) {
+      saturation_mask |= k_phoenix_benchmark_cold_sweep_saturation_drain_blue;
+    }
+    if (phoenix_benchmark_is_adc_code_saturated(sample.drain_green_code)) {
+      saturation_mask |= k_phoenix_benchmark_cold_sweep_saturation_drain_green;
+    }
+    if (phoenix_benchmark_is_adc_code_saturated(sample.blue_code)) {
+      saturation_mask |= k_phoenix_benchmark_cold_sweep_saturation_blue;
+    }
+    if (phoenix_benchmark_is_adc_code_saturated(sample.green_code)) {
+      saturation_mask |= k_phoenix_benchmark_cold_sweep_saturation_green;
+    }
+
+    const PhoenixBenchmarkColdSweepSampleRowValues values = {
+        .sweep_index      = index,
+        .drain_blue_code  = sample.drain_blue_code,
+        .drain_green_code = sample.drain_green_code,
+        .blue_code        = sample.blue_code,
+        .green_code       = sample.green_code,
+        .saturation_mask  = saturation_mask,
+    };
+
+    if (!phoenix_benchmark_cold_sweep_format_sample_row(values, line_buffer, sizeof(line_buffer))) {
+      Serial.print(F("# cold_sweep_sample_row_format_failed,index="));
+      Serial.println(index);
+      continue;
+    }
+
+    Serial.println(line_buffer);
+  }
+
+  Serial.println();
+  return true;
+}
+
+void print_cold_sweep_warning_reasons(uint8_t mask) {
+  // Step 1: Surface warning tokens for host logs.
+  bool emitted_reason = false;
+  if ((mask & k_phoenix_benchmark_cold_sweep_warning_saturation) != 0u) {
+    Serial.print(F("saturation"));
+    emitted_reason = true;
+  }
+
+  if (!emitted_reason) {
+    Serial.print(F("template_fallback"));
+  }
+}
+
+bool execute_cold_sweep_command(const PhoenixBenchmarkColdSweepOptions& options) {
+  // Step 1: Announce the run configuration chosen for the sweep.
+  const uint32_t baseline_blue_dwell_us  = g_device_light_readings_config.blue_channel.dwell_us;
+  const uint32_t baseline_green_dwell_us = g_device_light_readings_config.green_channel.dwell_us;
+  const bool     override_dwell          = options.has_dwell_override;
+  const uint32_t applied_blue_dwell_us   = override_dwell ? options.dwell_override_us : baseline_blue_dwell_us;
+  const uint32_t applied_green_dwell_us  = override_dwell ? options.dwell_override_us : baseline_green_dwell_us;
+  const uint32_t requested_sweeps = options.has_sweep_override ? options.sweep_count : LIGHT_READINGS_MAX_SWEEP_COUNT;
+
+  Serial.print(F("# running,scenario=cold_sweep,sweeps="));
+  Serial.print(requested_sweeps);
+  Serial.print(F(",dwell_blue_us="));
+  Serial.print(applied_blue_dwell_us);
+  Serial.print(F(",dwell_green_us="));
+  Serial.println(applied_green_dwell_us);
+
+  // Step 2: Execute the sweep and capture statistics.
+  LightReadingsSweepCollection sweep_collection = {
+      .sweep_count = 0u,
+      .sweeps      = g_light_readings_sweep_storage,
+  };
+  LightReadingsSweepStats stats = {};
+
+  const PhoenixBenchmarkColdSweepExecutionStatus status =
+      phoenix_benchmark_cold_sweep_run(options, &sweep_collection, &stats);
+
+  if (!status.success) {
+    Serial.print(F("# error,cold_sweep_failed"));
+    if (status.message != nullptr) {
+      Serial.print(F(",reason="));
+      Serial.print(status.message);
+    }
+    Serial.println();
+    return false;
+  }
+
+  Serial.print(F("# cold_sweep_metadata,captured_sweeps="));
+  Serial.print(status.captured_sweeps);
+  Serial.print(F(",timestamp_us="));
+  Serial.println(status.timestamp_us);
+
+  const uint8_t saturation_mask = compute_cold_sweep_saturation_mask(sweep_collection);
+
+  // Step 3: Emit summary statistics and per-sample output for host tooling.
+  if (!print_cold_sweep_summary(stats, saturation_mask)) {
+    return false;
+  }
+  if (!print_cold_sweep_samples(sweep_collection)) {
+    return false;
+  }
+
+  // Step 4: Surface warning reasons when the driver reported anomalies.
+  if (status.has_warnings) {
+    Serial.print(F("# cold_sweep_warnings,reason="));
+    print_cold_sweep_warning_reasons(status.warning_mask);
+    Serial.println();
+  }
+
+  Serial.println(F("# benchmark_complete"));
+  return true;
+}
+
 bool execute_osr_sweep_command(const PhoenixBenchmarkOsrSweepOptions& options) {
   Serial.print(F("# running,scenario=osr_sweep,pot="));
   Serial.print(options.wiper_code);
@@ -1150,6 +1361,21 @@ void handle_command_line(const char* line) {
 
     handled = execute_drift_capture_command(parse_result.options);
   }
+  else if (std::strcmp(command_identifier, "cold_sweep") == 0) {
+    const PhoenixBenchmarkColdSweepParseResult parse_result = phoenix_benchmark_cold_sweep_parse_command(line);
+    if (!parse_result.success) {
+      Serial.print(F("# error,cold_sweep_parse_failed"));
+      if (parse_result.error_message != nullptr) {
+        Serial.print(F(",reason="));
+        Serial.print(parse_result.error_message);
+      }
+      Serial.println();
+      Serial.println(F("# ready"));
+      return;
+    }
+
+    handled = execute_cold_sweep_command(parse_result.options);
+  }
   else if (std::strcmp(command_identifier, "led_on_drift") == 0) {
     const PhoenixBenchmarkDriftCaptureParseResult parse_result =
         phoenix_benchmark_drift_capture_parse_command("drift_capture");
@@ -1197,6 +1423,7 @@ void setup() {
   phoenix_benchmark_pot_sweep_initialise(k_pot_sweep_defaults);
   phoenix_benchmark_drift_capture_reset_state();
   phoenix_benchmark_drift_capture_initialise(k_drift_capture_defaults);
+  phoenix_benchmark_cold_sweep_reset_state();
 
   // Step 3: Clear previous measurements and present the ready prompt.
   reset_accumulators();

@@ -4,6 +4,7 @@
 #include "channel_map/channel_map_formatter.hpp"
 #include "channel_map/channel_map_support.hpp"
 #include "cold_sweep/cold_sweep.hpp"
+#include "cold_sweep/cold_sweep_formatter.hpp"
 #include "core/phoenix_benchmark_core.hpp"
 #include "drift_capture/drift_capture.hpp"
 #include "dwell_sweep/dwell_sweep.hpp"
@@ -182,6 +183,9 @@ static uint32_t g_cold_sweep_runner_calls           = 0u;
 static uint32_t g_cold_sweep_stats_calls            = 0u;
 static uint32_t g_cold_sweep_saturation_checks      = 0u;
 static bool     g_cold_sweep_force_saturation_check = false;
+static bool     g_cold_sweep_hardware_ready         = true;
+
+static bool cold_sweep_fake_hardware_ready(void);
 
 static void cold_sweep_reset_fakes(void) {
   g_cold_sweep_fake_timestamp_us      = 123456u;
@@ -189,7 +193,13 @@ static void cold_sweep_reset_fakes(void) {
   g_cold_sweep_stats_calls            = 0u;
   g_cold_sweep_saturation_checks      = 0u;
   g_cold_sweep_force_saturation_check = false;
+  g_cold_sweep_hardware_ready         = true;
   phoenix_benchmark_cold_sweep_clear_test_hooks();
+  phoenix_benchmark_cold_sweep_set_hardware_ready_checker_for_test(cold_sweep_fake_hardware_ready);
+}
+
+static bool cold_sweep_fake_hardware_ready(void) {
+  return g_cold_sweep_hardware_ready;
 }
 
 static int cold_sweep_fake_light_readings_runner(uint32_t sweep_count, LightReadingsSweepCollection* collection) {
@@ -348,6 +358,155 @@ static void test_cold_sweep_run_reports_saturation_warning(void) {
   TEST_ASSERT_NOT_EQUAL(0u, status.warning_mask & k_phoenix_benchmark_cold_sweep_warning_saturation);
   TEST_ASSERT_EQUAL_UINT32(options.sweep_count, status.captured_sweeps);
   TEST_ASSERT_EQUAL_UINT32(options.sweep_count, sweep_collection.sweep_count);
+}
+
+static void test_cold_sweep_run_reports_error_when_hardware_not_ready(void) {
+  // Step 1: Make the hardware readiness probe fail so the runner aborts.
+  cold_sweep_reset_fakes();
+  g_cold_sweep_hardware_ready = false;
+  phoenix_benchmark_cold_sweep_set_hardware_ready_checker_for_test(cold_sweep_fake_hardware_ready);
+
+  LightReadingsSweepSample     sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT] = {};
+  LightReadingsSweepCollection sweep_collection                              = {
+                                   .sweep_count = 0u,
+                                   .sweeps      = sweep_storage,
+  };
+  LightReadingsSweepStats stats = {};
+
+  const PhoenixBenchmarkColdSweepOptions options = {
+      .sweep_count        = 0u,
+      .has_sweep_override = false,
+      .dwell_override_us  = 0u,
+      .has_dwell_override = false,
+  };
+
+  // Step 2: Expect the run to fail with a hardware initialisation error.
+  const PhoenixBenchmarkColdSweepExecutionStatus status =
+      phoenix_benchmark_cold_sweep_run(options, &sweep_collection, &stats);
+
+  TEST_ASSERT_FALSE(status.success);
+  TEST_ASSERT_NOT_NULL(status.message);
+  TEST_ASSERT_EQUAL_STRING("hardware_initialisation_failed", status.message);
+  TEST_ASSERT_EQUAL_UINT32(0u, sweep_collection.sweep_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, status.captured_sweeps);
+
+  phoenix_benchmark_cold_sweep_clear_test_hooks();
+}
+
+static void test_cold_sweep_parse_command_accepts_plain_token(void) {
+  // Step 1: Parse the bare command token and confirm it succeeds without overrides.
+  const PhoenixBenchmarkColdSweepParseResult result = phoenix_benchmark_cold_sweep_parse_command("cold_sweep");
+
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_NULL(result.error_message);
+  TEST_ASSERT_FALSE(result.options.has_sweep_override);
+  TEST_ASSERT_FALSE(result.options.has_dwell_override);
+  TEST_ASSERT_EQUAL_UINT32(0u, result.options.sweep_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, result.options.dwell_override_us);
+}
+
+static void test_cold_sweep_parse_command_accepts_minimal_json(void) {
+  // Step 1: Provide the JSON envelope used by other benchmarks and expect success.
+  const PhoenixBenchmarkColdSweepParseResult result =
+      phoenix_benchmark_cold_sweep_parse_command("{\"command\":\"cold_sweep\"}");
+
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_NULL(result.error_message);
+  TEST_ASSERT_FALSE(result.options.has_sweep_override);
+  TEST_ASSERT_FALSE(result.options.has_dwell_override);
+}
+
+static void test_cold_sweep_parse_command_rejects_parameters(void) {
+  // Step 1: Ensure unknown parameter payloads are rejected to highlight protocol drift.
+  const PhoenixBenchmarkColdSweepParseResult result =
+      phoenix_benchmark_cold_sweep_parse_command("{\"command\":\"cold_sweep\",\"parameters\":{\"sweeps\":10}}");
+
+  TEST_ASSERT_FALSE(result.success);
+  TEST_ASSERT_NOT_NULL(result.error_message);
+}
+
+static void test_cold_sweep_format_summary_header_matches_expected_columns(void) {
+  // Step 1: Render the summary header and confirm it surfaces the agreed columns.
+  char buffer[k_phoenix_benchmark_cold_sweep_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_cold_sweep_format_summary_header(buffer, sizeof(buffer)));
+
+  TEST_ASSERT_EQUAL_STRING("Channel        Samples  Mean      StdDev     Min        Max        Saturated", buffer);
+}
+
+static void test_cold_sweep_format_summary_row_formats_metrics(void) {
+  // Step 1: Populate a summary row with complete metrics so formatting can be validated.
+  PhoenixBenchmarkColdSweepSummaryRowValues values = {
+      .label              = "drain_blue",
+      .sample_count       = 5u,
+      .mean               = 123.456,
+      .standard_deviation = 7.89,
+      .min_code           = -42,
+      .max_code           = 2048,
+      .has_samples        = true,
+      .saturated          = true,
+  };
+
+  char buffer[k_phoenix_benchmark_cold_sweep_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_cold_sweep_format_summary_row(values, buffer, sizeof(buffer)));
+
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "drain_blue"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "123.456"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "7.890"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "-42"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "2048"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "yes"));
+}
+
+static void test_cold_sweep_format_summary_row_uses_placeholders_when_samples_missing(void) {
+  // Step 1: Prepare a summary row without metrics so placeholder handling can be asserted.
+  PhoenixBenchmarkColdSweepSummaryRowValues values = {
+      .label              = "green",
+      .sample_count       = 0u,
+      .mean               = 0.0,
+      .standard_deviation = 0.0,
+      .min_code           = 0,
+      .max_code           = 0,
+      .has_samples        = false,
+      .saturated          = false,
+  };
+
+  char buffer[k_phoenix_benchmark_cold_sweep_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_cold_sweep_format_summary_row(values, buffer, sizeof(buffer)));
+
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "green"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "--"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "no"));
+}
+
+static void test_cold_sweep_format_sample_header_matches_expected_columns(void) {
+  // Step 1: Render the sample header to confirm column labels align with host expectations.
+  char buffer[k_phoenix_benchmark_cold_sweep_sample_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_cold_sweep_format_sample_header(buffer, sizeof(buffer)));
+
+  TEST_ASSERT_EQUAL_STRING("Index  Drain_Blue  Drain_Green  Blue  Green  Saturation", buffer);
+}
+
+static void test_cold_sweep_format_sample_row_formats_codes_and_mask(void) {
+  // Step 1: Populate a sample row and ensure formatted output includes each field and saturation token.
+  PhoenixBenchmarkColdSweepSampleRowValues values = {
+      .sweep_index      = 3u,
+      .drain_blue_code  = -500,
+      .drain_green_code = 1024,
+      .blue_code        = 2048,
+      .green_code       = -1024,
+      .saturation_mask  = static_cast<uint8_t>(k_phoenix_benchmark_cold_sweep_saturation_drain_blue |
+                                               k_phoenix_benchmark_cold_sweep_saturation_green),
+  };
+
+  char buffer[k_phoenix_benchmark_cold_sweep_sample_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_cold_sweep_format_sample_row(values, buffer, sizeof(buffer)));
+
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "3"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "-500"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "1024"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "2048"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "-1024"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "db|green"));
 }
 
 static uint32_t                        g_drift_capture_fake_micros             = 0u;
@@ -1499,6 +1658,15 @@ void setup() {
   RUN_TEST(test_pot_sweep_run_rejects_insufficient_row_capacity);
   RUN_TEST(test_cold_sweep_run_populates_samples_and_statistics);
   RUN_TEST(test_cold_sweep_run_reports_saturation_warning);
+  RUN_TEST(test_cold_sweep_run_reports_error_when_hardware_not_ready);
+  RUN_TEST(test_cold_sweep_parse_command_accepts_plain_token);
+  RUN_TEST(test_cold_sweep_parse_command_accepts_minimal_json);
+  RUN_TEST(test_cold_sweep_parse_command_rejects_parameters);
+  RUN_TEST(test_cold_sweep_format_summary_header_matches_expected_columns);
+  RUN_TEST(test_cold_sweep_format_summary_row_formats_metrics);
+  RUN_TEST(test_cold_sweep_format_summary_row_uses_placeholders_when_samples_missing);
+  RUN_TEST(test_cold_sweep_format_sample_header_matches_expected_columns);
+  RUN_TEST(test_cold_sweep_format_sample_row_formats_codes_and_mask);
   RUN_TEST(test_osr_sweep_run_reports_light_readings_warnings);
   RUN_TEST(test_pot_sweep_run_reports_light_readings_saturation);
   // Step 3: Finalise Unity before idling in loop().
