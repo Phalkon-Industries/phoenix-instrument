@@ -70,7 +70,7 @@ class DummySerial:
             (_channel_map_header() + "\n").encode("utf-8"),
             (
                 _channel_map_row(
-                    "LED1",
+                    "Blue",
                     10,
                     123.0,
                     2.0,
@@ -149,32 +149,32 @@ class OsrSweepSerial(DummySerial):
                 "drain_std": 0.456,
                 "drain_min": 1.111,
                 "drain_max": 1.888,
-                "led1_mean": 2.345,
-                "led1_std": 0.567,
-                "led1_min": 2.123,
-                "led1_max": 2.789,
-                "led2_mean": 3.456,
-                "led2_std": 0.678,
-                "led2_min": 3.210,
-                "led2_max": 3.890,
+                "blue_mean": 2.345,
+                "blue_std": 0.567,
+                "blue_min": 2.123,
+                "blue_max": 2.789,
+                "green_mean": 3.456,
+                "green_std": 0.678,
+                "green_min": 3.210,
+                "green_max": 3.890,
                 "sweep_us": 12345,
             }
             return (
                 f"{label:<10}{sweeps:>9}  "
                 f"{values['drain_mean']:>10.3f}  {values['drain_std']:>10.3f}  "
                 f"{values['drain_min']:>10.3f}  {values['drain_max']:>10.3f}  "
-                f"{values['led1_mean']:>10.3f}  {values['led1_std']:>10.3f}  "
-                f"{values['led1_min']:>10.3f}  {values['led1_max']:>10.3f}  "
-                f"{values['led2_mean']:>10.3f}  {values['led2_std']:>10.3f}  "
-                f"{values['led2_min']:>10.3f}  {values['led2_max']:>10.3f}  "
+                f"{values['blue_mean']:>10.3f}  {values['blue_std']:>10.3f}  "
+                f"{values['blue_min']:>10.3f}  {values['blue_max']:>10.3f}  "
+                f"{values['green_mean']:>10.3f}  {values['green_std']:>10.3f}  "
+                f"{values['green_min']:>10.3f}  {values['green_max']:>10.3f}  "
                 f"{values['sweep_us']:>10d}"
             )
 
         row = format_row().encode("utf-8") + b"\n"
         header = (
             "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  "
-            "LED1_Mean  LED1_Std  LED1_Min  LED1_Max  LED2_Mean  LED2_Std  "
-            "LED2_Min  LED2_Max  Sweep_us"
+            "Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  "
+            "Green_Min  Green_Max  Sweep_us"
         ).encode("utf-8") + b"\n"
         self._line_queue = [
             b"# phoenix benchmark ready\n",
@@ -195,13 +195,13 @@ class PotSweepSerial(DummySerial):
             b"# phoenix benchmark ready\n",
             b"# running,scenario=pot_sweep,sweeps_per_wiper=6,dwell_us=180,wiper_count=256\n",
             b"# summary_table\n",
-            b"Wiper LED1_Max LED2_Max LED1_Sat LED2_Sat\n",
+            b"Wiper Blue_Max Green_Max Blue_Sat Green_Sat\n",
             b"0x10  7000000  6800000    no    no\n",
             b"0x20  7600000  6900000   yes    no\n",
             b"0x30  7800000  7900000   yes   yes\n",
             b"\n",
-            b"# pot_sweep_recommendation,led=led1,wiper=0x10\n",
-            b"# pot_sweep_recommendation,led=led2,wiper=0x20\n",
+            b"# pot_sweep_recommendation,led=blue,wiper=0x10\n",
+            b"# pot_sweep_recommendation,led=green,wiper=0x20\n",
             b"# pot_sweep_warnings,reason=saturation\n",
             b"# benchmark_complete\n",
             b"# ready\n",
@@ -217,10 +217,10 @@ class DwellSweepSerial(DummySerial):
             sweeps: int,
             drain_mean: float | None,
             drain_std: float | None,
-            led1_mean: float | None,
-            led1_std: float | None,
-            led2_mean: float | None,
-            led2_std: float | None,
+            blue_mean: float | None,
+            blue_std: float | None,
+            green_mean: float | None,
+            green_std: float | None,
             duration: int,
             warning_mask: int,
         ) -> bytes:
@@ -234,18 +234,18 @@ class DwellSweepSerial(DummySerial):
                 f"{sweeps:>6d}",
                 render_metric(drain_mean, 10),
                 render_metric(drain_std, 9),
-                render_metric(led1_mean, 10),
-                render_metric(led1_std, 8),
-                render_metric(led2_mean, 10),
-                render_metric(led2_std, 8),
+                render_metric(blue_mean, 10),
+                render_metric(blue_std, 8),
+                render_metric(green_mean, 10),
+                render_metric(green_std, 8),
                 f"{duration:>12d}",
                 f"0x{warning_mask:02X}",
             ]
             return ("  ".join(segments) + "\n").encode("utf-8")
 
         header = (
-            "Dwell_us  Sweeps  Drain_Mean  Drain_Std  LED1_Mean  LED1_Std  "
-            "LED2_Mean  LED2_Std  Duration_us  Warning_Mask\n"
+            "Dwell_us  Sweeps  Drain_Mean  Drain_Std  Blue_Mean  Blue_Std  "
+            "Green_Mean  Green_Std  Duration_us  Warning_Mask\n"
         ).encode("utf-8")
 
         row_stable = format_row(
@@ -280,8 +280,8 @@ class DriftCaptureSerial(DummySerial):
             b"# phoenix benchmark ready\n",
             b"# running,scenario=drift_capture,start_us=0,end_us=50,step_us=10\n",
             b"# drift_capture,metadata,start_us=0,end_us=50,step_delay_us=10,osr=4096,wiper_code=0x2A\n",
-            b"# drift_capture,results,led1_samples=3,led2_samples=2,warning_mask=0x03\n",
-            b"Elapsed_LED1_us\tCode_LED1\tElapsed_LED2_us\tCode_LED2\n",
+            b"# drift_capture,results,blue_samples=3,green_samples=2,warning_mask=0x03\n",
+            b"Elapsed_Blue_us\tCode_Blue\tElapsed_Green_us\tCode_Green\n",
             b"0\t1024\tnan\tnan\n",
             b"10\t1100\t0\t950\n",
             b"20\t1200\t10\t960\n",
@@ -636,7 +636,7 @@ def test_cli_streams_pot_sweep_command(
             self.scenarios = ["pot_sweep"]
             self.plot_paths = {"pot_sweep": [self.plot_path]}
             self.csv_paths = {"pot_sweep": [directory / "pot_sweep.csv"]}
-            self.pot_sweep_recommendations = {"led1": "0x10", "led2": "0x20"}
+            self.pot_sweep_recommendations = {"blue": "0x10", "green": "0x20"}
             self.pot_sweep_warning = "saturation"
             self.dwell_sweep_recommendations = {}
             self.dwell_sweep_warning = None
@@ -647,7 +647,7 @@ def test_cli_streams_pot_sweep_command(
             self.report_markdown_path.write_text("report", encoding="utf-8")
             for path in self.csv_paths["pot_sweep"]:
                 path.write_text(
-                    "wiper,led1_max,led2_max,led1_saturated,led2_saturated\n",
+                    "wiper,blue_max,green_max,blue_saturated,green_saturated\n",
                     encoding="utf-8",
                 )
 
@@ -666,7 +666,7 @@ def test_cli_streams_pot_sweep_command(
     stdout = capsys.readouterr().out
     assert "# running,scenario=pot_sweep" in stdout
     assert "# pot_sweep_recommendation" in stdout
-    assert "# pot_sweep_summary,led1=0x10,led2=0x20,warnings=saturation" in stdout
+    assert "# pot_sweep_summary,blue=0x10,green=0x20,warnings=saturation" in stdout
 
     instance = DummySerial.last_instance
     assert instance is not None
@@ -679,7 +679,7 @@ def test_cli_streams_pot_sweep_command(
     assert captured["output"] == output_dir
     recorded_lines = captured["lines"]
     assert isinstance(recorded_lines, list)
-    assert any("Wiper LED1_Max" in entry for entry in recorded_lines)
+    assert any("Wiper Blue_Max" in entry for entry in recorded_lines)
 
 
 def test_cli_streams_dwell_sweep_command(

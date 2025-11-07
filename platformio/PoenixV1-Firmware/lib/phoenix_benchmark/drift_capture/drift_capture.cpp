@@ -80,12 +80,12 @@ uint32_t compute_elapsed_time(uint32_t start, uint32_t end) {
 }
 
 AdcHalChannel channel_for_led(PhoenixBenchmarkDriftCaptureLed led) {
-  return (led == PhoenixBenchmarkDriftCaptureLed::kLed1) ? AdcHalChannel::ADC_HAL_CHANNEL_4 :
+  return (led == PhoenixBenchmarkDriftCaptureLed::kBlue) ? AdcHalChannel::ADC_HAL_CHANNEL_4 :
                                                            AdcHalChannel::ADC_HAL_CHANNEL_5;
 }
 
 LedRouterState router_state_for_led(PhoenixBenchmarkDriftCaptureLed led) {
-  return (led == PhoenixBenchmarkDriftCaptureLed::kLed1) ? LedRouterState::LED_ROUTER_STATE_LED1 :
+  return (led == PhoenixBenchmarkDriftCaptureLed::kBlue) ? LedRouterState::LED_ROUTER_STATE_LED1 :
                                                            LedRouterState::LED_ROUTER_STATE_LED2;
 }
 
@@ -295,8 +295,8 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
       .applied_step_us    = 0u,
       .applied_osr        = 0u,
       .applied_wiper_code = 0u,
-      .led1_samples       = 0u,
-      .led2_samples       = 0u,
+      .blue_samples       = 0u,
+      .green_samples      = 0u,
   };
 
   auto emit_failure_line = [&](const char* message) {
@@ -375,36 +375,36 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
     run_failed = true;
   };
 
-  // Step 7: Capture the LED1 trace before switching the router back to drain.
-  const CaptureOutcome led1_outcome = capture_led(PhoenixBenchmarkDriftCaptureLed::kLed1, options);
-  overflow_detected |= led1_outcome.overflow;
-  saturation_detected |= led1_outcome.saturation;
-  if (!led1_outcome.success) {
-    emit_failure_line(led1_outcome.message);
-    set_failure(led1_outcome.message);
+  // Step 7: Capture the blue trace before switching the router back to drain.
+  const CaptureOutcome blue_outcome = capture_led(PhoenixBenchmarkDriftCaptureLed::kBlue, options);
+  overflow_detected |= blue_outcome.overflow;
+  saturation_detected |= blue_outcome.saturation;
+  if (!blue_outcome.success) {
+    emit_failure_line(blue_outcome.message);
+    set_failure(blue_outcome.message);
   }
 
   if (g_led_setter != nullptr) {
     (void) g_led_setter(LedRouterState::LED_ROUTER_STATE_DRAIN);
   }
 
-  CaptureOutcome led2_outcome = {};
+  CaptureOutcome green_outcome = {};
   if (!run_failed) {
-    // Step 8: Repeat the capture for LED2 only if the first trace succeeded.
-    led2_outcome = capture_led(PhoenixBenchmarkDriftCaptureLed::kLed2, options);
-    overflow_detected |= led2_outcome.overflow;
-    saturation_detected |= led2_outcome.saturation;
-    if (!led2_outcome.success) {
-      emit_failure_line(led2_outcome.message);
-      set_failure(led2_outcome.message);
+    // Step 8: Repeat the capture for the green path only if the first trace succeeded.
+    green_outcome = capture_led(PhoenixBenchmarkDriftCaptureLed::kGreen, options);
+    overflow_detected |= green_outcome.overflow;
+    saturation_detected |= green_outcome.saturation;
+    if (!green_outcome.success) {
+      emit_failure_line(green_outcome.message);
+      set_failure(green_outcome.message);
     }
     if (g_led_setter != nullptr) {
       (void) g_led_setter(LedRouterState::LED_ROUTER_STATE_DRAIN);
     }
   }
 
-  status.led1_samples = g_sample_counts[0u];
-  status.led2_samples = g_sample_counts[1u];
+  status.blue_samples  = g_sample_counts[0u];
+  status.green_samples = g_sample_counts[1u];
 
   if (overflow_detected) {
     g_warning_mask |= k_phoenix_benchmark_drift_capture_warning_buffer_overflow;
@@ -444,21 +444,21 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
     emit_line(callbacks, buffer);
 
     std::snprintf(buffer, sizeof(buffer),
-                  "# drift_capture,results,led1_samples=%lu,led2_samples=%lu,warning_mask=0x%02X",
-                  static_cast<unsigned long>(status.led1_samples), static_cast<unsigned long>(status.led2_samples),
+                  "# drift_capture,results,blue_samples=%lu,green_samples=%lu,warning_mask=0x%02X",
+                  static_cast<unsigned long>(status.blue_samples), static_cast<unsigned long>(status.green_samples),
                   static_cast<unsigned int>(status.warning_mask));
     emit_line(callbacks, buffer);
 
-    emit_line(callbacks, "Elapsed_LED1_us\tCode_LED1\tElapsed_LED2_us\tCode_LED2");
+    emit_line(callbacks, "Elapsed_Blue_us\tCode_Blue\tElapsed_Green_us\tCode_Green");
     const std::size_t max_rows =
-        (status.led1_samples > status.led2_samples) ? status.led1_samples : status.led2_samples;
+        (status.blue_samples > status.green_samples) ? status.blue_samples : status.green_samples;
     for (std::size_t index = 0u; index < max_rows; ++index) {
-      const bool  have_led1 = index < status.led1_samples;
-      const bool  have_led2 = index < status.led2_samples;
-      char        line[160] = {};
-      std::size_t used      = 0u;
+      const bool  have_blue  = index < status.blue_samples;
+      const bool  have_green = index < status.green_samples;
+      char        line[160]  = {};
+      std::size_t used       = 0u;
 
-      if (have_led1) {
+      if (have_blue) {
         used = static_cast<std::size_t>(std::snprintf(
             line, sizeof(line), "%lu\t%ld", static_cast<unsigned long>(g_samples[0u][index].elapsed_microseconds),
             static_cast<long>(g_samples[0u][index].adc_code)));
@@ -472,7 +472,7 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
         line[used]   = '\0';
       }
 
-      if (have_led2) {
+      if (have_green) {
         (void) std::snprintf(line + used, sizeof(line) - used, "%lu\t%ld",
                              static_cast<unsigned long>(g_samples[1u][index].elapsed_microseconds),
                              static_cast<long>(g_samples[1u][index].adc_code));

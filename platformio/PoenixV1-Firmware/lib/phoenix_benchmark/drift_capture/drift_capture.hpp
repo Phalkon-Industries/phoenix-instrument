@@ -96,16 +96,16 @@ struct PhoenixBenchmarkDriftCaptureExecutionStatus {
   uint32_t    applied_step_us;
   uint32_t    applied_osr;
   uint8_t     applied_wiper_code;
-  std::size_t led1_samples;
-  std::size_t led2_samples;
+  std::size_t blue_samples;
+  std::size_t green_samples;
 };
 
 /**
  * @brief Identifiers for the LEDs measured during drift capture.
  */
 enum class PhoenixBenchmarkDriftCaptureLed : uint8_t {
-  kLed1 = 0u,
-  kLed2 = 1u,
+  kBlue  = 0u,
+  kGreen = 1u,
 };
 
 /**
@@ -141,7 +141,7 @@ PhoenixBenchmarkDriftCaptureExecutionStatus phoenix_benchmark_drift_capture_run(
 
 /**
  * @brief Access the captured samples for a specific LED channel.
- * @param led Enum identifying LED1 or LED2.
+ * @param led Enum identifying the blue or green trace.
  * @param count_out Optional pointer that receives the number of valid samples.
  * @return Pointer to the head of the internal sample buffer for the requested LED.
  */

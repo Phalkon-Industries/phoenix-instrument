@@ -44,8 +44,8 @@ struct PhoenixBenchmarkDwellSweepRowMetrics {
   uint32_t                         sweeps_requested;
   uint32_t                         sweeps_completed;
   PhoenixBenchmarkStateAccumulator drain;
-  PhoenixBenchmarkStateAccumulator led1;
-  PhoenixBenchmarkStateAccumulator led2;
+  PhoenixBenchmarkStateAccumulator blue;
+  PhoenixBenchmarkStateAccumulator green;
   PhoenixBenchmarkChannel          dominant_channel;
   uint32_t                         elapsed_microseconds;
   uint8_t                          warning_mask;

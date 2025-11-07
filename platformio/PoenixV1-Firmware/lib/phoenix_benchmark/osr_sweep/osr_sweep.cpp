@@ -253,17 +253,17 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
 
     assign_summary(sweep_stats.drain_blue, row.drain.channel_a_codes);
     assign_summary(sweep_stats.drain_green, row.drain.channel_b_codes);
-    assign_summary(sweep_stats.blue, row.led1.channel_a_codes);
-    assign_summary(sweep_stats.drain_green, row.led1.channel_b_codes);
-    assign_summary(sweep_stats.drain_blue, row.led2.channel_a_codes);
-    assign_summary(sweep_stats.green, row.led2.channel_b_codes);
+    assign_summary(sweep_stats.blue, row.blue.channel_a_codes);
+    assign_summary(sweep_stats.drain_green, row.blue.channel_b_codes);
+    assign_summary(sweep_stats.drain_blue, row.green.channel_a_codes);
+    assign_summary(sweep_stats.green, row.green.channel_b_codes);
 
     row.drain.channel_a_saturation_count = 0u;
     row.drain.channel_b_saturation_count = 0u;
-    row.led1.channel_a_saturation_count  = 0u;
-    row.led1.channel_b_saturation_count  = 0u;
-    row.led2.channel_a_saturation_count  = 0u;
-    row.led2.channel_b_saturation_count  = 0u;
+    row.blue.channel_a_saturation_count  = 0u;
+    row.blue.channel_b_saturation_count  = 0u;
+    row.green.channel_a_saturation_count = 0u;
+    row.green.channel_b_saturation_count = 0u;
 
     bool saturation_detected = false;
     if ((sweep_collection.sweeps != nullptr) && (sweep_collection.sweep_count > 0u)) {
@@ -272,20 +272,20 @@ PhoenixBenchmarkOsrSweepExecutionStatus phoenix_benchmark_osr_sweep_run(
 
         if (phoenix_benchmark_is_adc_code_saturated(sample.drain_blue_code)) {
           ++row.drain.channel_a_saturation_count;
-          ++row.led2.channel_a_saturation_count;
+          ++row.green.channel_a_saturation_count;
           saturation_detected = true;
         }
         if (phoenix_benchmark_is_adc_code_saturated(sample.drain_green_code)) {
           ++row.drain.channel_b_saturation_count;
-          ++row.led1.channel_b_saturation_count;
+          ++row.blue.channel_b_saturation_count;
           saturation_detected = true;
         }
         if (phoenix_benchmark_is_adc_code_saturated(sample.blue_code)) {
-          ++row.led1.channel_a_saturation_count;
+          ++row.blue.channel_a_saturation_count;
           saturation_detected = true;
         }
         if (phoenix_benchmark_is_adc_code_saturated(sample.green_code)) {
-          ++row.led2.channel_b_saturation_count;
+          ++row.green.channel_b_saturation_count;
           saturation_detected = true;
         }
       }

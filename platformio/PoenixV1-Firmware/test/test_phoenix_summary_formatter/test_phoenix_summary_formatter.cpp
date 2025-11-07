@@ -61,7 +61,7 @@ static void test_summary_header_formats_aligned_columns(void) {
 static void test_summary_row_formats_state_metrics(void) {
   // Step 1. Populate the formatter inputs with representative metric values.
   PhoenixBenchmarkChannelMapSummaryRowValues values = {
-      .label               = "LED1",
+      .label               = "Blue",
       .sample_count        = 42u,
       .mean_channel_a      = 12345.678,
       .std_channel_a       = 12.345,

@@ -18,8 +18,8 @@
 static constexpr PhoenixBenchmarkChannelMapStateDescriptor
     k_state_descriptors[k_phoenix_benchmark_channel_map_state_descriptor_count] = {
         {"Drain", PhoenixBenchmarkChannel::kUnknown, true, true},
-        {"LED1", PhoenixBenchmarkChannel::kChannelA, true, false},
-        {"LED2", PhoenixBenchmarkChannel::kChannelB, true, false},
+        {"Blue", PhoenixBenchmarkChannel::kChannelA, true, false},
+        {"Green", PhoenixBenchmarkChannel::kChannelB, true, false},
 };
 
 static constexpr std::size_t k_accumulator_count = k_phoenix_benchmark_channel_map_state_descriptor_count;

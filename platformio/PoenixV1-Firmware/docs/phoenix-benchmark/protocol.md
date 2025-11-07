@@ -15,9 +15,9 @@ This document tracks the evolving host ↔ firmware contract. Beginning with Pha
 
 Requests a single sweep that identifies which ADC channel responds to each LED state.
 
-| Field    | Type    | Required | Notes                                                                       |
-| -------- | ------- | -------- | --------------------------------------------------------------------------- |
-| `sweeps` | integer | yes      | Number of complete Drain → LED1 → LED2 cycles to capture. Must be positive. |
+| Field    | Type    | Required | Notes                                                                        |
+| -------- | ------- | -------- | ---------------------------------------------------------------------------- |
+| `sweeps` | integer | yes      | Number of complete Drain → blue → green cycles to capture. Must be positive. |
 
 Channel-map inherits dwell timing and potentiometer settings from the device configuration. Any attempt to provide
 `dwell_us` or `wiper_code` arguments is rejected by the command parser so the sweep matches the light readings defaults.
@@ -118,7 +118,7 @@ Unknown command identifiers return a `# error,unsupported_command` line until th
 
 ### `drift_capture`
 
-Requests a rapid dual-LED capture immediately after each LED transitions on. The firmware timestamps LED1/LED2 samples relative to the activation edge, stores them in a shared buffer, and emits metadata once both sequences complete.
+Requests a rapid dual-LED capture immediately after each LED transitions on. The firmware timestamps blue/green samples relative to the activation edge, stores them in a shared buffer, and emits metadata once both sequences complete.
 
 | Field           | Type    | Required | Notes                                                                                                                                                |
 | --------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -140,8 +140,8 @@ Drift captures defer all output until both LED buffers are populated, then emit 
 
 1. `# running,scenario=drift_capture,...` – announces the scenario with resolved metadata.
 2. `# drift_capture,metadata,start_us=...,end_us=...,step_delay_us=...,osr=...,wiper_code=...` – records the applied capture settings.
-3. `# drift_capture,results,led1_samples=<N1>,led2_samples=<N2>,warning_mask=<mask>` – reports sample counts and the combined warning bitmask (`0x01` buffer overflow, `0x02` saturation, `0x04` restore failure).
-4. `Elapsed_LED1_us	Code_LED1	Elapsed_LED2_us	Code_LED2` header followed by tab-separated sample rows. Missing values are printed as `nan` to keep LED1/LED2 timelines aligned.
+3. `# drift_capture,results,blue_samples=<N1>,green_samples=<N2>,warning_mask=<mask>` – reports sample counts and the combined warning bitmask (`0x01` buffer overflow, `0x02` saturation, `0x04` restore failure).
+4. `Elapsed_Blue_us	Code_Blue	Elapsed_Green_us	Code_Green` header followed by tab-separated sample rows. Missing values are printed as `nan` to keep blue/green timelines aligned.
 5. Blank line terminates the sample section prior to `# benchmark_complete`.
 
 The CLI translates `nan` tokens into `None` values, persists the aligned samples to CSV/JSON, and emits a `# drift_capture_summary,bursts=...,slugs=...,warnings=...` line summarising the run.

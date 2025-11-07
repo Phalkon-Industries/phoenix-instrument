@@ -190,14 +190,15 @@ def main(argv: Iterable[str] | None = None) -> int:
     artifacts = create_report(transcript, args.plan, output_dir, drift_bursts)
     recommendations = getattr(artifacts, "pot_sweep_recommendations", {}) or {}
     warning_label = getattr(artifacts, "pot_sweep_warning", None)
-    if recommendations:
-        led1 = recommendations.get("led1", "--")
-        led2 = recommendations.get("led2", "--")
-        warning = warning_label if warning_label else "none"
+    if recommendations or warning_label:
+        blue = recommendations.get("blue", "--")
+        green = recommendations.get("green", "--")
+        warning = recommendations.get("warning")
+        if not warning:
+            warning = warning_label if warning_label else "none"
         sys.stdout.write(
-            f"# pot_sweep_summary,led1={led1},led2={led2},warnings={warning}\n"
+            f"# pot_sweep_summary,blue={blue},green={green},warnings={warning}\n"
         )
-
     dwell_recommendations = getattr(artifacts, "dwell_sweep_recommendations", {}) or {}
     dwell_warning = getattr(artifacts, "dwell_sweep_warning", None)
     if dwell_recommendations:

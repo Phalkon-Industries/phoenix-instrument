@@ -87,8 +87,8 @@ constexpr std::size_t k_phoenix_benchmark_osr_value_count = 16u;
 struct PhoenixBenchmarkOsrSweepRowMetrics {
   mcp356x_osr                      osr_value;
   PhoenixBenchmarkStateAccumulator drain;
-  PhoenixBenchmarkStateAccumulator led1;
-  PhoenixBenchmarkStateAccumulator led2;
+  PhoenixBenchmarkStateAccumulator blue;
+  PhoenixBenchmarkStateAccumulator green;
   uint32_t                         sweep_count;
   uint32_t                         elapsed_microseconds;
 };

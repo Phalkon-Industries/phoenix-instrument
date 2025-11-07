@@ -90,16 +90,16 @@ static void test_determine_dominant_channel_prefers_channel_a_when_delta_exceeds
   drain_accumulator.channel_b_codes.update(98);
   drain_accumulator.channel_b_codes.update(99);
 
-  // Step 2: Populate a LED1 accumulator where channel A clearly dominates.
-  PhoenixBenchmarkStateAccumulator led1_accumulator;
-  led1_accumulator.channel_a_codes.update(500);
-  led1_accumulator.channel_a_codes.update(520);
-  led1_accumulator.channel_b_codes.update(110);
-  led1_accumulator.channel_b_codes.update(120);
+  // Step 2: Populate a blue accumulator where channel A clearly dominates.
+  PhoenixBenchmarkStateAccumulator blue_accumulator;
+  blue_accumulator.channel_a_codes.update(500);
+  blue_accumulator.channel_a_codes.update(520);
+  blue_accumulator.channel_b_codes.update(110);
+  blue_accumulator.channel_b_codes.update(120);
 
   // Step 3: Verify the helper selects channel A when the delta exceeds the drain threshold.
   const PhoenixBenchmarkChannel channel =
-      phoenix_benchmark_channel_map_determine_dominant_channel(drain_accumulator, led1_accumulator, 5.0);
+      phoenix_benchmark_channel_map_determine_dominant_channel(drain_accumulator, blue_accumulator, 5.0);
   TEST_ASSERT_EQUAL(PhoenixBenchmarkChannel::kChannelA, channel);
 }
 
@@ -111,15 +111,15 @@ static void test_determine_dominant_channel_returns_unknown_when_deltas_similar(
   drain_accumulator.channel_b_codes.update(195);
   drain_accumulator.channel_b_codes.update(198);
 
-  PhoenixBenchmarkStateAccumulator led2_accumulator;
-  led2_accumulator.channel_a_codes.update(203);
-  led2_accumulator.channel_a_codes.update(206);
-  led2_accumulator.channel_b_codes.update(197);
-  led2_accumulator.channel_b_codes.update(199);
+  PhoenixBenchmarkStateAccumulator green_accumulator;
+  green_accumulator.channel_a_codes.update(203);
+  green_accumulator.channel_a_codes.update(206);
+  green_accumulator.channel_b_codes.update(197);
+  green_accumulator.channel_b_codes.update(199);
 
   // Step 2: Expect the helper to classify the result as unknown because the deltas align.
   const PhoenixBenchmarkChannel channel =
-      phoenix_benchmark_channel_map_determine_dominant_channel(drain_accumulator, led2_accumulator, 5.0);
+      phoenix_benchmark_channel_map_determine_dominant_channel(drain_accumulator, green_accumulator, 5.0);
   TEST_ASSERT_EQUAL(PhoenixBenchmarkChannel::kUnknown, channel);
 }
 
@@ -510,13 +510,13 @@ static void test_cold_sweep_format_sample_row_formats_codes_and_mask(void) {
 }
 
 static uint32_t                        g_drift_capture_fake_micros             = 0u;
-static const int32_t*                  g_drift_capture_led1_codes              = nullptr;
-static std::size_t                     g_drift_capture_led1_length             = 0u;
-static std::size_t                     g_drift_capture_led1_index              = 0u;
-static const int32_t*                  g_drift_capture_led2_codes              = nullptr;
-static std::size_t                     g_drift_capture_led2_length             = 0u;
-static std::size_t                     g_drift_capture_led2_index              = 0u;
-static PhoenixBenchmarkDriftCaptureLed g_drift_capture_current_led             = PhoenixBenchmarkDriftCaptureLed::kLed1;
+static const int32_t*                  g_drift_capture_blue_codes              = nullptr;
+static std::size_t                     g_drift_capture_blue_length             = 0u;
+static std::size_t                     g_drift_capture_blue_index              = 0u;
+static const int32_t*                  g_drift_capture_green_codes             = nullptr;
+static std::size_t                     g_drift_capture_green_length            = 0u;
+static std::size_t                     g_drift_capture_green_index             = 0u;
+static PhoenixBenchmarkDriftCaptureLed g_drift_capture_current_led             = PhoenixBenchmarkDriftCaptureLed::kBlue;
 static bool                            g_drift_capture_led_active              = false;
 static LedRouterState                  g_drift_capture_router_transitions[8]   = {};
 static std::size_t                     g_drift_capture_router_transition_count = 0u;
@@ -529,13 +529,13 @@ static std::size_t                     g_drift_capture_output_count            =
 
 static void drift_capture_reset_fakes(void) {
   g_drift_capture_fake_micros             = 0u;
-  g_drift_capture_led1_codes              = nullptr;
-  g_drift_capture_led1_length             = 0u;
-  g_drift_capture_led1_index              = 0u;
-  g_drift_capture_led2_codes              = nullptr;
-  g_drift_capture_led2_length             = 0u;
-  g_drift_capture_led2_index              = 0u;
-  g_drift_capture_current_led             = PhoenixBenchmarkDriftCaptureLed::kLed1;
+  g_drift_capture_blue_codes              = nullptr;
+  g_drift_capture_blue_length             = 0u;
+  g_drift_capture_blue_index              = 0u;
+  g_drift_capture_green_codes             = nullptr;
+  g_drift_capture_green_length            = 0u;
+  g_drift_capture_green_index             = 0u;
+  g_drift_capture_current_led             = PhoenixBenchmarkDriftCaptureLed::kBlue;
   g_drift_capture_led_active              = false;
   g_drift_capture_router_transition_count = 0u;
   g_drift_capture_last_wiper_code         = 0u;
@@ -568,11 +568,11 @@ static int drift_capture_fake_led_setter(LedRouterState state) {
     g_drift_capture_router_transitions[g_drift_capture_router_transition_count++] = state;
   }
   if (state == LedRouterState::LED_ROUTER_STATE_LED1) {
-    g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kLed1;
+    g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kBlue;
     g_drift_capture_led_active  = true;
   }
   else if (state == LedRouterState::LED_ROUTER_STATE_LED2) {
-    g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kLed2;
+    g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kGreen;
     g_drift_capture_led_active  = true;
   }
   else {
@@ -592,17 +592,17 @@ static bool drift_capture_fake_adc_reader(AdcHalChannel channel, int32_t* out_co
   if ((out_code == nullptr) || !g_drift_capture_led_active) {
     return false;
   }
-  if (g_drift_capture_current_led == PhoenixBenchmarkDriftCaptureLed::kLed1) {
-    if (g_drift_capture_led1_index >= g_drift_capture_led1_length) {
+  if (g_drift_capture_current_led == PhoenixBenchmarkDriftCaptureLed::kBlue) {
+    if (g_drift_capture_blue_index >= g_drift_capture_blue_length) {
       return false;
     }
-    *out_code = g_drift_capture_led1_codes[g_drift_capture_led1_index++];
+    *out_code = g_drift_capture_blue_codes[g_drift_capture_blue_index++];
   }
   else {
-    if (g_drift_capture_led2_index >= g_drift_capture_led2_length) {
+    if (g_drift_capture_green_index >= g_drift_capture_green_length) {
       return false;
     }
-    *out_code = g_drift_capture_led2_codes[g_drift_capture_led2_index++];
+    *out_code = g_drift_capture_green_codes[g_drift_capture_green_index++];
   }
   g_drift_capture_fake_micros += 3u;
   return true;
@@ -773,12 +773,12 @@ static void test_drift_capture_run_captures_leds_in_sequence(void) {
   phoenix_benchmark_drift_capture_initialise(defaults);
   drift_capture_reset_fakes();
 
-  static const int32_t led1_codes[] = {100, 110, 120};
-  static const int32_t led2_codes[] = {200, 210, 220};
-  g_drift_capture_led1_codes        = led1_codes;
-  g_drift_capture_led1_length       = sizeof(led1_codes) / sizeof(led1_codes[0]);
-  g_drift_capture_led2_codes        = led2_codes;
-  g_drift_capture_led2_length       = sizeof(led2_codes) / sizeof(led2_codes[0]);
+  static const int32_t blue_codes[]  = {100, 110, 120};
+  static const int32_t green_codes[] = {200, 210, 220};
+  g_drift_capture_blue_codes         = blue_codes;
+  g_drift_capture_blue_length        = sizeof(blue_codes) / sizeof(blue_codes[0]);
+  g_drift_capture_green_codes        = green_codes;
+  g_drift_capture_green_length       = sizeof(green_codes) / sizeof(green_codes[0]);
 
   drift_capture_install_fakes();
 
@@ -798,32 +798,32 @@ static void test_drift_capture_run_captures_leds_in_sequence(void) {
   TEST_ASSERT_EQUAL_UINT32(defaults.start_time_us, status.applied_start_us);
   TEST_ASSERT_EQUAL_UINT32(defaults.end_time_us, status.applied_end_us);
   TEST_ASSERT_EQUAL_UINT32(defaults.step_delay_us, status.applied_step_us);
-  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_led1_length),
-                           static_cast<uint32_t>(status.led1_samples));
-  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_led2_length),
-                           static_cast<uint32_t>(status.led2_samples));
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_blue_length),
+                           static_cast<uint32_t>(status.blue_samples));
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_green_length),
+                           static_cast<uint32_t>(status.green_samples));
   TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, g_drift_capture_last_wiper_code);
   TEST_ASSERT_TRUE(g_drift_capture_osr_call_count >= 1u);
 
-  std::size_t                                     led1_count = 0u;
-  const PhoenixBenchmarkDriftCaptureSample* const led1_samples =
-      phoenix_benchmark_drift_capture_led_samples(PhoenixBenchmarkDriftCaptureLed::kLed1, &led1_count);
-  TEST_ASSERT_NOT_NULL(led1_samples);
-  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_led1_length), static_cast<uint32_t>(led1_count));
-  TEST_ASSERT_EQUAL_UINT32(0u, led1_samples[0].elapsed_microseconds);
-  TEST_ASSERT_EQUAL_INT32(led1_codes[0], led1_samples[0].adc_code);
-  TEST_ASSERT_EQUAL_UINT32(10u, led1_samples[1].elapsed_microseconds);
-  TEST_ASSERT_EQUAL_INT32(led1_codes[1], led1_samples[1].adc_code);
-  TEST_ASSERT_EQUAL_UINT32(20u, led1_samples[2].elapsed_microseconds);
-  TEST_ASSERT_EQUAL_INT32(led1_codes[2], led1_samples[2].adc_code);
+  std::size_t                                     blue_count = 0u;
+  const PhoenixBenchmarkDriftCaptureSample* const blue_samples =
+      phoenix_benchmark_drift_capture_led_samples(PhoenixBenchmarkDriftCaptureLed::kBlue, &blue_count);
+  TEST_ASSERT_NOT_NULL(blue_samples);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_blue_length), static_cast<uint32_t>(blue_count));
+  TEST_ASSERT_EQUAL_UINT32(0u, blue_samples[0].elapsed_microseconds);
+  TEST_ASSERT_EQUAL_INT32(blue_codes[0], blue_samples[0].adc_code);
+  TEST_ASSERT_EQUAL_UINT32(10u, blue_samples[1].elapsed_microseconds);
+  TEST_ASSERT_EQUAL_INT32(blue_codes[1], blue_samples[1].adc_code);
+  TEST_ASSERT_EQUAL_UINT32(20u, blue_samples[2].elapsed_microseconds);
+  TEST_ASSERT_EQUAL_INT32(blue_codes[2], blue_samples[2].adc_code);
 
-  std::size_t                                     led2_count = 0u;
-  const PhoenixBenchmarkDriftCaptureSample* const led2_samples =
-      phoenix_benchmark_drift_capture_led_samples(PhoenixBenchmarkDriftCaptureLed::kLed2, &led2_count);
-  TEST_ASSERT_NOT_NULL(led2_samples);
-  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_led2_length), static_cast<uint32_t>(led2_count));
-  TEST_ASSERT_EQUAL_UINT32(0u, led2_samples[0].elapsed_microseconds);
-  TEST_ASSERT_EQUAL_INT32(led2_codes[0], led2_samples[0].adc_code);
+  std::size_t                                     green_count = 0u;
+  const PhoenixBenchmarkDriftCaptureSample* const green_samples =
+      phoenix_benchmark_drift_capture_led_samples(PhoenixBenchmarkDriftCaptureLed::kGreen, &green_count);
+  TEST_ASSERT_NOT_NULL(green_samples);
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_green_length), static_cast<uint32_t>(green_count));
+  TEST_ASSERT_EQUAL_UINT32(0u, green_samples[0].elapsed_microseconds);
+  TEST_ASSERT_EQUAL_INT32(green_codes[0], green_samples[0].adc_code);
 
   TEST_ASSERT_TRUE(g_drift_capture_router_transition_count >= 3u);
   TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_LED1, g_drift_capture_router_transitions[0]);
@@ -838,12 +838,12 @@ static void test_drift_capture_run_sets_saturation_warning(void) {
       {.start_time_us = 0u, .end_time_us = 0u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
   drift_capture_reset_fakes();
 
-  static const int32_t led1_codes[] = {k_phoenix_benchmark_adc_positive_full_scale_code};
-  static const int32_t led2_codes[] = {0};
-  g_drift_capture_led1_codes        = led1_codes;
-  g_drift_capture_led1_length       = 1u;
-  g_drift_capture_led2_codes        = led2_codes;
-  g_drift_capture_led2_length       = 1u;
+  static const int32_t blue_codes[]  = {k_phoenix_benchmark_adc_positive_full_scale_code};
+  static const int32_t green_codes[] = {0};
+  g_drift_capture_blue_codes         = blue_codes;
+  g_drift_capture_blue_length        = 1u;
+  g_drift_capture_green_codes        = green_codes;
+  g_drift_capture_green_length       = 1u;
 
   drift_capture_install_fakes();
 
@@ -872,10 +872,10 @@ static void test_drift_capture_run_sets_overflow_warning(void) {
   for (std::size_t index = 0u; index < (sizeof(led_codes) / sizeof(led_codes[0])); ++index) {
     led_codes[index] = static_cast<int32_t>(index);
   }
-  g_drift_capture_led1_codes  = led_codes;
-  g_drift_capture_led1_length = sizeof(led_codes) / sizeof(led_codes[0]);
-  g_drift_capture_led2_codes  = led_codes;
-  g_drift_capture_led2_length = sizeof(led_codes) / sizeof(led_codes[0]);
+  g_drift_capture_blue_codes   = led_codes;
+  g_drift_capture_blue_length  = sizeof(led_codes) / sizeof(led_codes[0]);
+  g_drift_capture_green_codes  = led_codes;
+  g_drift_capture_green_length = sizeof(led_codes) / sizeof(led_codes[0]);
 
   drift_capture_install_fakes();
 
@@ -893,7 +893,7 @@ static void test_drift_capture_run_sets_overflow_warning(void) {
   TEST_ASSERT_TRUE(status.has_warnings);
   TEST_ASSERT_NOT_EQUAL(0u, status.warning_mask & k_phoenix_benchmark_drift_capture_warning_buffer_overflow);
   TEST_ASSERT_EQUAL_UINT32(k_phoenix_benchmark_drift_capture_max_sample_count,
-                           static_cast<uint32_t>(status.led1_samples));
+                           static_cast<uint32_t)(status.blue_samples));
 }
 
 static void test_drift_capture_run_emits_nan_padding(void) {
@@ -903,12 +903,12 @@ static void test_drift_capture_run_emits_nan_padding(void) {
       {.start_time_us = 0u, .end_time_us = 10u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x00u});
   drift_capture_reset_fakes();
 
-  static const int32_t led1_codes[] = {10, 20};
-  static const int32_t led2_codes[] = {30};
-  g_drift_capture_led1_codes        = led1_codes;
-  g_drift_capture_led1_length       = sizeof(led1_codes) / sizeof(led1_codes[0]);
-  g_drift_capture_led2_codes        = led2_codes;
-  g_drift_capture_led2_length       = sizeof(led2_codes) / sizeof(led2_codes[0]);
+  static const int32_t blue_codes[]  = {10, 20};
+  static const int32_t green_codes[] = {30};
+  g_drift_capture_blue_codes         = blue_codes;
+  g_drift_capture_blue_length        = sizeof(blue_codes) / sizeof(blue_codes[0]);
+  g_drift_capture_green_codes        = green_codes;
+  g_drift_capture_green_length       = sizeof(green_codes) / sizeof(green_codes[0]);
 
   drift_capture_install_fakes();
 
@@ -1229,7 +1229,7 @@ static void test_osr_sweep_run_reports_light_readings_warnings(void) {
   uint32_t saturated_rows = 0u;
   for (std::size_t index = 0u; index < status.rows_generated; ++index) {
     TEST_ASSERT_EQUAL_UINT32(options.sweep_count, rows[index].sweep_count);
-    if ((rows[index].led1.channel_a_saturation_count > 0u) && (rows[index].led2.channel_b_saturation_count > 0u)) {
+    if ((rows[index].blue.channel_a_saturation_count > 0u) && (rows[index].green.channel_b_saturation_count > 0u)) {
       ++saturated_rows;
     }
   }
@@ -1262,14 +1262,14 @@ static void test_pot_sweep_run_reports_light_readings_saturation(void) {
   TEST_ASSERT_TRUE(status.success);
   TEST_ASSERT_TRUE(status.has_warnings);
   TEST_ASSERT_EQUAL_UINT32(k_phoenix_benchmark_pot_sweep_max_wiper_count, status.rows_generated);
-  TEST_ASSERT_TRUE(status.led1_recommendation_valid);
-  TEST_ASSERT_EQUAL_UINT8(0x00u, status.led1_recommended_wiper);
-  TEST_ASSERT_TRUE(status.led2_recommendation_valid);
-  TEST_ASSERT_EQUAL_UINT8(0x00u, status.led2_recommended_wiper);
+  TEST_ASSERT_TRUE(status.blue_recommendation_valid);
+  TEST_ASSERT_EQUAL_UINT8(0x00u, status.blue_recommended_wiper);
+  TEST_ASSERT_TRUE(status.green_recommendation_valid);
+  TEST_ASSERT_EQUAL_UINT8(0x00u, status.green_recommended_wiper);
 
   for (uint32_t index = 0u; index < status.rows_generated; ++index) {
-    TEST_ASSERT_TRUE(rows[index].led1_saturated);
-    TEST_ASSERT_TRUE(rows[index].led2_saturated);
+    TEST_ASSERT_TRUE(rows[index].blue_saturated);
+    TEST_ASSERT_TRUE(rows[index].green_saturated);
   }
 }
 
@@ -1465,7 +1465,7 @@ static void test_osr_sweep_format_summary_header(void) {
   char buffer[k_phoenix_benchmark_osr_sweep_summary_buffer_bytes] = {};
   TEST_ASSERT_TRUE(phoenix_benchmark_osr_sweep_format_summary_header(buffer, sizeof(buffer)));
   TEST_ASSERT_EQUAL_STRING(
-      "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  LED1_Mean  LED1_Std  LED1_Min  LED1_Max  LED2_Mean  LED2_Std  LED2_Min  LED2_Max  Sweep_us",
+      "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  Green_Min  Green_Max  Sweep_us",
       buffer);
 }
 
@@ -1478,14 +1478,14 @@ static void test_osr_sweep_format_summary_row_formats_metrics(void) {
   values.drain_std                                = 0.25;
   values.drain_min                                = 120.0;
   values.drain_max                                = 128.0;
-  values.led1_mean                                = 223.1;
-  values.led1_std                                 = 0.75;
-  values.led1_min                                 = 219.0;
-  values.led1_max                                 = 229.0;
-  values.led2_mean                                = 321.9;
-  values.led2_std                                 = 0.80;
-  values.led2_min                                 = 318.0;
-  values.led2_max                                 = 326.0;
+  values.blue_mean                                = 223.1;
+  values.blue_std                                 = 0.75;
+  values.blue_min                                 = 219.0;
+  values.blue_max                                 = 229.0;
+  values.green_mean                               = 321.9;
+  values.green_std                                = 0.80;
+  values.green_min                                = 318.0;
+  values.green_max                                = 326.0;
   values.sweep_duration_us                        = 12345u;
   values.has_metrics                              = true;
 

@@ -206,8 +206,8 @@ def _cold_sweep_summary_lines() -> List[str]:
 
 def _sample_summary_lines() -> List[str]:
     header = _channel_map_header()
-    led1 = _format_row(
-        "LED1",
+    blue = _format_row(
+        "Blue",
         10,
         123.0,
         2.0,
@@ -220,8 +220,8 @@ def _sample_summary_lines() -> List[str]:
         "A=OK",
         "--",
     )
-    led2 = _format_row(
-        "LED2",
+    green = _format_row(
+        "Green",
         8,
         223.0,
         4.0,
@@ -239,8 +239,8 @@ def _sample_summary_lines() -> List[str]:
         "# running,scenario=channel_map,sweeps=10",
         "# summary_table",
         header,
-        led1,
-        led2,
+        blue,
+        green,
         "",
         "# benchmark_complete",
         "# ready",
@@ -256,7 +256,7 @@ def test_parse_summary_table_extracts_rows() -> None:
     assert len(rows) == 2
 
     first = rows[0]
-    assert first.label == "LED1"
+    assert first.label == "Blue"
     assert first.sample_count == 10
     assert pytest.approx(first.mean_channel_a, rel=1e-6) == 123.0
     assert first.channel_alignment == "A=OK"
@@ -319,7 +319,7 @@ def test_create_report_generates_artifacts(tmp_path: Path) -> None:
     summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
     assert summary_data[0]["scenario"] == "channel_map"
     first_row = summary_data[0]["rows"][0]
-    assert first_row["label"] == "LED1"
+    assert first_row["label"] == "Blue"
     assert first_row["channel_alignment"] == "A=OK"
     assert first_row["warning_label"] == "--"
 
@@ -330,10 +330,10 @@ def test_create_report_generates_artifacts(tmp_path: Path) -> None:
         in report_text
     )
     assert (
-        "| LED1 | 10 | 123.000 | 2.000 | 120.000 | 130.000 | 321.000 | 3.000 | 310.000 | 330.000 | A=OK | -- |"
+        "| Blue | 10 | 123.000 | 2.000 | 120.000 | 130.000 | 321.000 | 3.000 | 310.000 | 330.000 | A=OK | -- |"
         in report_text
     )
-    assert "LED1" in report_text
+    assert "Blue" in report_text
 
 
 def test_create_report_handles_cold_sweep(tmp_path: Path) -> None:
@@ -448,7 +448,7 @@ def _osr_sweep_summary_lines() -> List[str]:
         "# phoenix benchmark ready",
         "# running,scenario=osr_sweep,pot=85,dwell_us=250,sweeps=12",
         "# summary_table",
-        "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  LED1_Mean  LED1_Std  LED1_Min  LED1_Max  LED2_Mean  LED2_Std  LED2_Min  LED2_Max  Sweep_us",
+        "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  Green_Min  Green_Max  Sweep_us",
         "OSR32            12       1.234       0.456       1.111       1.888       2.345       0.567       2.123       2.789       3.456       0.678       3.210       3.890      12345",
         "OSR64            12       1.500       0.400       1.200       1.900       2.800       0.600       2.400       3.000       3.900       0.700       3.500       4.100      15000",
         "",
@@ -470,7 +470,7 @@ def test_parse_summary_table_handles_osr_sweep() -> None:
     assert first.osr_value == 32
     assert first.sample_count == 12
     assert pytest.approx(first.drain_std, rel=1e-6) == 0.456
-    assert pytest.approx(first.led2_mean, rel=1e-6) == 3.456
+    assert pytest.approx(first.green_mean, rel=1e-6) == 3.456
     assert first.has_metrics is True
 
 
@@ -514,13 +514,13 @@ def _pot_sweep_summary_lines() -> List[str]:
         "# phoenix benchmark ready",
         "# running,scenario=pot_sweep,sweeps_per_wiper=6,dwell_us=180,wiper_count=256",
         "# summary_table",
-        "Wiper LED1_Max LED2_Max LED1_Sat LED2_Sat",
+        "Wiper Blue_Max Green_Max Blue_Sat Green_Sat",
         "0x10  7000000  6800000    no    no",
         "0x20  7600000  6900000   yes    no",
         "0x30  7800000  7900000   yes   yes",
         "",
-        "# pot_sweep_recommendation,led=led1,wiper=0x10",
-        "# pot_sweep_recommendation,led=led2,wiper=0x20",
+        "# pot_sweep_recommendation,led=blue,wiper=0x10",
+        "# pot_sweep_recommendation,led=green,wiper=0x20",
         "# pot_sweep_warnings,reason=saturation",
         "# benchmark_complete",
         "# ready",
@@ -537,10 +537,10 @@ def test_parse_summary_table_handles_pot_sweep() -> None:
     first = rows[0]
     assert isinstance(first, PotSweepSummaryRow)
     assert first.wiper_code == 0x10
-    assert first.led1_max_code == 7_000_000
-    assert first.led1_saturated is False
-    assert first.led2_max_code == 6_800_000
-    assert first.led2_saturated is False
+    assert first.blue_max_code == 7_000_000
+    assert first.blue_saturated is False
+    assert first.green_max_code == 6_800_000
+    assert first.green_saturated is False
 
 
 def test_create_report_handles_pot_sweep(tmp_path: Path) -> None:
@@ -562,22 +562,22 @@ def test_create_report_handles_pot_sweep(tmp_path: Path) -> None:
     csv_files = artifacts.csv_paths["pot_sweep"]
     assert len(csv_files) == 1
     csv_text = csv_files[0].read_text(encoding="utf-8")
-    assert "wiper_code,led1_max_code" in csv_text
+    assert "wiper_code,blue_max_code" in csv_text
     assert ",7800000," in csv_text
 
-    assert artifacts.pot_sweep_recommendations == {"led1": "0x10", "led2": "0x20"}
+    assert artifacts.pot_sweep_recommendations == {"blue": "0x10", "green": "0x20"}
 
     summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
     pot_entry = next(item for item in summary_data if item["scenario"] == "pot_sweep")
-    assert pot_entry["extras"]["recommendations"]["led1"] == "0x10"
+    assert pot_entry["extras"]["recommendations"]["blue"] == "0x10"
     assert len(pot_entry["rows"]) == 3
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "| LED | Recommended Wiper |" in report_text
-    assert "| LED1 | 0x10 |" in report_text
+    assert "| Blue | 0x10 |" in report_text
     assert "<details>" in report_text
     assert "</details>" in report_text
-    assert "Wiper | LED1 max" in report_text
+    assert "Wiper | Blue max" in report_text
 
 
 def _dwell_sweep_summary_lines() -> List[str]:
@@ -585,7 +585,7 @@ def _dwell_sweep_summary_lines() -> List[str]:
         "# phoenix benchmark ready",
         "# running,scenario=dwell_sweep,sweeps_per_dwell=4,start_us=100,end_us=300,step_us=100,steps=3",
         "# summary_table",
-        "Dwell_us  Sweeps  Drain_Mean  Drain_Std  LED1_Mean  LED1_Std  LED2_Mean  LED2_Std  Duration_us  Warning_Mask",
+        "Dwell_us  Sweeps  Drain_Mean  Drain_Std  Blue_Mean  Blue_Std  Green_Mean  Green_Std  Duration_us  Warning_Mask",
         "     100       4        1.234      0.111        2.345      0.222        3.456      0.333        50000  0x00",
         "     200       4        1.500      0.450        2.650      0.520        3.700      0.610        60000  0x01",
         "     300       2           --        --           --        --           --        --        30000  0x00",
@@ -666,8 +666,8 @@ def _drift_capture_lines() -> List[str]:
         "# phoenix benchmark ready",
         "# running,scenario=drift_capture,start_us=0,end_us=50,step_us=10",
         "# drift_capture,metadata,start_us=0,end_us=50,step_delay_us=10,osr=4096,wiper_code=0x2A",
-        "# drift_capture,results,led1_samples=3,led2_samples=2,warning_mask=0x03",
-        "Elapsed_LED1_us\tCode_LED1\tElapsed_LED2_us\tCode_LED2",
+        "# drift_capture,results,blue_samples=3,green_samples=2,warning_mask=0x03",
+        "Elapsed_Blue_us\tCode_Blue\tElapsed_Green_us\tCode_Green",
         "0\t1024\tnan\tnan",
         "10\t1100\t0\t950",
         "20\t1200\t10\t960",
@@ -705,7 +705,7 @@ def test_create_report_handles_drift_capture(tmp_path: Path) -> None:
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "## Drift Capture" in report_text
     assert (
-        "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | LED1 Samples | LED2 Samples | Warnings |"
+        "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | Blue Samples | Green Samples | Warnings |"
         in report_text
     )
     assert (
@@ -718,7 +718,7 @@ def test_create_report_handles_drift_capture(tmp_path: Path) -> None:
     assert "<details>" in report_text
     assert "<summary>Burst 1 samples</summary>" in report_text
     assert "</details>" in report_text
-    assert "Elapsed LED1" in report_text
+    assert "Elapsed Blue" in report_text
     assert "buffer_overflow" in report_text
     plot_token = f"![drift_capture plot]({slug}.png)"
     assert plot_token in report_text
