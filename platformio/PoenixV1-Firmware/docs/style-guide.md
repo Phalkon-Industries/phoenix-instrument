@@ -55,6 +55,25 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 - Use Unity's `setUp()` and `tearDown()` hooks to establish and reset shared state instead of duplicating initialization logic in every test.
 - Ensure all hardware state modifications are undone before exit (reset registers, restore mux values, etc.). Prefer placing this work in `tearDown()` when consistent across tests.
 - `setup()` must call `UNITY_SETUP_SERIAL_DEFAULT();` before `RUN_TEST` calls and `UNITY_END();` to balance initialization.
+- Every Arduino Unity sketch includes `<Adafruit_TinyUSB.h>` before `<Arduino.h>` so the USB stack is ready when `UNITY_SETUP_SERIAL_DEFAULT()` opens the port. The typical include order is:
+  ```c++
+  #include <unity.h>
+  #include "unity_config.h"
+  #include <Adafruit_TinyUSB.h>
+  #include <Arduino.h>
+  ```
+- The `setup()`/`loop()` harness uses the shared macro defined in `test/unity_config.h`:
+  ```c++
+  void setup() {
+    UNITY_SETUP_SERIAL_DEFAULT();
+    RUN_TEST(test_my_feature_behaves);
+    UNITY_END();
+  }
+
+  void loop() {
+    // Unity tests run once; leave loop empty.
+  }
+  ```
 - When iterating, use explicit bounds/limits (e.g. `for (int attempt = 0; attempt < 10; ++attempt)`), not `while (true)`.
 - Always include `<unity.h>` before project headers and standard library headers used by the test.
 

@@ -8,6 +8,7 @@ import pytest  # type: ignore
 
 from phoenix_benchmark.report import (
     AdcSpeedSummaryRow,
+    ColdSweepSummaryRow,
     DwellSweepSummaryRow,
     OsrSweepSummaryRow,
     PotSweepSummaryRow,
@@ -95,6 +96,114 @@ def _format_row(
     ).rstrip()
 
 
+def _cold_sweep_summary_header() -> str:
+    return (
+        "Channel        Samples  Mean      StdDev     Min        Max        Saturated"
+    )
+
+
+def _format_optional_float_field(value: float | None, width: int) -> str:
+    if value is None:
+        return f"{'--':>{width}}"
+    return f"{value:>{width}.3f}"
+
+
+def _format_optional_int_field(value: int | None, width: int) -> str:
+    if value is None:
+        return f"{'--':>{width}}"
+    return f"{value:>{width}d}"
+
+
+def _cold_sweep_summary_row(
+    label: str,
+    samples: int,
+    mean: float | None,
+    stddev: float | None,
+    min_code: int | None,
+    max_code: int | None,
+    saturated: str,
+) -> str:
+    return (
+        f"{label:<12}  "
+        f"{samples:7d}  "
+        f"{_format_optional_float_field(mean, 9)}  "
+        f"{_format_optional_float_field(stddev, 9)}  "
+        f"{_format_optional_int_field(min_code, 10)}  "
+        f"{_format_optional_int_field(max_code, 10)}  "
+        f"{saturated:>9}"
+    ).rstrip()
+
+
+def _cold_sweep_sample_header() -> str:
+    return "Index  Drain_Blue  Drain_Green  Blue  Green  Saturation"
+
+
+def _cold_sweep_sample_row(
+    index: int,
+    drain_blue: int,
+    drain_green: int,
+    blue: int,
+    green: int,
+    saturation: str,
+) -> str:
+    return (
+        f"{index:5d}  "
+        f"{drain_blue:11d}  "
+        f"{drain_green:12d}  "
+        f"{blue:5d}  "
+        f"{green:6d}  "
+        f"{saturation}"
+    )
+
+
+def _cold_sweep_summary_lines() -> List[str]:
+    header = _cold_sweep_summary_header()
+    drain_row = _cold_sweep_summary_row(
+        "drain_blue",
+        4,
+        120.0,
+        5.5,
+        100,
+        140,
+        "no",
+    )
+    blue_row = _cold_sweep_summary_row(
+        "blue",
+        0,
+        None,
+        None,
+        None,
+        None,
+        "yes",
+    )
+
+    sample_header = _cold_sweep_sample_header()
+    sample_rows = [
+        _cold_sweep_sample_row(0, 120, 125, 118, 122, "none"),
+        _cold_sweep_sample_row(1, 122, 126, 119, 123, "db"),
+        _cold_sweep_sample_row(2, 121, 124, 118, 121, "none"),
+        _cold_sweep_sample_row(3, 123, 127, 120, 124, "blue|green"),
+    ]
+
+    return [
+        "# phoenix benchmark ready",
+        "# running,scenario=cold_sweep,sweeps=4,dwell_blue_us=100,dwell_green_us=110",
+        "# summary_table",
+        header,
+        drain_row,
+        blue_row,
+        "",
+        "# cold_sweep_samples",
+        sample_header,
+        *sample_rows,
+        "",
+        "# cold_sweep_metadata,captured_sweeps=4,timestamp_us=123456",
+        "# cold_sweep_warnings,reason=saturation",
+        "# benchmark_complete",
+        "# ready",
+    ]
+
+
 def _sample_summary_lines() -> List[str]:
     header = _channel_map_header()
     led1 = _format_row(
@@ -155,6 +264,33 @@ def test_parse_summary_table_extracts_rows() -> None:
     assert first.has_channel_metrics is True
 
 
+def test_parse_summary_table_handles_cold_sweep() -> None:
+    summaries = parse_summary_table(_cold_sweep_summary_lines())
+
+    assert "cold_sweep" in summaries
+    rows = summaries["cold_sweep"]
+
+    assert len(rows) == 2
+
+    first = rows[0]
+    assert isinstance(first, ColdSweepSummaryRow)
+    assert first.channel == "drain_blue"
+    assert first.sample_count == 4
+    assert pytest.approx(first.mean, rel=1e-6) == 120.0
+    assert pytest.approx(first.stddev, rel=1e-6) == 5.5
+    assert first.min_code == 100
+    assert first.max_code == 140
+    assert first.saturated is False
+    assert first.has_metrics is True
+
+    second = rows[1]
+    assert isinstance(second, ColdSweepSummaryRow)
+    assert second.channel == "blue"
+    assert second.has_metrics is False
+    assert second.mean is None
+    assert second.saturated is True
+
+
 def test_create_report_generates_artifacts(tmp_path: Path) -> None:
     lines = _sample_summary_lines()
 
@@ -198,6 +334,54 @@ def test_create_report_generates_artifacts(tmp_path: Path) -> None:
         in report_text
     )
     assert "LED1" in report_text
+
+
+def test_create_report_handles_cold_sweep(tmp_path: Path) -> None:
+    lines = _cold_sweep_summary_lines()
+
+    plan_path = tmp_path / "cold_plan.json"
+    plan_path.write_text(json.dumps({"commands": []}), encoding="utf-8")
+
+    output_dir = tmp_path / "cold-report"
+    artifacts = create_report(lines, plan_path, output_dir)
+
+    assert "cold_sweep" in artifacts.scenarios
+    assert "cold_sweep" in artifacts.plot_paths
+    cold_plots = artifacts.plot_paths["cold_sweep"]
+    assert cold_plots
+    for path in cold_plots:
+        assert path.exists()
+
+    assert "cold_sweep" in artifacts.csv_paths
+    cold_csvs = artifacts.csv_paths["cold_sweep"]
+    assert cold_csvs
+    for csv_path in cold_csvs:
+        assert csv_path.exists()
+
+    csv_text = cold_csvs[0].read_text(encoding="utf-8")
+    assert (
+        "index,drain_blue_code,drain_green_code,blue_code,green_code,saturation"
+        in csv_text
+    )
+    assert "1,122,126,119,123,db" in csv_text
+
+    summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
+    cold_entry = next(item for item in summary_data if item["scenario"] == "cold_sweep")
+    rows = cold_entry["rows"]
+    assert rows[0]["channel"] == "drain_blue"
+    assert pytest.approx(rows[0]["mean"], rel=1e-6) == 120.0
+    extras = cold_entry["extras"]
+    assert extras["captured_sweeps"] == 4
+    assert extras["warning"] == "saturation"
+    assert extras["sample_count"] == 4
+
+    report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
+    assert "Warm-up guidance" in report_text
+    assert (
+        "| Channel | Samples | Mean | StdDev | Min | Max | Saturated |" in report_text
+    )
+    assert "![cold_sweep plot]" in report_text
+    assert "[Download CSV](cold_sweep_samples.csv)" in report_text
 
 
 def _adc_speed_summary_lines() -> List[str]:

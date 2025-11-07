@@ -296,7 +296,7 @@ class ColdSweepSerial(DummySerial):
         super().__init__(*args, **kwargs)
         self._line_queue = [
             b"# phoenix benchmark ready\n",
-            b"# running,scenario=cold_sweep,sweeps=4,dwell_us=750\n",
+            b"# running,scenario=cold_sweep,sweeps=500,dwell_blue_us=10,dwell_green_us=100\n",
             b"# cold_sweep_summary,timestamp_us=123456,samples=4,warnings=0x00\n",
             b"# benchmark_complete\n",
             b"# ready\n",
@@ -422,10 +422,6 @@ def test_cli_streams_cold_sweep_command(
                 "commands": [
                     {
                         "command": "cold_sweep",
-                        "parameters": {
-                            "sweeps": 4,
-                            "dwell_us": 750,
-                        },
                     }
                 ]
             }
@@ -475,8 +471,8 @@ def test_cli_streams_cold_sweep_command(
     assert instance.args[0] == "COM7"
     payload = b"".join(instance.written)
     assert b'"command":"cold_sweep"' in payload
-    assert b'"sweeps":4' in payload
-    assert b'"dwell_us":750' in payload
+    assert b'"sweeps"' not in payload
+    assert b'"dwell_us"' not in payload
 
     recorded_lines = captured.get("lines", [])
     assert isinstance(recorded_lines, list)

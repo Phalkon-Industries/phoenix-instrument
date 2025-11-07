@@ -4,11 +4,12 @@ This document captures the *currently implemented* capabilities of the Phoenix b
 
 ## Current Capabilities
 
-- Firmware idles after boot, accepts `channel_map`, `osr_sweep`, `dwell_sweep`, `pot_sweep`, or `adc_speed` commands, executes the requested scenario, and then returns to a fresh `# ready` prompt so hosts can pipeline multiple operations.
+- Firmware idles after boot, accepts `channel_map`, `cold_sweep`, `osr_sweep`, `dwell_sweep`, `pot_sweep`, or `adc_speed` commands, executes the requested scenario, and then returns to a fresh `# ready` prompt so hosts can pipeline multiple operations.
 - The dwell sweep scenario walks a linear series of LED settle times (`start_dwell_us` → `end_dwell_us` with `dwell_step_us` spacing), reruns the channel-map capture loop for each dwell window, and records per-step variance plus warning masks so operators can pick a dwell that balances stability and runtime.
 - The potentiometer sweep scenario always scans every digi-pot wiper code (0–255) while allowing hosts to override only the sweep count and LED dwell via `sweeps` and `dwell_us`; summary rows now call out recommended wipers per LED when saturation is detected.
 - The OSR sweep scenario iterates every supported oversampling ratio preset, capturing drain and LED variance plus sweep duration so operators can spot the lowest-noise configuration quickly.
 - The drift capture scenario records high-rate ADC codes immediately after each LED transitions on, buffers LED1/LED2 samples with aligned timestamps, and surfaces warning masks when saturation or buffer overflow occurs so settle-time behaviour is easy to review later.
+- The cold sweep scenario captures the very first light-reading sweeps after power-on using the firmware defaults, streams both summary statistics and every raw sample, and exposes saturation metadata so operators can verify warm-up repeatability before running longer plans. The host CLI renders a combined timeline plot with saturation markers, emits a CSV of every sweep sample, and annotates Markdown reports with captured sweep counts and warning labels.
 - The command parser is dual-mode: it prefers JSON payloads that match the host tooling schema and automatically falls back to key-value arguments such as `channel_map sweeps=10`. Both forms converge to the same option structure and apply firmware defaults when fields are omitted. Channel-map now rejects dwell and wiper overrides so the sweep always uses the light-readings configuration baked into the firmware image.
 - The summary table includes a `Channel_Map` column that compares each LED's observed dominant channel against the expected routing (`A=OK`, `B!=A`, etc.).
 - Run headers print the dominance thresholds (`channel_map_config`) used for the pairing heuristic so lab notes can show the exact detection parameters.
@@ -36,13 +37,13 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
    conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/channel_map_phase1.json --dry-run
    ```
    The tool echoes the serial payloads it will transmit during execution.
-   The combined template demonstrates issuing a `channel_map` sweep, capturing a rapid `drift_capture` burst, running the OSR sweep, sweeping LED dwell (`dwell_sweep`), scanning the potentiometer (`pot_sweep`), and finishing with an `adc_speed` throughput run.
+   The combined template demonstrates issuing a `cold_sweep` immediately after boot, running a `channel_map` sweep, capturing a rapid `drift_capture` burst, running the OSR sweep, sweeping LED dwell (`dwell_sweep`), scanning the potentiometer (`pot_sweep`), and finishing with an `adc_speed` throughput run.
 3. **Execution** – Connect hardware, then run the CLI against a plan and serial port:
    ```powershell
    conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/combined_benchmarks.json --port COM6 --ready-timeout 10 --command-timeout 240
    ```
    The CLI waits for the firmware `# ready` banner, streams each command, prints device output to stdout, and stores every line in a transcript buffer. Provide `--output <path>` to capture artifacts inside a preferred workspace location.
-   The firmware also accepts manual overrides directly from a serial terminal using the key-value syntax: `channel_map sweeps=25` or `adc_speed duration_ms=750 enable_irq=false`.
+   The firmware also accepts manual overrides directly from a serial terminal using the key-value syntax: `channel_map sweeps=25` or `adc_speed duration_ms=750 enable_irq=false`. Cold sweeps must be issued immediately after boot to honour the cold-start contract; the CLI therefore sends `cold_sweep` as the first command in combined plans.
 4. **Automated Report** – After each scenario signals `# benchmark_complete`, the CLI writes a report bundle (`transcript_<scenarios>.txt`, `summary_<scenarios>.json`, `report.md`, plus scenario-specific plots and CSVs) to the chosen output folder (default: `~/Downloads/phoenix-benchmark/<timestamp>`). Markdown tables now summarize every scenario, drift captures include a warning/context table with per-burst `<details>` blocks, dwell-sweep charts map dwell vs variance/runtime, and OSR plots render on a log₂ x-axis with diagonally angled tick labels to reduce overlap.
 5. **Extended Analysis** – Use the JSON or transcript artifacts in separate notebooks or scripts as needed; this repository remains focused on the source code and first-line automation flow.
 
@@ -53,10 +54,12 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
 - OSR sweep summary tables list every oversampling preset with drain/LED statistics and elapsed sweep time. The CLI renders paired plots comparing drain/LED standard deviation across presets and sweep duration vs OSR on a log₂ axis.
 - Dwell sweep summary tables include dwell duration, per-channel variance, sweep timing, and warning masks that highlight saturation or ADC recovery events. Companion plots trace dwell duration against variance and runtime to guide dwell selection.
 - Drift capture sections list each burst with start/end bounds, wiper code, OSR, sample counts, and decoded warning labels, followed by collapsible tables that align LED1/LED2 samples and link CSV/JSON artifacts alongside annotated settle plots.
+- Cold sweep sections highlight drain/LED statistics, list captured sweep counts and timestamp metadata, enumerate saturated channels, embed a raw-sample CSV link, and include a dual-pane plot (sample timeline plus per-channel mean/stddev) so engineers can confirm sensors converge without clipping.
 
 ## Revision History
 | Date       | Notes                                                                                                                      |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 2025-10-22 | Documented the cold sweep workflow, including CLI behaviour, artifact outputs, and warm-up guidance.                       |
 | 2025-10-21 | Added drift capture workflow coverage, including CLI/report behaviour and the combined plan template update.               |
 | 2025-10-21 | Documented dwell sweep workflow, refreshed host automation notes, and removed references to repository-stored sample runs. |
 | 2025-10-17 | Documented pot sweep defaults (full-range, dwell override), refreshed OSR sweep notes, and published sample run artifacts. |

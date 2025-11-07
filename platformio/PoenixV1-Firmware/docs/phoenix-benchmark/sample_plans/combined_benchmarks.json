@@ -1,6 +1,9 @@
 {
     "commands": [
         {
+            "command": "cold_sweep"
+        },
+        {
             "command": "channel_map",
             "parameters": {
                 "sweeps": 50
