@@ -33,13 +33,13 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
 1. **Configuration** – Build the firmware (`pio run -e phoenix_benchmark_example`) with any desired compile-time overrides.
 2. **Dry-run Plans** – Use the Python CLI (within the shared conda environment) to validate command plans without touching hardware. Sample plans now cover both individual and combined scenarios (`docs/phoenix-benchmark/sample_plans/channel_map_phase1.json` and `docs/phoenix-benchmark/sample_plans/combined_benchmarks.json`):
    ```powershell
-   conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/channel_map_phase1.json --dry-run
+   conda run -n phoenix-python python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/channel_map_phase1.json --dry-run
    ```
    The tool echoes the serial payloads it will transmit during execution.
    The combined template demonstrates issuing a `channel_map` sweep, capturing a rapid `drift_capture` burst, running the OSR sweep, sweeping LED dwell (`dwell_sweep`), scanning the potentiometer (`pot_sweep`), and finishing with an `adc_speed` throughput run.
 3. **Execution** – Connect hardware, then run the CLI against a plan and serial port:
    ```powershell
-   conda run -n phoenix-benchmark python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/combined_benchmarks.json --port COM6 --ready-timeout 10 --command-timeout 240
+   conda run -n phoenix-python python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/combined_benchmarks.json --port COM6 --ready-timeout 10 --command-timeout 240
    ```
    The CLI waits for the firmware `# ready` banner, streams each command, prints device output to stdout, and stores every line in a transcript buffer. Provide `--output <path>` to capture artifacts inside a preferred workspace location.
    The firmware also accepts manual overrides directly from a serial terminal using the key-value syntax: `channel_map sweeps=25` or `adc_speed duration_ms=750 enable_irq=false`.
