@@ -35,10 +35,10 @@ DWELL_WARNING_LABELS = (
 )
 
 COLD_SWEEP_CHANNELS = (
-    ("drain_blue", "Drain blue", "#4C72B0", "db"),
-    ("drain_green", "Drain green", "#55A868", "dg"),
-    ("blue", "Blue", "#C44E52", "blue"),
-    ("green", "Green", "#8172B2", "green"),
+    ("blue", "Blue", "#0057FF", "blue", "-"),
+    ("green", "Green", "#2ECC71", "green", "-"),
+    ("drain_blue", "Drain blue", "#0057FF", "db", "--"),
+    ("drain_green", "Drain green", "#2ECC71", "dg", "--"),
 )
 
 DRIFT_CAPTURE_WARNING_BUFFER_OVERFLOW = 0x01
@@ -1459,85 +1459,72 @@ def _render_cold_sweep_plot(
     metric_rows = [row for row in summary_rows if row.has_metrics]
     has_metrics = bool(metric_rows)
 
-    if not has_samples and not has_metrics:
-        _render_placeholder_plot("No cold_sweep data available", output_path)
+    if not has_samples:
+        message = (
+            "Cold sweep captured summary metrics only"
+            if has_metrics
+            else "No cold_sweep data available"
+        )
+        _render_placeholder_plot(message, output_path)
         return
 
-    if has_samples and has_metrics:
-        fig, (ax_samples, ax_summary) = plt.subplots(2, 1, figsize=(10, 8))
-    elif has_samples:
-        fig, ax_samples = plt.subplots(figsize=(10, 5))
-        ax_summary = None
+    fig, axes = plt.subplots(
+        len(COLD_SWEEP_CHANNELS),
+        1,
+        figsize=(10, 2.5 * len(COLD_SWEEP_CHANNELS)),
+        sharex=True,
+    )
+
+    if isinstance(axes, plt.Axes):
+        axes_list = [axes]
     else:
-        fig, ax_summary = plt.subplots(figsize=(8, 5))
-        ax_samples = None
+        axes_iterable = getattr(axes, "flat", axes)
+        axes_list = list(axes_iterable)
 
-    channel_color_map = {channel: color for channel, _, color, _ in COLD_SWEEP_CHANNELS}
-    channel_label_map = {channel: label for channel, label, _, _ in COLD_SWEEP_CHANNELS}
-    channel_token_map = {channel: token for channel, _, _, token in COLD_SWEEP_CHANNELS}
+    indices = [row.index for row in samples]
 
-    if ax_samples is not None and has_samples:
-        indices = [row.index for row in samples]
-        for channel, label, color, token in COLD_SWEEP_CHANNELS:
-            attr = f"{channel}_code"
-            values = [getattr(row, attr) for row in samples]
-            ax_samples.plot(indices, values, label=label, color=color)
-
-            saturated_indices: List[int] = []
-            saturated_values: List[int] = []
-            for row, value in zip(samples, values):
-                saturation_tokens = {
-                    part.strip()
-                    for part in row.saturation.split("|")
-                    if part.strip() and row.saturation.lower() != "none"
-                }
-                if token in saturation_tokens:
-                    saturated_indices.append(row.index)
-                    saturated_values.append(value)
-
-            if saturated_indices:
-                ax_samples.scatter(
-                    saturated_indices,
-                    saturated_values,
-                    color=color,
-                    edgecolors="black",
-                    zorder=3,
-                    marker="o",
-                    label=f"{label} saturation",
-                )
-
-        ax_samples.set_xlabel("Sweep index")
-        ax_samples.set_ylabel("ADC code")
-        ax_samples.set_title("Cold sweep sample timeline")
-        ax_samples.grid(axis="both", linestyle="--", alpha=0.4)
-        ax_samples.legend(loc="best", fontsize=8)
-
-    if ax_summary is not None and has_metrics:
-        positions = list(range(len(metric_rows)))
-        means = [row.mean or 0.0 for row in metric_rows]
-        stdevs = [row.stddev or 0.0 for row in metric_rows]
-        colors = [channel_color_map.get(row.channel, "#4C72B0") for row in metric_rows]
-        labels = [
-            channel_label_map.get(row.channel, row.channel) for row in metric_rows
-        ]
-
-        bars = ax_summary.bar(
-            positions,
-            means,
-            yerr=stdevs,
-            color=colors,
-            alpha=0.9,
-            capsize=4,
+    for axis, (channel, label, color, token, linestyle) in zip(
+        axes_list, COLD_SWEEP_CHANNELS
+    ):
+        attr = f"{channel}_code"
+        values = [getattr(row, attr) for row in samples]
+        axis.plot(
+            indices,
+            values,
+            color=color,
+            linestyle=linestyle,
+            linewidth=1.5,
         )
-        for bar, row in zip(bars, metric_rows):
-            if row.saturated:
-                bar.set_hatch("//")
 
-        ax_summary.set_xticks(positions)
-        ax_summary.set_xticklabels(labels)
-        ax_summary.set_ylabel("Mean ADC code")
-        ax_summary.set_title("Summary statistics (σ shown as error bars)")
-        ax_summary.grid(axis="y", linestyle="--", alpha=0.4)
+        saturated_indices: List[int] = []
+        saturated_values: List[int] = []
+        for row, value in zip(samples, values):
+            saturation_tokens = {
+                part.strip()
+                for part in row.saturation.split("|")
+                if part.strip() and row.saturation.lower() != "none"
+            }
+            if token in saturation_tokens:
+                saturated_indices.append(row.index)
+                saturated_values.append(value)
+
+        if saturated_indices:
+            axis.scatter(
+                saturated_indices,
+                saturated_values,
+                color=color,
+                edgecolors="black",
+                zorder=3,
+                marker="o",
+                s=25,
+            )
+
+        axis.set_ylabel("ADC code")
+        axis.set_title(label)
+        axis.grid(axis="both", linestyle="--", alpha=0.4)
+        axis.label_outer()
+
+    axes_list[-1].set_xlabel("Sweep index")
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)

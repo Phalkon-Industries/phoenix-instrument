@@ -54,7 +54,7 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
 - OSR sweep summary tables list every oversampling preset with drain/LED statistics and elapsed sweep time. The CLI renders paired plots comparing drain/LED standard deviation across presets and sweep duration vs OSR on a log₂ axis.
 - Dwell sweep summary tables include dwell duration, per-channel variance, sweep timing, and warning masks that highlight saturation or ADC recovery events. Companion plots trace dwell duration against variance and runtime to guide dwell selection.
 - Drift capture sections list each burst with start/end bounds, wiper code, OSR, sample counts, and decoded warning labels, followed by collapsible tables that align LED1/LED2 samples and link CSV/JSON artifacts alongside annotated settle plots.
-- Cold sweep sections highlight drain/LED statistics, list captured sweep counts and timestamp metadata, enumerate saturated channels, embed a raw-sample CSV link, and include a dual-pane plot (sample timeline plus per-channel mean/stddev) so engineers can confirm sensors converge without clipping.
+- Cold sweep sections highlight drain/LED statistics, list captured sweep counts and timestamp metadata, enumerate saturated channels, embed a raw-sample CSV link, and include a per-channel sample timeline (one y-axis per sensor) so engineers can confirm sensors converge without clipping.
 
 ## Revision History
 | Date       | Notes                                                                                                                      |
