@@ -6,22 +6,22 @@ This document introduces the mock main firmware that targets the `mock_main` Pla
 
 - **Goal**: Provide a drop-in firmware image that presents the same BLE-facing behaviour as the production main app while sourcing measurements, settings, battery state, and alerts exclusively from spoofed data providers.
 - **Approach**: Deliver the phone-facing contract (commands, responses, notifications) without engaging any physical drivers. Instead of talking to ADCs, LEDs, or power rails, the mock pauses for approximately two seconds, then returns payloads assembled by in-memory generators. Each response introduces small, controlled variability (“fuzziness”) so the phone app experiences realistic measurement drift while still remaining testable.
-- **Entrypoints**: The Arduino `setup()` and `loop()` functions in `src/examples/mock_main.cpp` initialise BLE (to be layered in) and hand off to the controller. The Unity suite interacts with the controller directly, so new contributors can explore behaviour without flashing hardware.
+- **Entrypoints**: The Arduino `setup()` and `loop()` functions in `src/examples/mock_main.cpp` initialise the shared Phoenix BLE stack, register the bridge exposed by `lib/mocks/mock_main_ble_bridge.*`, and hand off to the controller. The Unity suite interacts with the controller directly, so new contributors can explore behaviour without flashing hardware.
   - See `docs/mock_main_ble_quickstart.md` for the BLE identifiers, command matrix, and QA-oriented serial logging notes.
 
 ## Current Components
 
 | Component | Location | Responsibilities |
 | --- | --- | --- |
-| `MockAppController` | `src/examples/mock_main_controller.hpp/.cpp` | Manages mock state (reference/sample counters, settings, battery cache, alert payloads) and exposes C-style APIs consumed by Unity tests and the future BLE bridge. Serial logs prefixed with `[mock_main]` document every action. |
-| Unity Test Suite | `test/mock_tests/test_mock_main/test_mock_main.cpp` | Exercises both the happy path and guard rails (missing reference, NULL arguments). Provides the executable specification for contributors adjusting behaviour. |
+| `MockAppController` | `lib/mocks/mock_main_controller.hpp/.cpp` | Manages mock state (reference/sample counters, settings, battery cache, alert payloads) and exposes C-style APIs consumed by Unity tests and the BLE bridge. Serial logs prefixed with `[mock_main]` document every action. |
+| `MockBleBridge` | `lib/mocks/mock_main_ble_bridge.hpp/.cpp` | Parses command JSON, invokes the controller, formats Phoenix BLE notifications, and mirrors production pacing (response delays, command envelopes). |
+| Unity Test Suite | `test/mock_tests/test_mock_main/test_mock_main.cpp` | Exercises both the happy path and guard rails (missing reference, NULL arguments) and now validates the BLE bridge via a stub backend. Provides the executable specification for contributors adjusting behaviour. |
 
 ## Planned Extensions
 
-The mock currently stops at the controller boundary. BLE transport glue and deeper service breakouts will land incrementally. Upcoming modules will follow these guidelines:
+With the BLE bridge now in place, future refactors can focus on breaking the controller into narrower service-specific helpers if the logic grows significantly:
 
-- `MockBleInterface`: wraps TinyUSB/BLE setup, advertises `Phoenix Mock`, and forwards characteristic writes to the controller functions documented in the quick start.
-- `MockMeasurementService`, `MockSettingsService`, `MockBatteryService`, `MockAlertService`: optional refactors if the controller grows large. Today, their responsibilities live inline in `mock_main_controller.cpp`.
+- `MockMeasurementService`, `MockSettingsService`, `MockBatteryService`, `MockAlertService`: optional refactors if the controller grows large. Today, their responsibilities live inline in `mock_main_controller.cpp` and the bridge fans commands across those entry points.
 
 Default jitter ranges already captured in the controller mirror the production tolerances: ±1000 codes for raw counts, ±1 °C for temperature, and battery percentages clamped between 0–100 %. Adjust the seed via `mock_app_controller_set_seed()` to re-enable variability.
 

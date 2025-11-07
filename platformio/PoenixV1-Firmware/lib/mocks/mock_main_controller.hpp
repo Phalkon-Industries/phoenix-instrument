@@ -108,8 +108,8 @@ static constexpr bool     k_mock_teardown_expected_ble_connected = false;
 
 static constexpr const char* k_mock_ble_device_name                      = "Phoenix Mock";
 static constexpr const char* k_mock_ble_service_uuid                     = "b5c5d4f4-7207-4e8d-9d6b-60b98e65ce09";
-static constexpr const char* k_mock_ble_command_characteristic_uuid      = "b5c5d4f5-7207-4e8d-9d6b-60b98e65ce09";
-static constexpr const char* k_mock_ble_notification_characteristic_uuid = "b5c5d4f6-7207-4e8d-9d6b-60b98e65ce09";
+static constexpr const char* k_mock_ble_command_characteristic_uuid      = "c1883ec3-d984-4dcd-9d67-41ade54c5f2a";
+static constexpr const char* k_mock_ble_notification_characteristic_uuid = "cd1411cc-4ab8-46e8-9ad5-c41a871caf41";
 
 MockAppStatus mock_app_controller_initialize(void);
 MockAppStatus mock_app_controller_set_seed(uint32_t seed);

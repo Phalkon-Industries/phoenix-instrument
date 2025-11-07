@@ -1,8 +1,80 @@
+#include "mocks/mock_main_ble_bridge.hpp"
 #include "mocks/mock_main_controller.hpp"
 #include "unity_config.h"
+#include "phoenix_ble_server.hpp"
+#include "phoenix_ble_stack.hpp"
 #include <Adafruit_TinyUSB.h>
 #include <string.h>
 #include <unity.h>
+
+namespace {
+static PhoenixBleServerContext g_bridge_context = {};
+static char                    g_last_notification[256] = {};
+static size_t                  g_last_notification_length = 0U;
+static uint8_t                 g_notification_count        = 0U;
+
+PhoenixBleStatus test_backend_initialize(PhoenixBleServerContext* context, const PhoenixBleConfig* config) {
+  (void) context;
+  (void) config;
+  return PHX_OK;
+}
+
+PhoenixBleStatus test_backend_start_advertising(PhoenixBleServerContext* context) {
+  (void) context;
+  return PHX_OK;
+}
+
+PhoenixBleStatus test_backend_stop_advertising(PhoenixBleServerContext* context) {
+  (void) context;
+  return PHX_OK;
+}
+
+PhoenixBleStatus test_backend_send_notification(PhoenixBleServerContext* context, const uint8_t* payload,
+                                                uint16_t payload_length) {
+  (void) context;
+  if ((payload == NULL) || (payload_length == 0U) || (payload_length >= sizeof(g_last_notification))) {
+    return PHX_ERR_INVALID_ARG;
+  }
+
+  memcpy(g_last_notification, payload, payload_length);
+  g_last_notification[payload_length] = '\0';
+  g_last_notification_length          = payload_length;
+  g_notification_count++;
+  return PHX_OK;
+}
+
+const PhoenixBleBackend k_test_backend = {
+    test_backend_initialize,
+    test_backend_start_advertising,
+    test_backend_stop_advertising,
+    test_backend_send_notification,
+};
+
+void prepare_ble_bridge(void) {
+  // Step 1: Reset the stub backend state so each test observes fresh notifications.
+  memset(&g_bridge_context, 0, sizeof(g_bridge_context));
+  memset(g_last_notification, 0, sizeof(g_last_notification));
+  g_last_notification_length = 0U;
+  g_notification_count        = 0U;
+
+  // Step 2: Register the stub backend and initialise the facade context.
+  PhoenixBleStatus return_code = phoenix_ble_server_register_backend(&k_test_backend);
+  TEST_ASSERT_EQUAL(PHX_OK, return_code);
+
+  PhoenixBleConfig config = phoenix_ble_stack_make_default_config();
+
+  return_code = phoenix_ble_server_initialize(&g_bridge_context, &config);
+  TEST_ASSERT_EQUAL(PHX_OK, return_code);
+
+  // Step 3: Attach the mock bridge so command dispatch mirrors the production firmware.
+  return_code = mock_main_ble_bridge_initialize(&g_bridge_context);
+  TEST_ASSERT_EQUAL(PHX_OK, return_code);
+
+  // Step 4: Mark the context connected so the notification pathway remains enabled.
+  return_code = phoenix_ble_server_handle_connection_event(&g_bridge_context, 1U);
+  TEST_ASSERT_EQUAL(PHX_OK, return_code);
+}
+}  // namespace
 
 void setUp(void) {
   // Step 1: Prepare the controller with deterministic outputs for the current test.
@@ -155,6 +227,92 @@ static void test_guard_macros_reject_null_arguments(void) {
   TEST_ASSERT_EQUAL(MOCK_APP_STATUS_ERROR_INVALID_ARG, mock_app_controller_teardown(NULL));
 }
 
+static void test_ble_bridge_reference_start_publishes_notification(void) {
+  prepare_ble_bridge();
+
+  const char request[] = "{\"command\":\"reference_start\"}";
+
+  const PhoenixBleStatus return_code =
+      mock_main_ble_bridge_process_command(reinterpret_cast<const uint8_t*>(request), strlen(request));
+
+  TEST_ASSERT_EQUAL(PHX_OK, return_code);
+  TEST_ASSERT_EQUAL_UINT8(1U, g_notification_count);
+  TEST_ASSERT_NOT_EQUAL(0U, g_last_notification_length);
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"command\":\"reference_start\""));
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"status\":\"ok\""));
+}
+
+static void test_ble_bridge_sample_requires_reference(void) {
+  prepare_ble_bridge();
+
+  const char request[] = "{\"command\":\"sample_start\"}";
+
+  const PhoenixBleStatus return_code =
+      mock_main_ble_bridge_process_command(reinterpret_cast<const uint8_t*>(request), strlen(request));
+
+  TEST_ASSERT_EQUAL(PHX_OK, return_code);
+  TEST_ASSERT_EQUAL_UINT8(1U, g_notification_count);
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"status\":\"not_ready\""));
+}
+
+static void test_ble_bridge_sample_after_reference_returns_payload(void) {
+  prepare_ble_bridge();
+
+  const char reference_request[] = "{\"command\":\"reference_start\"}";
+  const PhoenixBleStatus reference_code = mock_main_ble_bridge_process_command(
+      reinterpret_cast<const uint8_t*>(reference_request), strlen(reference_request));
+  TEST_ASSERT_EQUAL(PHX_OK, reference_code);
+
+  const char sample_request[] = "{\"command\":\"sample_start\"}";
+  const PhoenixBleStatus sample_code = mock_main_ble_bridge_process_command(
+      reinterpret_cast<const uint8_t*>(sample_request), strlen(sample_request));
+
+  TEST_ASSERT_EQUAL(PHX_OK, sample_code);
+  TEST_ASSERT_EQUAL_UINT8(2U, g_notification_count);
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"command\":\"sample_start\""));
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"ph_value\""));
+}
+
+static void test_ble_bridge_settings_update_surfaces_snapshot(void) {
+  prepare_ble_bridge();
+
+  const char request[] =
+      "{\"command\":\"settings_update\",\"temperature_c\":24.5,\"salinity_ppt\":34.7,"
+      "\"interval_ms\":90000,\"alerts_enabled\":false}";
+
+  const PhoenixBleStatus return_code =
+      mock_main_ble_bridge_process_command(reinterpret_cast<const uint8_t*>(request), strlen(request));
+
+  TEST_ASSERT_EQUAL(PHX_OK, return_code);
+  TEST_ASSERT_EQUAL_UINT8(1U, g_notification_count);
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"command\":\"settings_update\""));
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"configuration_hash\":\"FACEB00C\""));
+}
+
+static void test_ble_bridge_session_teardown_reports_summary(void) {
+  prepare_ble_bridge();
+
+  const char reference_request[] = "{\"command\":\"reference_start\"}";
+  const PhoenixBleStatus reference_code = mock_main_ble_bridge_process_command(
+      reinterpret_cast<const uint8_t*>(reference_request), strlen(reference_request));
+  TEST_ASSERT_EQUAL(PHX_OK, reference_code);
+
+  const char sample_request[] = "{\"command\":\"sample_start\"}";
+  const PhoenixBleStatus sample_code = mock_main_ble_bridge_process_command(
+      reinterpret_cast<const uint8_t*>(sample_request), strlen(sample_request));
+  TEST_ASSERT_EQUAL(PHX_OK, sample_code);
+
+  const char teardown_request[] = "{\"command\":\"session_teardown\"}";
+  const PhoenixBleStatus teardown_code = mock_main_ble_bridge_process_command(
+      reinterpret_cast<const uint8_t*>(teardown_request), strlen(teardown_request));
+
+  TEST_ASSERT_EQUAL(PHX_OK, teardown_code);
+  TEST_ASSERT_EQUAL_UINT8(3U, g_notification_count);
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"command\":\"session_teardown\""));
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"completed_samples\":1"));
+  TEST_ASSERT_NOT_NULL(strstr(g_last_notification, "\"ble_connected\":false"));
+}
+
 void setup(void) {
   // Step 1: Bring up TinyUSB-backed serial before starting Unity.
   UNITY_SETUP_SERIAL_DEFAULT();
@@ -170,6 +328,11 @@ void setup(void) {
   RUN_TEST(test_ble_session_teardown_cleans_up_state);
   RUN_TEST(test_sample_measurement_without_reference_returns_not_ready);
   RUN_TEST(test_guard_macros_reject_null_arguments);
+  RUN_TEST(test_ble_bridge_reference_start_publishes_notification);
+  RUN_TEST(test_ble_bridge_sample_requires_reference);
+  RUN_TEST(test_ble_bridge_sample_after_reference_returns_payload);
+  RUN_TEST(test_ble_bridge_settings_update_surfaces_snapshot);
+  RUN_TEST(test_ble_bridge_session_teardown_reports_summary);
 
   // Step 3: Finalize the Unity session so loop() can idle.
   UNITY_END();

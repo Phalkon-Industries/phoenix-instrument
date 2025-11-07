@@ -2,6 +2,8 @@
 #include <unity.h>
 
 #include "phoenix_ble_server.hpp"
+#include "phoenix_ble_bluefruit_backend.hpp"
+#include "phoenix_ble_stack.hpp"
 
 extern "C" void phoenix_ble_register_data_packing_tests(void);
 
@@ -406,6 +408,43 @@ static void test_handle_connection_event_updates_state(void)
     TEST_ASSERT_EQUAL_UINT8(0U, is_connected);
 }
 
+static void test_bluefruit_backend_initializes_service(void)
+{
+    PhoenixBleServerContext local_context = {};
+    PhoenixBleConfig config = create_valid_config();
+
+    TEST_ASSERT_EQUAL_INT32(PHX_OK, phoenix_ble_bluefruit_install_backend());
+
+    TEST_ASSERT_EQUAL_INT32(PHX_OK, phoenix_ble_server_initialize(&local_context, &config));
+    TEST_ASSERT_NOT_EQUAL(0U, local_context.characteristic_ids.command_characteristic_id);
+    TEST_ASSERT_NOT_EQUAL(0U, local_context.characteristic_ids.notification_characteristic_id);
+
+    TEST_ASSERT_EQUAL_INT32(PHX_OK, phoenix_ble_server_start_advertising(&local_context));
+    TEST_ASSERT_EQUAL_UINT8(1U, local_context.is_advertising);
+
+    TEST_ASSERT_EQUAL_INT32(PHX_OK, phoenix_ble_server_stop_advertising(&local_context));
+    TEST_ASSERT_EQUAL_UINT8(0U, local_context.is_advertising);
+
+    install_test_backend();
+}
+
+static void test_ble_stack_initializes_and_advertises(void)
+{
+    PhoenixBleServerContext local_context = {};
+
+    TEST_ASSERT_EQUAL_INT32(PHX_OK, phoenix_ble_stack_initialize(&local_context));
+    TEST_ASSERT_EQUAL_UINT8(1U, local_context.is_initialized);
+    TEST_ASSERT_EQUAL_STRING("Phoenix Mock", local_context.config.device_name);
+
+    TEST_ASSERT_EQUAL_INT32(PHX_OK, phoenix_ble_stack_start_advertising(&local_context));
+    TEST_ASSERT_EQUAL_UINT8(1U, local_context.is_advertising);
+
+    TEST_ASSERT_EQUAL_INT32(PHX_OK, phoenix_ble_stack_stop_advertising(&local_context));
+    TEST_ASSERT_EQUAL_UINT8(0U, local_context.is_advertising);
+
+    install_test_backend();
+}
+
 extern "C" void setup(void)
 {
     UNITY_SETUP_SERIAL_DEFAULT();
@@ -441,6 +480,8 @@ extern "C" void setup(void)
     RUN_TEST(test_send_notification_requires_initialization);
     RUN_TEST(test_send_notification_invokes_backend);
     RUN_TEST(test_handle_connection_event_updates_state);
+    RUN_TEST(test_bluefruit_backend_initializes_service);
+    RUN_TEST(test_ble_stack_initializes_and_advertises);
 
     phoenix_ble_register_data_packing_tests();
 

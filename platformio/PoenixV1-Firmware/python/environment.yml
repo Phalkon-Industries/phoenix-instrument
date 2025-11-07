@@ -1,4 +1,4 @@
-name: phoenix-benchmark
+name: phoenix-python
 channels:
   - conda-forge
 dependencies:
