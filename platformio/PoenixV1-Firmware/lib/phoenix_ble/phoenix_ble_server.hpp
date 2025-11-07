@@ -38,11 +38,25 @@ typedef struct PhoenixBleConfig {
     uint16_t preferred_connection_interval_max_ms;
 } PhoenixBleConfig;
 
+typedef struct PhoenixBleServerContext PhoenixBleServerContext;
+
 typedef struct PhoenixBleServerContext {
     uint8_t is_initialized;
+    uint8_t is_advertising;
+    uint8_t is_connected;
     PhoenixBleCharacteristicIds characteristic_ids;
     PhoenixBleCommandHandler command_handler;
+    PhoenixBleConfig config;
 } PhoenixBleServerContext;
+
+typedef struct PhoenixBleBackend {
+    PhoenixBleStatus (*initialize)(PhoenixBleServerContext* context, const PhoenixBleConfig* config);
+    PhoenixBleStatus (*start_advertising)(PhoenixBleServerContext* context);
+    PhoenixBleStatus (*stop_advertising)(PhoenixBleServerContext* context);
+    PhoenixBleStatus (*send_notification)(PhoenixBleServerContext* context, const uint8_t* payload, uint16_t payload_length);
+} PhoenixBleBackend;
+
+PhoenixBleStatus phoenix_ble_server_register_backend(const PhoenixBleBackend* backend);
 
 /**
  * @brief Initialise the Phoenix BLE server facade and register the primary GATT service.
@@ -91,6 +105,8 @@ PhoenixBleStatus phoenix_ble_server_send_notification(PhoenixBleServerContext* c
  * @return PhoenixBleStatus Phoenix return code signalling success or the guard failure encountered.
  */
 PhoenixBleStatus phoenix_ble_server_register_command_handler(PhoenixBleServerContext* context, PhoenixBleCommandHandler handler);
+
+PhoenixBleStatus phoenix_ble_server_handle_connection_event(PhoenixBleServerContext* context, uint8_t is_connected);
 
 #ifdef __cplusplus
 }
