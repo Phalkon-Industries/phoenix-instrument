@@ -25,10 +25,12 @@ def _channel_map_header() -> str:
         f"{'Samples':>9}"
         f"{'Mean_A':>12}"
         f"{'Std_A':>12}"
+        f"{'Slope_A':>12}"
         f"{'Min_A':>12}"
         f"{'Max_A':>12}"
         f"{'Mean_B':>12}"
         f"{'Std_B':>12}"
+        f"{'Slope_B':>12}"
         f"{'Min_B':>12}"
         f"{'Max_B':>12}"
         f"{'Channel_Map':>12}"
@@ -41,10 +43,12 @@ def _channel_map_row(
     samples: int,
     mean_a: float,
     std_a: float,
+    slope_a: float,
     min_a: float,
     max_a: float,
     mean_b: float,
     std_b: float,
+    slope_b: float,
     min_b: float,
     max_b: float,
     alignment: str,
@@ -55,10 +59,12 @@ def _channel_map_row(
         f"{samples:>9d}"
         f"{mean_a:>12.3f}"
         f"{std_a:>12.3f}"
+        f"{slope_a:>12.6f}"
         f"{min_a:>12.3f}"
         f"{max_a:>12.3f}"
         f"{mean_b:>12.3f}"
         f"{std_b:>12.3f}"
+        f"{slope_b:>12.6f}"
         f"{min_b:>12.3f}"
         f"{max_b:>12.3f}"
         f"{alignment:<12}"
@@ -71,10 +77,12 @@ def _format_row(
     samples: int,
     mean_a: float,
     std_a: float,
+    slope_a: float,
     min_a: float,
     max_a: float,
     mean_b: float,
     std_b: float,
+    slope_b: float,
     min_b: float,
     max_b: float,
     alignment: str,
@@ -85,10 +93,12 @@ def _format_row(
         f"{samples:>9}"
         f"{mean_a:>12.3f}"
         f"{std_a:>12.3f}"
+        f"{slope_a:>12.6f}"
         f"{min_a:>12.3f}"
         f"{max_a:>12.3f}"
         f"{mean_b:>12.3f}"
         f"{std_b:>12.3f}"
+        f"{slope_b:>12.6f}"
         f"{min_b:>12.3f}"
         f"{max_b:>12.3f}"
         f"{alignment:<12}"
@@ -211,10 +221,12 @@ def _sample_summary_lines() -> List[str]:
         10,
         123.0,
         2.0,
+        0.001234,
         120.0,
         130.0,
         321.0,
         3.0,
+        -0.000321,
         310.0,
         330.0,
         "A=OK",
@@ -225,10 +237,12 @@ def _sample_summary_lines() -> List[str]:
         8,
         223.0,
         4.0,
+        -0.002468,
         210.0,
         235.0,
         121.0,
         2.5,
+        0.000789,
         118.0,
         125.0,
         "B!=A",
@@ -259,6 +273,8 @@ def test_parse_summary_table_extracts_rows() -> None:
     assert first.label == "Blue"
     assert first.sample_count == 10
     assert pytest.approx(first.mean_channel_a, rel=1e-6) == 123.0
+    assert pytest.approx(first.slope_channel_a, rel=1e-6) == 0.001234
+    assert pytest.approx(first.slope_channel_b, rel=1e-6) == -0.000321
     assert first.channel_alignment == "A=OK"
     assert first.warning_label == "--"
     assert first.has_channel_metrics is True
@@ -322,15 +338,17 @@ def test_create_report_generates_artifacts(tmp_path: Path) -> None:
     assert first_row["label"] == "Blue"
     assert first_row["channel_alignment"] == "A=OK"
     assert first_row["warning_label"] == "--"
+    assert pytest.approx(first_row["slope_channel_a"], rel=1e-6) == 0.001234
+    assert pytest.approx(first_row["slope_channel_b"], rel=1e-6) == -0.000321
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "![channel_map plot](channel_map.png)" in report_text
     assert (
-        "| State | Samples | Mean A | Std A | Min A | Max A | Mean B | Std B | Min B | Max B | Channel map | Warnings |"
+        "| State | Samples | Mean A | Std A | Slope A | Min A | Max A | Mean B | Std B | Slope B | Min B | Max B | Channel map | Warnings |"
         in report_text
     )
     assert (
-        "| Blue | 10 | 123.000 | 2.000 | 120.000 | 130.000 | 321.000 | 3.000 | 310.000 | 330.000 | A=OK | -- |"
+        "| Blue | 10 | 123.000 | 2.000 | 0.001234 | 120.000 | 130.000 | 321.000 | 3.000 | -0.000321 | 310.000 | 330.000 | A=OK | -- |"
         in report_text
     )
     assert "Blue" in report_text
@@ -374,12 +392,18 @@ def test_create_report_handles_cold_sweep(tmp_path: Path) -> None:
     assert extras["captured_sweeps"] == 4
     assert extras["warning"] == "saturation"
     assert extras["sample_count"] == 4
+    drift_codes = extras.get("drift_codes")
+    assert isinstance(drift_codes, dict)
+    assert drift_codes["drain_blue"] == 3
+    assert drift_codes["blue"] == 2
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "Warm-up guidance" in report_text
     assert (
-        "| Channel | Samples | Mean | StdDev | Min | Max | Saturated |" in report_text
+        "| Channel | Samples | Mean | StdDev | Min | Max | Drift (Δ) | Saturated |"
+        in report_text
     )
+    assert "| drain_blue | 4 | 120.000 | 5.500 | 100 | 140 | +3 | no |" in report_text
     assert "![cold_sweep plot]" in report_text
     assert "[Download CSV](cold_sweep_samples.csv)" in report_text
 
@@ -585,10 +609,10 @@ def _dwell_sweep_summary_lines() -> List[str]:
         "# phoenix benchmark ready",
         "# running,scenario=dwell_sweep,sweeps_per_dwell=4,start_us=100,end_us=300,step_us=100,steps=3",
         "# summary_table",
-        "Dwell_us  Sweeps  Drain_Mean  Drain_Std  Blue_Mean  Blue_Std  Green_Mean  Green_Std  Duration_us  Warning_Mask",
-        "     100       4        1.234      0.111        2.345      0.222        3.456      0.333        50000  0x00",
-        "     200       4        1.500      0.450        2.650      0.520        3.700      0.610        60000  0x01",
-        "     300       2           --        --           --        --           --        --        30000  0x00",
+        "Dwell_us  Sweeps  Drain_Mean  Drain_Std  Drain_Slope  Blue_Mean  Blue_Std  Blue_Slope  Green_Mean  Green_Std  Green_Slope  Duration_us  Warning_Mask",
+        "     100       4        1.234      0.111      -0.123        2.345      0.222       1.050        3.456      0.333      -0.900        50000  0x00",
+        "     200       4        1.500      0.450       0.250        2.650      0.520      -0.640        3.700      0.610       0.315        60000  0x01",
+        "     300       2           --        --         --           --        --         --           --        --         --        30000  0x00",
         "",
         "# dwell_sweep_warnings,reason=saturation",
         "# benchmark_complete",
@@ -608,6 +632,9 @@ def test_parse_summary_table_handles_dwell_sweep() -> None:
     assert first.dwell_us == 100
     assert first.sweeps_completed == 4
     assert pytest.approx(first.drain_std, rel=1e-6) == 0.111
+    assert pytest.approx(first.drain_slope, rel=1e-6) == -0.123
+    assert pytest.approx(first.blue_slope, rel=1e-6) == 1.05
+    assert pytest.approx(first.green_slope, rel=1e-6) == -0.9
     assert first.warning_mask == 0
     assert first.has_metrics is True
 
@@ -629,8 +656,9 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
     assert "dwell_sweep" in artifacts.scenarios
     assert "dwell_sweep" in artifacts.plot_paths
     dwell_plots = artifacts.plot_paths["dwell_sweep"]
-    assert len(dwell_plots) == 2
+    assert len(dwell_plots) == 3
     assert any(path.name.endswith("_variance.png") for path in dwell_plots)
+    assert any(path.name.endswith("_slope.png") for path in dwell_plots)
     assert any(path.name.endswith("_duration.png") for path in dwell_plots)
     for path in dwell_plots:
         assert path.exists()
@@ -640,6 +668,7 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
     assert len(csv_files) == 1
     csv_text = csv_files[0].read_text(encoding="utf-8")
     assert "dwell_us,sweeps_completed" in csv_text
+    assert "drain_slope" in csv_text
     assert "200,4" in csv_text
 
     recommendations = artifacts.dwell_sweep_recommendations
@@ -654,11 +683,23 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
     assert len(dwell_entry["rows"]) == 3
     assert dwell_entry["rows"][0]["dwell_us"] == 100
     assert dwell_entry["rows"][1]["warning_mask"] == 1
+    assert pytest.approx(dwell_entry["rows"][0]["drain_slope"], rel=1e-6) == -0.123
+    assert pytest.approx(dwell_entry["rows"][0]["blue_slope"], rel=1e-6) == 1.05
+    assert pytest.approx(dwell_entry["rows"][0]["green_slope"], rel=1e-6) == -0.9
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "## Summary Table (dwell_sweep)" in report_text
     assert "Recommended dwell" in report_text
     assert "saturation" in report_text
+    assert (
+        "| Dwell (µs) | Sweeps | Drain mean | Drain std | Drain slope | Blue mean | Blue std | Blue slope | Green mean | Green std | Green slope | Duration (µs) | Warnings |"
+        in report_text
+    )
+    assert (
+        "| 100 | 4 | 1.234 | 0.111 | -0.123 | 2.345 | 0.222 | 1.050 | 3.456 | 0.333 | -0.900 | 50000 | none |"
+        in report_text
+    )
+    assert "![dwell_sweep plot #2]" in report_text
 
 
 def _drift_capture_lines() -> List[str]:

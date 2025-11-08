@@ -24,10 +24,12 @@ struct SummaryRowValues {
   uint32_t    sample_count;       ///< Number of captured samples represented by the row.
   double      mean_channel_a;     ///< Mean ADC code for channel A; ignored when has_channel_metrics is false.
   double      std_channel_a;      ///< Sample standard deviation for channel A.
+  double      slope_channel_a;    ///< Drift slope for channel A computed over the sweep index.
   double      min_channel_a;      ///< Minimum observed ADC code for channel A.
   double      max_channel_a;      ///< Maximum observed ADC code for channel A.
   double      mean_channel_b;     ///< Mean ADC code for channel B.
   double      std_channel_b;      ///< Sample standard deviation for channel B.
+  double      slope_channel_b;    ///< Drift slope for channel B computed over the sweep index.
   double      min_channel_b;      ///< Minimum observed ADC code for channel B.
   double      max_channel_b;      ///< Maximum observed ADC code for channel B.
   const char* channel_alignment;  ///< String describing channel dominance vs expectation (nullptr renders placeholder).
@@ -155,6 +157,9 @@ inline bool format_summary_header(char* buffer, std::size_t buffer_length) {
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Std_A", k_summary_channel_width)) {
     return false;
   }
+  if (!detail::append_column_right(buffer, buffer_length, &offset, "Slope_A", k_summary_channel_width)) {
+    return false;
+  }
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Min_A", k_summary_channel_width)) {
     return false;
   }
@@ -165,6 +170,9 @@ inline bool format_summary_header(char* buffer, std::size_t buffer_length) {
     return false;
   }
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Std_B", k_summary_channel_width)) {
+    return false;
+  }
+  if (!detail::append_column_right(buffer, buffer_length, &offset, "Slope_B", k_summary_channel_width)) {
     return false;
   }
   if (!detail::append_column_right(buffer, buffer_length, &offset, "Min_B", k_summary_channel_width)) {
@@ -212,6 +220,12 @@ inline bool format_summary_row(const SummaryRowValues& values, char* buffer, std
     if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
       return false;
     }
+    if (!detail::format_double(temp, sizeof(temp), values.slope_channel_a, k_summary_channel_width, 6u)) {
+      return false;
+    }
+    if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
+      return false;
+    }
     if (!detail::format_double(temp, sizeof(temp), values.min_channel_a, k_summary_channel_width, 3u)) {
       return false;
     }
@@ -236,6 +250,12 @@ inline bool format_summary_row(const SummaryRowValues& values, char* buffer, std
     if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
       return false;
     }
+    if (!detail::format_double(temp, sizeof(temp), values.slope_channel_b, k_summary_channel_width, 6u)) {
+      return false;
+    }
+    if (!detail::append_column_right(buffer, buffer_length, &offset, temp, k_summary_channel_width)) {
+      return false;
+    }
     if (!detail::format_double(temp, sizeof(temp), values.min_channel_b, k_summary_channel_width, 3u)) {
       return false;
     }
@@ -250,6 +270,12 @@ inline bool format_summary_row(const SummaryRowValues& values, char* buffer, std
     }
   }
   else {
+    if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
+      return false;
+    }
+    if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
+      return false;
+    }
     if (!detail::append_placeholder(buffer, buffer_length, &offset, k_summary_channel_width)) {
       return false;
     }

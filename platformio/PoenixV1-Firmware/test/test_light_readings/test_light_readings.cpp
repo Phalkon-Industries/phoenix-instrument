@@ -263,6 +263,7 @@ static void test_light_readings_compute_sweep_stats_handles_empty_collection(voi
   TEST_ASSERT_EQUAL_INT32(0, stats.blue.max_value);
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.drain_blue.mean));
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.drain_blue.standard_deviation));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.drain_blue.drift_slope));
 }
 
 static void test_light_readings_compute_sweep_stats_calculates_metrics(void) {
@@ -285,24 +286,88 @@ static void test_light_readings_compute_sweep_stats_calculates_metrics(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.drain_blue.standard_deviation));
   TEST_ASSERT_EQUAL_INT32(1000, stats.drain_blue.min_value);
   TEST_ASSERT_EQUAL_INT32(3000, stats.drain_blue.max_value);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.drain_blue.drift_slope));
 
   TEST_ASSERT_TRUE(stats.drain_green.has_samples);
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2500.0f, static_cast<float>(stats.drain_green.mean));
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.drain_green.standard_deviation));
   TEST_ASSERT_EQUAL_INT32(1500, stats.drain_green.min_value);
   TEST_ASSERT_EQUAL_INT32(3500, stats.drain_green.max_value);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.drain_green.drift_slope));
 
   TEST_ASSERT_TRUE(stats.blue.has_samples);
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2100.0f, static_cast<float>(stats.blue.mean));
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.blue.standard_deviation));
   TEST_ASSERT_EQUAL_INT32(1100, stats.blue.min_value);
   TEST_ASSERT_EQUAL_INT32(3100, stats.blue.max_value);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.blue.drift_slope));
 
   TEST_ASSERT_TRUE(stats.green.has_samples);
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 2200.0f, static_cast<float>(stats.green.mean));
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.green.standard_deviation));
   TEST_ASSERT_EQUAL_INT32(1200, stats.green.min_value);
   TEST_ASSERT_EQUAL_INT32(3200, stats.green.max_value);
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1000.0f, static_cast<float>(stats.green.drift_slope));
+}
+
+static void test_light_readings_compute_sweep_stats_reports_zero_drift_for_flat_series(void) {
+  // Step 1: Populate a sweep collection with identical samples to emulate a steady signal.
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  collection.sweep_count                  = 4u;
+  for (uint32_t index = 0u; index < collection.sweep_count; ++index) {
+    collection.sweeps[index] = {1000, 1200, 1300, 1400};
+  }
+
+  LightReadingsSweepStats stats = {};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_compute_sweep_stats(&collection, &stats));
+
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.drain_blue.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.drain_green.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.blue.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, static_cast<float>(stats.green.drift_slope));
+}
+
+static void test_light_readings_compute_sweep_stats_reports_positive_drift(void) {
+  // Step 1: Create a sweep collection with values increasing steadily each iteration.
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  collection.sweep_count                  = 5u;
+  for (uint32_t index = 0u; index < collection.sweep_count; ++index) {
+    const int32_t base_value = static_cast<int32_t>(index) * 100;
+    collection.sweeps[index] = {
+        1000 + base_value,
+        2000 + base_value,
+        3000 + base_value,
+        4000 + base_value,
+    };
+  }
+
+  LightReadingsSweepStats stats = {};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_compute_sweep_stats(&collection, &stats));
+
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 100.0f, static_cast<float>(stats.drain_blue.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 100.0f, static_cast<float>(stats.drain_green.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 100.0f, static_cast<float>(stats.blue.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, 100.0f, static_cast<float>(stats.green.drift_slope));
+}
+
+static void test_light_readings_compute_sweep_stats_reports_negative_drift(void) {
+  // Step 1: Capture a sweep collection with steadily decreasing values to emulate decay.
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  collection.sweep_count                  = 3u;
+  collection.sweeps[0]                    = {3000, 2800, 2600, 2400};
+  collection.sweeps[1]                    = {2000, 1800, 1600, 1400};
+  collection.sweeps[2]                    = {1000, 800, 600, 400};
+
+  LightReadingsSweepStats stats = {};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_compute_sweep_stats(&collection, &stats));
+
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, -1000.0f, static_cast<float>(stats.drain_blue.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, -1000.0f, static_cast<float>(stats.drain_green.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, -1000.0f, static_cast<float>(stats.blue.drift_slope));
+  TEST_ASSERT_FLOAT_WITHIN(0.0001f, -1000.0f, static_cast<float>(stats.green.drift_slope));
 }
 
 static void test_light_readings_modify_settings_requires_initialization(void) {
@@ -387,6 +452,9 @@ void setup() {
   RUN_TEST(test_light_readings_compute_sweep_stats_requires_arguments);
   RUN_TEST(test_light_readings_compute_sweep_stats_handles_empty_collection);
   RUN_TEST(test_light_readings_compute_sweep_stats_calculates_metrics);
+  RUN_TEST(test_light_readings_compute_sweep_stats_reports_zero_drift_for_flat_series);
+  RUN_TEST(test_light_readings_compute_sweep_stats_reports_positive_drift);
+  RUN_TEST(test_light_readings_compute_sweep_stats_reports_negative_drift);
   RUN_TEST(test_light_readings_modify_settings_requires_initialization);
   RUN_TEST(test_light_readings_modify_settings_updates_runtime_configuration);
   RUN_TEST(test_light_readings_shutdown_requires_initialization);

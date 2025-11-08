@@ -462,8 +462,9 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
     }
 
     auto assign_summary = [](const LightReadingsStatisticSummary&   summary,
-                             PhoenixBenchmarkRunningStats<int32_t>& destination) {
+                             PhoenixBenchmarkRunningStats<int32_t>& destination, double& slope_destination) {
       destination.count = summary.sample_count;
+      slope_destination = summary.drift_slope;
 
       if (!summary.has_samples) {
         destination.mean      = 0.0;
@@ -481,12 +482,12 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
       destination.max_value = summary.max_value;
     };
 
-    assign_summary(sweep_stats.drain_blue, row.drain.channel_a_codes);
-    assign_summary(sweep_stats.drain_green, row.drain.channel_b_codes);
-    assign_summary(sweep_stats.blue, row.blue.channel_a_codes);
-    assign_summary(sweep_stats.drain_green, row.blue.channel_b_codes);
-    assign_summary(sweep_stats.drain_blue, row.green.channel_a_codes);
-    assign_summary(sweep_stats.green, row.green.channel_b_codes);
+    assign_summary(sweep_stats.drain_blue, row.drain.channel_a_codes, row.drain.channel_a_drift_slope);
+    assign_summary(sweep_stats.drain_green, row.drain.channel_b_codes, row.drain.channel_b_drift_slope);
+    assign_summary(sweep_stats.blue, row.blue.channel_a_codes, row.blue.channel_a_drift_slope);
+    assign_summary(sweep_stats.drain_green, row.blue.channel_b_codes, row.blue.channel_b_drift_slope);
+    assign_summary(sweep_stats.drain_blue, row.green.channel_a_codes, row.green.channel_a_drift_slope);
+    assign_summary(sweep_stats.green, row.green.channel_b_codes, row.green.channel_b_drift_slope);
 
     row.drain.channel_a_saturation_count = 0u;
     row.drain.channel_b_saturation_count = 0u;

@@ -92,6 +92,7 @@ struct LightReadingsStatisticSummary {
   double   standard_deviation; /**< Sample standard deviation computed across values. */
   int32_t  min_value;          /**< Minimum observed code. */
   int32_t  max_value;          /**< Maximum observed code. */
+  double   drift_slope;        /**< Least-squares slope across the sweep index domain. */
   bool     has_samples;        /**< Indicates whether the metrics represent at least one sample. */
 };
 

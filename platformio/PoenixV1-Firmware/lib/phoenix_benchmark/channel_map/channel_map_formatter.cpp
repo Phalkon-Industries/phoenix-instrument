@@ -133,6 +133,10 @@ bool phoenix_benchmark_channel_map_format_summary_header(char* buffer, std::size
                            k_phoenix_benchmark_channel_map_summary_channel_width)) {
     return false;
   }
+  if (!append_column_right(buffer, buffer_length, &offset, "Slope_A",
+                           k_phoenix_benchmark_channel_map_summary_channel_width)) {
+    return false;
+  }
   if (!append_column_right(buffer, buffer_length, &offset, "Min_A",
                            k_phoenix_benchmark_channel_map_summary_channel_width)) {
     return false;
@@ -146,6 +150,10 @@ bool phoenix_benchmark_channel_map_format_summary_header(char* buffer, std::size
     return false;
   }
   if (!append_column_right(buffer, buffer_length, &offset, "Std_B",
+                           k_phoenix_benchmark_channel_map_summary_channel_width)) {
+    return false;
+  }
+  if (!append_column_right(buffer, buffer_length, &offset, "Slope_B",
                            k_phoenix_benchmark_channel_map_summary_channel_width)) {
     return false;
   }
@@ -196,7 +204,7 @@ bool phoenix_benchmark_channel_map_format_summary_row(const PhoenixBenchmarkChan
 
   // Step 3: Populate channel statistics when data is available, otherwise placeholders.
   if (values.has_channel_metrics) {
-    // Step 3.1: Format channel A metrics in order: mean, standard deviation, min, and max.
+    // Step 3.1: Format channel A metrics in order: mean, standard deviation, slope, min, and max.
     if (!format_double(temp, sizeof(temp), values.mean_channel_a, k_phoenix_benchmark_channel_map_summary_channel_width,
                        3u)) {
       return false;
@@ -207,6 +215,14 @@ bool phoenix_benchmark_channel_map_format_summary_row(const PhoenixBenchmarkChan
     }
     if (!format_double(temp, sizeof(temp), values.std_channel_a, k_phoenix_benchmark_channel_map_summary_channel_width,
                        3u)) {
+      return false;
+    }
+    if (!append_column_right(buffer, buffer_length, &offset, temp,
+                             k_phoenix_benchmark_channel_map_summary_channel_width)) {
+      return false;
+    }
+    if (!format_double(temp, sizeof(temp), values.slope_channel_a,
+                       k_phoenix_benchmark_channel_map_summary_channel_width, 6u)) {
       return false;
     }
     if (!append_column_right(buffer, buffer_length, &offset, temp,
@@ -246,6 +262,14 @@ bool phoenix_benchmark_channel_map_format_summary_row(const PhoenixBenchmarkChan
                              k_phoenix_benchmark_channel_map_summary_channel_width)) {
       return false;
     }
+    if (!format_double(temp, sizeof(temp), values.slope_channel_b,
+                       k_phoenix_benchmark_channel_map_summary_channel_width, 6u)) {
+      return false;
+    }
+    if (!append_column_right(buffer, buffer_length, &offset, temp,
+                             k_phoenix_benchmark_channel_map_summary_channel_width)) {
+      return false;
+    }
     if (!format_double(temp, sizeof(temp), values.min_channel_b, k_phoenix_benchmark_channel_map_summary_channel_width,
                        3u)) {
       return false;
@@ -265,29 +289,11 @@ bool phoenix_benchmark_channel_map_format_summary_row(const PhoenixBenchmarkChan
   }
   else {
     // Step 3.3: Fill all channel columns with placeholders when metrics are missing.
-    if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
-      return false;
-    }
-    if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
-      return false;
-    }
-    if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
-      return false;
-    }
-    if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
-      return false;
-    }
-    if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
-      return false;
-    }
-    if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
-      return false;
-    }
-    if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
-      return false;
-    }
-    if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
-      return false;
+    const std::size_t channel_column_count = 10u;
+    for (std::size_t column = 0u; column < channel_column_count; ++column) {
+      if (!append_placeholder(buffer, buffer_length, &offset, k_phoenix_benchmark_channel_map_summary_channel_width)) {
+        return false;
+      }
     }
   }
 

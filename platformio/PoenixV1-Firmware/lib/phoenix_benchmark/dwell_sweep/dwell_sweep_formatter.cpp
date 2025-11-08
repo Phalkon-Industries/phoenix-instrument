@@ -27,9 +27,9 @@ bool phoenix_benchmark_dwell_sweep_format_summary_header(char* buffer, std::size
   }
 
   // Step 2: Emit the fixed-width column labels mirroring other benchmark tables.
-  const int written = std::snprintf(
-      buffer, length,
-      "Dwell_us  Sweeps  Drain_Mean  Drain_Std  Blue_Mean  Blue_Std  Green_Mean  Green_Std  Duration_us  Warning_Mask");
+  const int written = std::snprintf(buffer, length,
+                                    "Dwell_us  Sweeps  Drain_Mean  Drain_Std  Drain_Slope  Blue_Mean  Blue_Std  "
+                                    "Blue_Slope  Green_Mean  Green_Std  Green_Slope  Duration_us  Warning_Mask");
   if (written <= 0) {
     return false;
   }
@@ -47,25 +47,34 @@ bool phoenix_benchmark_dwell_sweep_format_summary_row(const PhoenixBenchmarkDwel
   }
 
   // Step 2: Prepare printable versions of each floating-point metric, preserving placeholders when data is missing.
-  char drain_mean[16] = {};
-  char drain_std[16]  = {};
-  char blue_mean[16]  = {};
-  char blue_std[16]   = {};
-  char green_mean[16] = {};
-  char green_std[16]  = {};
+  char drain_mean[16]  = {};
+  char drain_std[16]   = {};
+  char drain_slope[16] = {};
+  char blue_mean[16]   = {};
+  char blue_std[16]    = {};
+  char blue_slope[16]  = {};
+  char green_mean[16]  = {};
+  char green_std[16]   = {};
+  char green_slope[16] = {};
 
   format_metric(drain_mean, sizeof(drain_mean), values.drain_mean, values.has_metrics);
   format_metric(drain_std, sizeof(drain_std), values.drain_std, values.has_metrics);
+  format_metric(drain_slope, sizeof(drain_slope), values.drain_slope, values.has_metrics);
   format_metric(blue_mean, sizeof(blue_mean), values.blue_mean, values.has_metrics);
   format_metric(blue_std, sizeof(blue_std), values.blue_std, values.has_metrics);
+  format_metric(blue_slope, sizeof(blue_slope), values.blue_slope, values.has_metrics);
   format_metric(green_mean, sizeof(green_mean), values.green_mean, values.has_metrics);
   format_metric(green_std, sizeof(green_std), values.green_std, values.has_metrics);
+  format_metric(green_slope, sizeof(green_slope), values.green_slope, values.has_metrics);
 
   // Step 3: Render the row using fixed-width columns for host-side alignment parity with other scenarios.
-  const int written = std::snprintf(
-      buffer, length, "%8" PRIu32 "  %6" PRIu32 "  %10s  %9s  %10s  %8s  %10s  %8s  %12" PRIu32 "  0x%02X",
-      values.dwell_us, values.sweeps_completed, drain_mean, drain_std, blue_mean, blue_std, green_mean, green_std,
-      values.duration_us, static_cast<unsigned int>(values.warning_mask));
+  const int written = std::snprintf(buffer, length,
+                                    "%8" PRIu32 "  %6" PRIu32
+                                    "  %10s  %9s  %11s  %10s  %8s  %10s  %10s  %8s  "
+                                    "%11s  %12" PRIu32 "  0x%02X",
+                                    values.dwell_us, values.sweeps_completed, drain_mean, drain_std, drain_slope,
+                                    blue_mean, blue_std, blue_slope, green_mean, green_std, green_slope,
+                                    values.duration_us, static_cast<unsigned int>(values.warning_mask));
   if (written <= 0) {
     return false;
   }

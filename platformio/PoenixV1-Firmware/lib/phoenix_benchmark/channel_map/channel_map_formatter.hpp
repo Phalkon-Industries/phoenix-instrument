@@ -12,7 +12,7 @@ static constexpr std::size_t k_phoenix_benchmark_channel_map_summary_samples_wid
 static constexpr std::size_t k_phoenix_benchmark_channel_map_summary_channel_width      = 12u;
 static constexpr std::size_t k_phoenix_benchmark_channel_map_summary_map_width          = 12u;
 static constexpr std::size_t k_phoenix_benchmark_channel_map_summary_warning_width      = 14u;
-static constexpr std::size_t k_phoenix_benchmark_channel_map_summary_column_count       = 12u;
+static constexpr std::size_t k_phoenix_benchmark_channel_map_summary_column_count       = 14u;
 static constexpr std::size_t k_phoenix_benchmark_channel_map_summary_table_buffer_bytes = 256u;
 
 /// @brief Captures the values required to populate one summary table row.
@@ -21,10 +21,12 @@ struct PhoenixBenchmarkChannelMapSummaryRowValues {
   uint32_t    sample_count;
   double      mean_channel_a;
   double      std_channel_a;
+  double      slope_channel_a;
   double      min_channel_a;
   double      max_channel_a;
   double      mean_channel_b;
   double      std_channel_b;
+  double      slope_channel_b;
   double      min_channel_b;
   double      max_channel_b;
   const char* channel_alignment;

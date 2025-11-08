@@ -23,8 +23,10 @@ from phoenix_benchmark.schema import (
 LABEL_WIDTH = 8
 SAMPLES_WIDTH = 9
 CHANNEL_WIDTH = 12
+CHANNEL_COLUMN_COUNT = 10
 MAP_WIDTH = 12
 WARNING_WIDTH = 14
+SLOPE_PRECISION = 6
 POT_SWEEP_SATURATION_THRESHOLD = 7_549_746
 DWELL_VARIANCE_THRESHOLD = 0.75
 DWELL_SATURATION_MASK = 0x01
@@ -75,10 +77,12 @@ class SummaryRow:
     sample_count: int
     mean_channel_a: float | None
     std_channel_a: float | None
+    slope_channel_a: float | None
     min_channel_a: float | None
     max_channel_a: float | None
     mean_channel_b: float | None
     std_channel_b: float | None
+    slope_channel_b: float | None
     min_channel_b: float | None
     max_channel_b: float | None
     channel_alignment: str | None
@@ -91,10 +95,12 @@ class SummaryRow:
             "sample_count": self.sample_count,
             "mean_channel_a": self.mean_channel_a,
             "std_channel_a": self.std_channel_a,
+            "slope_channel_a": self.slope_channel_a,
             "min_channel_a": self.min_channel_a,
             "max_channel_a": self.max_channel_a,
             "mean_channel_b": self.mean_channel_b,
             "std_channel_b": self.std_channel_b,
+            "slope_channel_b": self.slope_channel_b,
             "min_channel_b": self.min_channel_b,
             "max_channel_b": self.max_channel_b,
             "channel_alignment": self.channel_alignment,
@@ -233,10 +239,13 @@ class DwellSweepSummaryRow:
     sweeps_completed: int
     drain_mean: float | None
     drain_std: float | None
+    drain_slope: float | None
     blue_mean: float | None
     blue_std: float | None
+    blue_slope: float | None
     green_mean: float | None
     green_std: float | None
+    green_slope: float | None
     duration_us: int | None
     warning_mask: int
     has_metrics: bool
@@ -247,10 +256,13 @@ class DwellSweepSummaryRow:
             "sweeps_completed": self.sweeps_completed,
             "drain_mean": self.drain_mean,
             "drain_std": self.drain_std,
+            "drain_slope": self.drain_slope,
             "blue_mean": self.blue_mean,
             "blue_std": self.blue_std,
+            "blue_slope": self.blue_slope,
             "green_mean": self.green_mean,
             "green_std": self.green_std,
+            "green_slope": self.green_slope,
             "duration_us": self.duration_us,
             "warning_mask": self.warning_mask,
             "has_metrics": self.has_metrics,
@@ -504,6 +516,22 @@ def _parse_cold_sweep_samples(lines: List[str]) -> List[ColdSweepSampleRow]:
     return samples
 
 
+def _calculate_cold_sweep_drift(
+    samples: List[ColdSweepSampleRow],
+) -> Dict[str, int]:
+    if len(samples) < 2:
+        return {}
+
+    first = samples[0]
+    last = samples[-1]
+    return {
+        "drain_blue": last.drain_blue_code - first.drain_blue_code,
+        "drain_green": last.drain_green_code - first.drain_green_code,
+        "blue": last.blue_code - first.blue_code,
+        "green": last.green_code - first.green_code,
+    }
+
+
 def _extract_cold_sweep_metadata(lines: Iterable[str]) -> Dict[str, object]:
     captured_sweeps: int | None = None
     timestamp_us: int | None = None
@@ -602,6 +630,7 @@ def create_report(
             cold_run_metadata = section.metadata.copy()
             break
 
+    cold_drift_codes = _calculate_cold_sweep_drift(cold_samples)
     if cold_summary_rows or cold_metadata or cold_samples:
         saturated_channels = sorted(
             {row.channel for row in cold_summary_rows if row.saturated}
@@ -618,6 +647,8 @@ def create_report(
             cold_extras["timestamp_us"] = timestamp
         if saturated_channels:
             cold_extras["saturated_channels"] = saturated_channels
+        if cold_drift_codes:
+            cold_extras["drift_codes"] = cold_drift_codes
         if cold_run_metadata:
             cold_extras["run_metadata"] = dict(sorted(cold_run_metadata.items()))
 
@@ -730,10 +761,12 @@ def create_report(
         _write_dwell_sweep_csv(dwell_rows, csv_path)
         csv_paths["dwell_sweep"] = [csv_path]
         variance_path = output_dir / f"{slug}_variance.png"
+        slope_path = output_dir / f"{slug}_slope.png"
         duration_path = output_dir / f"{slug}_duration.png"
         _render_dwell_variance_plot(dwell_rows, variance_path, DWELL_VARIANCE_THRESHOLD)
+        _render_dwell_slope_plot(dwell_rows, slope_path)
         _render_dwell_duration_plot(dwell_rows, duration_path)
-        plot_paths["dwell_sweep"] = [variance_path, duration_path]
+        plot_paths["dwell_sweep"] = [variance_path, slope_path, duration_path]
 
     if drift_bursts:
         plot_paths["drift_capture"] = [
@@ -1210,16 +1243,34 @@ def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryR
             continue
 
         parts = data.split()
-        if len(parts) != 10:
+        if len(parts) != 13:
             raise ValueError(f"Invalid dwell_sweep summary row: '{entry}'")
 
         dwell_us = _parse_int(parts[0])
         sweeps_completed = _parse_int(parts[1])
-        metric_tokens = parts[2:8]
-        duration_token = parts[8]
-        warning_token = parts[9]
+        drain_mean = _parse_float(parts[2])
+        drain_std = _parse_float(parts[3])
+        drain_slope = _parse_float(parts[4])
+        blue_mean = _parse_float(parts[5])
+        blue_std = _parse_float(parts[6])
+        blue_slope = _parse_float(parts[7])
+        green_mean = _parse_float(parts[8])
+        green_std = _parse_float(parts[9])
+        green_slope = _parse_float(parts[10])
+        duration_token = parts[11]
+        warning_token = parts[12]
 
-        metrics = [_parse_float(token) for token in metric_tokens]
+        metrics = [
+            drain_mean,
+            drain_std,
+            drain_slope,
+            blue_mean,
+            blue_std,
+            blue_slope,
+            green_mean,
+            green_std,
+            green_slope,
+        ]
         has_metrics = all(value is not None for value in metrics)
 
         duration_us: int | None
@@ -1238,18 +1289,19 @@ def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryR
                 f"Invalid dwell_sweep warning mask: '{warning_token}'"
             ) from exc
 
-        drain_mean, drain_std, blue_mean, blue_std, green_mean, green_std = metrics
-
         parsed.append(
             DwellSweepSummaryRow(
                 dwell_us=dwell_us,
                 sweeps_completed=sweeps_completed,
                 drain_mean=drain_mean,
                 drain_std=drain_std,
+                drain_slope=drain_slope,
                 blue_mean=blue_mean,
                 blue_std=blue_std,
+                blue_slope=blue_slope,
                 green_mean=green_mean,
                 green_std=green_std,
+                green_slope=green_slope,
                 duration_us=duration_us,
                 warning_mask=warning_mask,
                 has_metrics=has_metrics,
@@ -1308,7 +1360,11 @@ def _decode_dwell_warning_mask(mask: int) -> str:
 
 def _parse_summary_row(line: str) -> SummaryRow:
     padded = line.ljust(
-        LABEL_WIDTH + SAMPLES_WIDTH + 8 * CHANNEL_WIDTH + MAP_WIDTH + WARNING_WIDTH
+        LABEL_WIDTH
+        + SAMPLES_WIDTH
+        + CHANNEL_COLUMN_COUNT * CHANNEL_WIDTH
+        + MAP_WIDTH
+        + WARNING_WIDTH
     )
     cursor = 0
 
@@ -1322,24 +1378,49 @@ def _parse_summary_row(line: str) -> SummaryRow:
     label = slice_field(LABEL_WIDTH)
     sample_count = _parse_int(slice_field(SAMPLES_WIDTH))
 
-    channel_values = [slice_field(CHANNEL_WIDTH) for _ in range(8)]
+    channel_values = [slice_field(CHANNEL_WIDTH) for _ in range(CHANNEL_COLUMN_COUNT)]
     alignment = slice_field(MAP_WIDTH)
     warning_field = slice_field(WARNING_WIDTH)
 
     floats = [_parse_float(value) for value in channel_values]
-    mean_a, std_a, min_a, max_a, mean_b, std_b, min_b, max_b = floats
+    (
+        mean_a,
+        std_a,
+        slope_a,
+        min_a,
+        max_a,
+        mean_b,
+        std_b,
+        slope_b,
+        min_b,
+        max_b,
+    ) = floats
 
-    has_channel_metrics = mean_a is not None and mean_b is not None
+    metric_fields = [
+        mean_a,
+        std_a,
+        slope_a,
+        min_a,
+        max_a,
+        mean_b,
+        std_b,
+        slope_b,
+        min_b,
+        max_b,
+    ]
+    has_channel_metrics = all(value is not None for value in metric_fields)
 
     return SummaryRow(
         label=label,
         sample_count=sample_count,
         mean_channel_a=mean_a,
         std_channel_a=std_a,
+        slope_channel_a=slope_a,
         min_channel_a=min_a,
         max_channel_a=max_a,
         mean_channel_b=mean_b,
         std_channel_b=std_b,
+        slope_channel_b=slope_b,
         min_channel_b=min_b,
         max_channel_b=max_b,
         channel_alignment=alignment if alignment else None,
@@ -1390,6 +1471,12 @@ def _format_optional_int(value: int | None) -> str:
     if value is None:
         return "--"
     return str(value)
+
+
+def _format_optional_signed_int(value: int | None) -> str:
+    if value is None:
+        return "--"
+    return f"{value:+d}"
 
 
 def _format_optional_text(value: str | None) -> str:
@@ -1750,8 +1837,9 @@ def _write_pot_sweep_csv(rows: List[PotSweepSummaryRow], output_path: Path) -> N
 
 def _write_dwell_sweep_csv(rows: List[DwellSweepSummaryRow], output_path: Path) -> None:
     header = (
-        "dwell_us,sweeps_completed,drain_mean,drain_std,"
-        "blue_mean,blue_std,green_mean,green_std,duration_us,warning_mask"
+        "dwell_us,sweeps_completed,drain_mean,drain_std,drain_slope,"
+        "blue_mean,blue_std,blue_slope,green_mean,green_std,green_slope,"
+        "duration_us,warning_mask"
     )
     lines = [header]
     for row in rows:
@@ -1760,10 +1848,13 @@ def _write_dwell_sweep_csv(rows: List[DwellSweepSummaryRow], output_path: Path) 
             str(row.sweeps_completed),
             _format_optional_float(row.drain_mean),
             _format_optional_float(row.drain_std),
+            _format_optional_float(row.drain_slope),
             _format_optional_float(row.blue_mean),
             _format_optional_float(row.blue_std),
+            _format_optional_float(row.blue_slope),
             _format_optional_float(row.green_mean),
             _format_optional_float(row.green_std),
+            _format_optional_float(row.green_slope),
             _format_optional_int(row.duration_us),
             f"0x{row.warning_mask:02X}",
         ]
@@ -2044,6 +2135,38 @@ def _render_dwell_variance_plot(
     plt.close(fig)
 
 
+def _render_dwell_slope_plot(
+    rows: List[DwellSweepSummaryRow], output_path: Path
+) -> None:
+    metric_rows = [row for row in rows if row.has_metrics]
+    if not metric_rows:
+        _render_placeholder_plot("No dwell sweep slope data", output_path)
+        return
+
+    dwell_values = [row.dwell_us for row in metric_rows]
+    drain_slopes = [row.drain_slope for row in metric_rows]
+    blue_slopes = [row.blue_slope for row in metric_rows]
+    green_slopes = [row.green_slope for row in metric_rows]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(
+        dwell_values, drain_slopes, marker="o", color="#4C72B0", label="Drain slope"
+    )
+    ax.plot(dwell_values, blue_slopes, marker="s", color="#55A868", label="Blue slope")
+    ax.plot(
+        dwell_values, green_slopes, marker="^", color="#C44E52", label="Green slope"
+    )
+    ax.axhline(0.0, color="#999999", linestyle="--", linewidth=1.0)
+    ax.set_xlabel("Dwell (µs)")
+    ax.set_ylabel("Slope (codes/sweep)")
+    ax.set_title("Dwell sweep drift slopes by channel")
+    ax.grid(axis="both", linestyle="--", alpha=0.4)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def _render_dwell_duration_plot(
     rows: List[DwellSweepSummaryRow], output_path: Path
 ) -> None:
@@ -2083,10 +2206,15 @@ def _render_dwell_duration_plot(
     plt.close(fig)
 
 
-def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
+def _build_cold_sweep_table(
+    rows: List[ParsedSummary],
+    drift_by_channel: Dict[str, int] | None = None,
+) -> List[str]:
     cold_rows = [row for row in rows if isinstance(row, ColdSweepSummaryRow)]
     if not cold_rows:
         return []
+
+    drift_lookup = drift_by_channel or {}
 
     headers = [
         "Channel",
@@ -2095,6 +2223,7 @@ def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
         "StdDev",
         "Min",
         "Max",
+        "Drift (Δ)",
         "Saturated",
     ]
     table = [
@@ -2103,6 +2232,7 @@ def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     ]
 
     for row in cold_rows:
+        drift_value = drift_lookup.get(row.channel)
         values = [
             row.channel,
             str(row.sample_count),
@@ -2110,6 +2240,7 @@ def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
             _format_optional_float(row.stddev),
             _format_optional_int(row.min_code),
             _format_optional_int(row.max_code),
+            _format_optional_signed_int(drift_value),
             "yes" if row.saturated else "no",
         ]
         table.append("| " + " | ".join(values) + " |")
@@ -2127,10 +2258,12 @@ def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
         "Samples",
         "Mean A",
         "Std A",
+        "Slope A",
         "Min A",
         "Max A",
         "Mean B",
         "Std B",
+        "Slope B",
         "Min B",
         "Max B",
         "Channel map",
@@ -2147,10 +2280,12 @@ def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
             str(row.sample_count),
             _format_optional_float(row.mean_channel_a),
             _format_optional_float(row.std_channel_a),
+            _format_optional_float(row.slope_channel_a, digits=SLOPE_PRECISION),
             _format_optional_float(row.min_channel_a),
             _format_optional_float(row.max_channel_a),
             _format_optional_float(row.mean_channel_b),
             _format_optional_float(row.std_channel_b),
+            _format_optional_float(row.slope_channel_b, digits=SLOPE_PRECISION),
             _format_optional_float(row.min_channel_b),
             _format_optional_float(row.max_channel_b),
             _format_optional_text(row.channel_alignment),
@@ -2274,9 +2409,15 @@ def _build_dwell_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     headers = [
         "Dwell (µs)",
         "Sweeps",
+        "Drain mean",
         "Drain std",
+        "Drain slope",
+        "Blue mean",
         "Blue std",
+        "Blue slope",
+        "Green mean",
         "Green std",
+        "Green slope",
         "Duration (µs)",
         "Warnings",
     ]
@@ -2290,9 +2431,15 @@ def _build_dwell_sweep_table(rows: List[ParsedSummary]) -> List[str]:
         values = [
             str(row.dwell_us),
             str(row.sweeps_completed),
+            _format_optional_float(row.drain_mean),
             _format_optional_float(row.drain_std),
+            _format_optional_float(row.drain_slope),
+            _format_optional_float(row.blue_mean),
             _format_optional_float(row.blue_std),
+            _format_optional_float(row.blue_slope),
+            _format_optional_float(row.green_mean),
             _format_optional_float(row.green_std),
+            _format_optional_float(row.green_slope),
             _format_optional_int(row.duration_us),
             warnings,
         ]
@@ -2336,6 +2483,7 @@ def _render_cold_sweep_section(
     warning = extras.get("warning") if isinstance(extras, dict) else "none"
     run_metadata = extras.get("run_metadata") if isinstance(extras, dict) else {}
     saturated = extras.get("saturated_channels") if isinstance(extras, dict) else []
+    drift_codes = extras.get("drift_codes") if isinstance(extras, dict) else {}
 
     detail_tokens = []
     if captured is not None:
@@ -2366,7 +2514,9 @@ def _render_cold_sweep_section(
         lines.append(f"_Saturated channels_: {channels}")
         lines.append("")
 
-    table_lines = _build_cold_sweep_table(rows)
+    table_lines = _build_cold_sweep_table(
+        rows, drift_by_channel=drift_codes if isinstance(drift_codes, dict) else None
+    )
     if table_lines:
         lines.extend(table_lines)
     else:
@@ -2402,7 +2552,8 @@ def _render_pot_sweep_section(
         lines.append("| LED | Recommended Wiper |")
         lines.append("| --- | --- |")
         for led, wiper in sorted(recommendations.items()):
-            lines.append(f"| {led.upper()} | {wiper} |")
+            led_label = led.capitalize()
+            lines.append(f"| {led_label} | {wiper} |")
     else:
         lines.append("_No recommendations recorded._")
     lines.append("")

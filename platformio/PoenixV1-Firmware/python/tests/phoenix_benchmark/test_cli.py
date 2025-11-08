@@ -16,10 +16,12 @@ def _channel_map_header() -> str:
         f"{'Samples':>9}"
         f"{'Mean_A':>12}"
         f"{'Std_A':>12}"
+        f"{'Slope_A':>12}"
         f"{'Min_A':>12}"
         f"{'Max_A':>12}"
         f"{'Mean_B':>12}"
         f"{'Std_B':>12}"
+        f"{'Slope_B':>12}"
         f"{'Min_B':>12}"
         f"{'Max_B':>12}"
         f"{'Channel_Map':>12}"
@@ -32,10 +34,12 @@ def _channel_map_row(
     samples: int,
     mean_a: float,
     std_a: float,
+    slope_a: float,
     min_a: float,
     max_a: float,
     mean_b: float,
     std_b: float,
+    slope_b: float,
     min_b: float,
     max_b: float,
     alignment: str,
@@ -46,10 +50,12 @@ def _channel_map_row(
         f"{samples:>9d}"
         f"{mean_a:>12.3f}"
         f"{std_a:>12.3f}"
+        f"{slope_a:>12.6f}"
         f"{min_a:>12.3f}"
         f"{max_a:>12.3f}"
         f"{mean_b:>12.3f}"
         f"{std_b:>12.3f}"
+        f"{slope_b:>12.6f}"
         f"{min_b:>12.3f}"
         f"{max_b:>12.3f}"
         f"{alignment:<12}"
@@ -74,10 +80,12 @@ class DummySerial:
                     10,
                     123.0,
                     2.0,
+                    0.001234,
                     120.0,
                     130.0,
                     321.0,
                     3.0,
+                    -0.000321,
                     310.0,
                     330.0,
                     "A=OK",
