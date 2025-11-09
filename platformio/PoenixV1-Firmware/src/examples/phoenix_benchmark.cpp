@@ -1439,7 +1439,10 @@ void setup() {
   phoenix_benchmark_pot_sweep_reset_state();
   phoenix_benchmark_pot_sweep_initialise(k_pot_sweep_defaults);
   phoenix_benchmark_drift_capture_reset_state();
-  phoenix_benchmark_drift_capture_initialise(k_drift_capture_defaults);
+  PhoenixBenchmarkDriftCaptureDefaults drift_capture_defaults =
+      phoenix_benchmark_drift_capture_defaults_from_light_config(g_device_light_readings_config,
+                                                                 k_drift_capture_defaults);
+  phoenix_benchmark_drift_capture_initialise(drift_capture_defaults);
   phoenix_benchmark_cold_sweep_reset_state();
 
   // Step 3: Clear previous measurements and present the ready prompt.

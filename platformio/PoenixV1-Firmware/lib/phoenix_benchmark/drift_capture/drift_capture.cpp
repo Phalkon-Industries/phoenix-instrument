@@ -863,3 +863,11 @@ void phoenix_benchmark_drift_capture_clear_test_hooks(void) {
   g_micros_provider        = ::micros;
   g_delay_provider         = ::delayMicroseconds;
 }
+
+PhoenixBenchmarkDriftCaptureDefaults phoenix_benchmark_drift_capture_defaults_from_light_config(
+    const LightReadingsConfig& light_config, const PhoenixBenchmarkDriftCaptureDefaults& baseline_defaults) {
+  PhoenixBenchmarkDriftCaptureDefaults derived_defaults = baseline_defaults;
+  derived_defaults.blue_wiper_code                      = light_config.blue_channel.wiper_code;
+  derived_defaults.green_wiper_code                     = light_config.green_channel.wiper_code;
+  return derived_defaults;
+}

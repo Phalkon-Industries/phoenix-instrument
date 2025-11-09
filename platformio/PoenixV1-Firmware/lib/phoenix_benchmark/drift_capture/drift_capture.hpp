@@ -4,6 +4,7 @@
 #include "../../ad524x/ad524x.hpp"
 #include "../../adc_hal/adc_hal.hpp"
 #include "../../led_router/led_router.hpp"
+#include "../../light_readings/light_readings.hpp"
 #include "../../mcp356x/mcp356x.hpp"
 #include "../core/phoenix_benchmark_core.hpp"
 #include <cstddef>
@@ -141,6 +142,16 @@ PhoenixBenchmarkDriftCaptureParseResult phoenix_benchmark_drift_capture_parse_co
  */
 PhoenixBenchmarkDriftCaptureExecutionStatus phoenix_benchmark_drift_capture_run(
     const PhoenixBenchmarkDriftCaptureOptions& options, const PhoenixBenchmarkDriftCaptureOutputCallbacks& callbacks);
+
+/**
+ * @brief Derive drift capture defaults from a light readings configuration.
+ *
+ * @param light_config Light readings configuration describing per-colour wiper codes.
+ * @param baseline_defaults Baseline drift defaults providing timing and OSR overrides.
+ * @return Defaults populated with the light readings wiper codes while preserving other fields.
+ */
+PhoenixBenchmarkDriftCaptureDefaults phoenix_benchmark_drift_capture_defaults_from_light_config(
+    const LightReadingsConfig& light_config, const PhoenixBenchmarkDriftCaptureDefaults& baseline_defaults);
 
 /**
  * @brief Access the captured samples for a specific LED channel.

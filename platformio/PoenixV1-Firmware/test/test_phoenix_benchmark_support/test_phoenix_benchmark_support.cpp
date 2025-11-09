@@ -744,6 +744,37 @@ static void test_drift_capture_parse_command_accepts_plain_token(void) {
   TEST_ASSERT_EQUAL_UINT8(defaults.green_wiper_code, result.options.green_wiper_code);
 }
 
+static void test_drift_capture_defaults_use_light_config(void) {
+  // Step 1: Build a light readings configuration with distinct wiper codes per colour.
+  const LightReadingsConfig light_config = {
+      .drain_state    = LedRouterState::LED_ROUTER_STATE_DRAIN,
+      .green_channel  = {LedRouterState::LED_ROUTER_STATE_LED2, AdcHalChannel::ADC_HAL_CHANNEL_3, 150u, 0x42u},
+      .blue_channel   = {LedRouterState::LED_ROUTER_STATE_LED1, AdcHalChannel::ADC_HAL_CHANNEL_0, 175u, 0xA7u},
+      .adc_timeout_us = 50000u,
+  };
+
+  // Step 2: Seed baseline drift defaults with placeholder wiper codes that should be overridden.
+  const PhoenixBenchmarkDriftCaptureDefaults baseline_defaults = {
+      .start_time_us    = 10u,
+      .end_time_us      = 250u,
+      .step_delay_us    = 5u,
+      .osr              = 4096u,
+      .blue_wiper_code  = 0x00u,
+      .green_wiper_code = 0x00u,
+  };
+
+  // Step 3: Derive defaults from the light configuration and confirm per-colour wipers carry through.
+  const PhoenixBenchmarkDriftCaptureDefaults derived_defaults =
+      phoenix_benchmark_drift_capture_defaults_from_light_config(light_config, baseline_defaults);
+
+  TEST_ASSERT_EQUAL_UINT32(baseline_defaults.start_time_us, derived_defaults.start_time_us);
+  TEST_ASSERT_EQUAL_UINT32(baseline_defaults.end_time_us, derived_defaults.end_time_us);
+  TEST_ASSERT_EQUAL_UINT32(baseline_defaults.step_delay_us, derived_defaults.step_delay_us);
+  TEST_ASSERT_EQUAL_UINT32(baseline_defaults.osr, derived_defaults.osr);
+  TEST_ASSERT_EQUAL_UINT8(light_config.blue_channel.wiper_code, derived_defaults.blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(light_config.green_channel.wiper_code, derived_defaults.green_wiper_code);
+}
+
 static void test_drift_capture_parse_command_accepts_json_overrides(void) {
   // Step 1: Provide explicit overrides for timing, OSR, and the wiper code.
   phoenix_benchmark_drift_capture_reset_state();
@@ -1683,6 +1714,7 @@ void setup() {
   RUN_TEST(test_drift_capture_options_validate_rejects_inverted_range);
   RUN_TEST(test_drift_capture_options_validate_rejects_schedule_exceeding_buffer);
   RUN_TEST(test_drift_capture_parse_command_accepts_plain_token);
+  RUN_TEST(test_drift_capture_defaults_use_light_config);
   RUN_TEST(test_drift_capture_parse_command_accepts_json_overrides);
   RUN_TEST(test_drift_capture_parse_command_rejects_invalid_range);
   RUN_TEST(test_drift_capture_run_captures_leds_in_sequence);

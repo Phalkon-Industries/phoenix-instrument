@@ -141,7 +141,7 @@ Requests a rapid dual-LED capture immediately after each LED transitions on. The
 Drift captures defer all output until both LED buffers are populated, then emit the following sequence (prefixes not shown in JSON payloads):
 
 1. `# running,scenario=drift_capture,...` – announces the scenario with resolved metadata.
-2. `# drift_capture,metadata,start_us=...,end_us=...,step_delay_us=...,osr=...,wiper_blue=...,wiper_green=...` – records the applied capture settings and per-channel wipers.
+2. `# drift_capture,metadata,start_us=...,end_us=...,step_delay_us=...,osr=...,wiper_blue=...,wiper_green=...` – records the applied capture settings and per-channel wipers. When the request omits explicit wiper overrides, the firmware seeds these fields from `g_device_light_readings_config` so the transcript mirrors the hardware configuration.
 3. `# drift_capture,results,blue_samples=<N1>,green_samples=<N2>,warning_mask=<mask>` – reports sample counts and the combined warning bitmask (`0x01` buffer overflow, `0x02` saturation, `0x04` restore failure).
 4. `Elapsed_Blue_us	Code_Blue	Elapsed_Green_us	Code_Green` header followed by tab-separated sample rows. Missing values are printed as `nan` to keep blue/green timelines aligned.
 5. Blank line terminates the sample section prior to `# benchmark_complete`.
