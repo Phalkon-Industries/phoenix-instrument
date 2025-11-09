@@ -4,15 +4,19 @@
 #include <cstddef>
 #include <cstdint>
 
-constexpr std::size_t k_phoenix_benchmark_osr_sweep_summary_buffer_bytes = 192u;
+constexpr std::size_t k_phoenix_benchmark_osr_sweep_summary_buffer_bytes = 512u;
 
 struct PhoenixBenchmarkOsrSweepSummaryRowValues {
   const char* label;
   uint32_t    sample_count;
-  double      drain_mean;
-  double      drain_std;
-  double      drain_min;
-  double      drain_max;
+  double      drain_blue_mean;
+  double      drain_blue_std;
+  double      drain_blue_min;
+  double      drain_blue_max;
+  double      drain_green_mean;
+  double      drain_green_std;
+  double      drain_green_min;
+  double      drain_green_max;
   double      blue_mean;
   double      blue_std;
   double      blue_min;

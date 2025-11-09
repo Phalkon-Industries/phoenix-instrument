@@ -1,6 +1,9 @@
 {
     "commands": [
         {
+            "command": "cold_sweep"
+        },
+        {
             "command": "channel_map",
             "parameters": {
                 "sweeps": 50
@@ -12,9 +15,15 @@
                 "start_time_us": 0,
                 "end_time_us": 200000,
                 "step_delay_us": 0,
-                "osr": 32,
-                "wiper_blue_code": 223,
-                "wiper_green_code": 198
+                "osr": 32
+            }
+        },
+        {
+            "command": "osr_sweep",
+            "parameters": {
+                "sweeps": 10,
+                "dwell_us": 100,
+                "wiper_code": 223
             }
         },
         {

@@ -1521,7 +1521,7 @@ static void test_osr_sweep_format_summary_header(void) {
   char buffer[k_phoenix_benchmark_osr_sweep_summary_buffer_bytes] = {};
   TEST_ASSERT_TRUE(phoenix_benchmark_osr_sweep_format_summary_header(buffer, sizeof(buffer)));
   TEST_ASSERT_EQUAL_STRING(
-      "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  Green_Min  Green_Max  Sweep_us",
+      "Value      Samples  Drain_Blue_Mean  Drain_Blue_Std  Drain_Blue_Min  Drain_Blue_Max  Drain_Green_Mean  Drain_Green_Std  Drain_Green_Min  Drain_Green_Max  Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  Green_Min  Green_Max  Sweep_us",
       buffer);
 }
 
@@ -1530,18 +1530,22 @@ static void test_osr_sweep_format_summary_row_formats_metrics(void) {
   PhoenixBenchmarkOsrSweepSummaryRowValues values = {};
   values.label                                    = "OSR512";
   values.sample_count                             = 100u;
-  values.drain_mean                               = 123.456;
-  values.drain_std                                = 0.25;
-  values.drain_min                                = 120.0;
-  values.drain_max                                = 128.0;
-  values.blue_mean                                = 223.1;
-  values.blue_std                                 = 0.75;
-  values.blue_min                                 = 219.0;
-  values.blue_max                                 = 229.0;
-  values.green_mean                               = 321.9;
-  values.green_std                                = 0.80;
-  values.green_min                                = 318.0;
-  values.green_max                                = 326.0;
+  values.drain_blue_mean                          = 123.456;
+  values.drain_blue_std                           = 0.25;
+  values.drain_blue_min                           = 120.0;
+  values.drain_blue_max                           = 128.0;
+  values.drain_green_mean                         = 223.1;
+  values.drain_green_std                          = 0.75;
+  values.drain_green_min                          = 219.0;
+  values.drain_green_max                          = 229.0;
+  values.blue_mean                                = 323.9;
+  values.blue_std                                 = 0.80;
+  values.blue_min                                 = 318.0;
+  values.blue_max                                 = 329.0;
+  values.green_mean                               = 423.9;
+  values.green_std                                = 0.90;
+  values.green_min                                = 420.0;
+  values.green_max                                = 430.0;
   values.sweep_duration_us                        = 12345u;
   values.has_metrics                              = true;
 
@@ -1550,6 +1554,7 @@ static void test_osr_sweep_format_summary_row_formats_metrics(void) {
   TEST_ASSERT_NOT_NULL(strstr(buffer, "OSR512"));
   TEST_ASSERT_NOT_NULL(strstr(buffer, "123.456"));
   TEST_ASSERT_NOT_NULL(strstr(buffer, "0.250"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "229.000"));
   TEST_ASSERT_NOT_NULL(strstr(buffer, "12345"));
 }
 

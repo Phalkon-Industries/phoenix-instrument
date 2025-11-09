@@ -597,26 +597,29 @@ bool print_osr_sweep_summary(const PhoenixBenchmarkOsrSweepRowMetrics* rows, std
     PhoenixBenchmarkOsrSweepSummaryRowValues summary_values   = {};
     char                                     label_buffer[12] = {};
     format_osr_label(row.osr_value, label_buffer, sizeof(label_buffer));
-    summary_values.label        = label_buffer;
-    summary_values.sample_count = row.drain.channel_a_codes.count;
-    summary_values.drain_mean   = row.drain.channel_a_codes.mean;
-    summary_values.drain_std    = row.drain.channel_a_codes.standard_deviation();
-    summary_values.drain_min    = static_cast<double>(row.drain.channel_a_codes.min_value);
-    summary_values.drain_max    = static_cast<double>(row.drain.channel_a_codes.max_value);
+    summary_values.label            = label_buffer;
+    summary_values.sample_count     = row.drain.channel_a_codes.count;
+    summary_values.drain_blue_mean  = row.drain.channel_a_codes.mean;
+    summary_values.drain_blue_std   = row.drain.channel_a_codes.standard_deviation();
+    summary_values.drain_blue_min   = static_cast<double>(row.drain.channel_a_codes.min_value);
+    summary_values.drain_blue_max   = static_cast<double>(row.drain.channel_a_codes.max_value);
+    summary_values.drain_green_mean = row.drain.channel_b_codes.mean;
+    summary_values.drain_green_std  = row.drain.channel_b_codes.standard_deviation();
+    summary_values.drain_green_min  = static_cast<double>(row.drain.channel_b_codes.min_value);
+    summary_values.drain_green_max  = static_cast<double>(row.drain.channel_b_codes.max_value);
 
-    summary_values.blue_mean = row.blue.channel_a_codes.mean;
-    summary_values.blue_std  = row.blue.channel_a_codes.standard_deviation();
-    summary_values.blue_min  = static_cast<double>(row.blue.channel_a_codes.min_value);
-    summary_values.blue_max  = static_cast<double>(row.blue.channel_a_codes.max_value);
-
+    summary_values.blue_mean  = row.blue.channel_a_codes.mean;
+    summary_values.blue_std   = row.blue.channel_a_codes.standard_deviation();
+    summary_values.blue_min   = static_cast<double>(row.blue.channel_a_codes.min_value);
+    summary_values.blue_max   = static_cast<double>(row.blue.channel_a_codes.max_value);
     summary_values.green_mean = row.green.channel_b_codes.mean;
     summary_values.green_std  = row.green.channel_b_codes.standard_deviation();
     summary_values.green_min  = static_cast<double>(row.green.channel_b_codes.min_value);
     summary_values.green_max  = static_cast<double>(row.green.channel_b_codes.max_value);
 
     summary_values.sweep_duration_us = row.elapsed_microseconds;
-    summary_values.has_metrics = row.drain.channel_a_codes.has_samples() && row.blue.channel_a_codes.has_samples() &&
-                                 row.green.channel_b_codes.has_samples();
+    summary_values.has_metrics = row.drain.channel_a_codes.has_samples() && row.drain.channel_b_codes.has_samples() &&
+                                 row.blue.channel_a_codes.has_samples() && row.green.channel_b_codes.has_samples();
 
     if (!phoenix_benchmark_osr_sweep_format_summary_row(summary_values, line_buffer, sizeof(line_buffer))) {
       Serial.println(F("# summary_table_row_format_failed"));
@@ -660,24 +663,27 @@ bool print_dwell_sweep_summary(const PhoenixBenchmarkDwellSweepRowMetrics* rows,
   for (uint32_t index = 0u; index < row_count; ++index) {
     const PhoenixBenchmarkDwellSweepRowMetrics& row = rows[index];
 
-    const bool has_metrics = row.drain.channel_a_codes.has_samples() && row.blue.channel_a_codes.has_samples() &&
-                             row.green.channel_b_codes.has_samples();
+    const bool has_metrics = row.drain.channel_a_codes.has_samples() && row.drain.channel_b_codes.has_samples() &&
+                             row.blue.channel_a_codes.has_samples() && row.green.channel_b_codes.has_samples();
 
     PhoenixBenchmarkDwellSweepSummaryRowValues summary_values = {
-        .dwell_us         = row.dwell_us,
-        .sweeps_completed = row.sweeps_completed,
-        .drain_mean       = row.drain.channel_a_codes.mean,
-        .drain_std        = row.drain.channel_a_codes.standard_deviation(),
-        .drain_slope      = row.drain.channel_a_drift_slope,
-        .blue_mean        = row.blue.channel_a_codes.mean,
-        .blue_std         = row.blue.channel_a_codes.standard_deviation(),
-        .blue_slope       = row.blue.channel_a_drift_slope,
-        .green_mean       = row.green.channel_b_codes.mean,
-        .green_std        = row.green.channel_b_codes.standard_deviation(),
-        .green_slope      = row.green.channel_b_drift_slope,
-        .duration_us      = row.elapsed_microseconds,
-        .warning_mask     = row.warning_mask,
-        .has_metrics      = has_metrics,
+        .dwell_us          = row.dwell_us,
+        .sweeps_completed  = row.sweeps_completed,
+        .drain_blue_mean   = row.drain.channel_a_codes.mean,
+        .drain_blue_std    = row.drain.channel_a_codes.standard_deviation(),
+        .drain_blue_slope  = row.drain.channel_a_drift_slope,
+        .drain_green_mean  = row.drain.channel_b_codes.mean,
+        .drain_green_std   = row.drain.channel_b_codes.standard_deviation(),
+        .drain_green_slope = row.drain.channel_b_drift_slope,
+        .blue_mean         = row.blue.channel_a_codes.mean,
+        .blue_std          = row.blue.channel_a_codes.standard_deviation(),
+        .blue_slope        = row.blue.channel_a_drift_slope,
+        .green_mean        = row.green.channel_b_codes.mean,
+        .green_std         = row.green.channel_b_codes.standard_deviation(),
+        .green_slope       = row.green.channel_b_drift_slope,
+        .duration_us       = row.elapsed_microseconds,
+        .warning_mask      = row.warning_mask,
+        .has_metrics       = has_metrics,
     };
 
     if (!phoenix_benchmark_dwell_sweep_format_summary_row(summary_values, line_buffer, sizeof(line_buffer))) {
@@ -1127,11 +1133,16 @@ bool execute_drift_capture_command(const PhoenixBenchmarkDriftCaptureOptions& op
   Serial.print(options.step_delay_us);
   Serial.print(F(",osr="));
   Serial.print(options.osr);
-  Serial.print(F(",wiper_code=0x"));
-  if (options.wiper_code < 0x10u) {
+  Serial.print(F(",blue_wiper=0x"));
+  if (options.blue_wiper_code < 0x10u) {
     Serial.print('0');
   }
-  Serial.println(options.wiper_code, HEX);
+  Serial.print(options.blue_wiper_code, HEX);
+  Serial.print(F(",green_wiper=0x"));
+  if (options.green_wiper_code < 0x10u) {
+    Serial.print('0');
+  }
+  Serial.println(options.green_wiper_code, HEX);
 
   const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {serial_print_line};
   const PhoenixBenchmarkDriftCaptureExecutionStatus status    = phoenix_benchmark_drift_capture_run(options, callbacks);
