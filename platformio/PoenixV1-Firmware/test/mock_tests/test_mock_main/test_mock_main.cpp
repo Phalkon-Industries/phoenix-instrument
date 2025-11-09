@@ -1,5 +1,5 @@
-#include "mocks/mock_main_ble_bridge.hpp"
-#include "mocks/mock_main_controller.hpp"
+#include "mock_main_ble_bridge.hpp"
+#include "mock_main_controller.hpp"
 #include "unity_config.h"
 #include "phoenix_ble_server.hpp"
 #include "phoenix_ble_stack.hpp"

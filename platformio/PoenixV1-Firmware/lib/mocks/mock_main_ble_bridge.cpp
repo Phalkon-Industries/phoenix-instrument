@@ -3,7 +3,6 @@
 #include "mock_main_controller.hpp"
 #include "phoenix_ble_data_packing.hpp"
 #include "phoenix_guard.hpp"
-
 #include <Arduino.h>
 #include <ctype.h>
 #include <stdint.h>
@@ -12,18 +11,19 @@
 #include <string.h>
 
 namespace {
-constexpr size_t k_mock_request_buffer_size      = 256U;
-constexpr size_t k_mock_notification_buffer_size = 256U;
-constexpr size_t k_mock_parameters_buffer_size   = 192U;
+constexpr size_t   k_mock_request_buffer_size      = 256U;
+constexpr size_t   k_mock_notification_buffer_size = 256U;
+constexpr size_t   k_mock_parameters_buffer_size   = 192U;
+constexpr uint32_t k_teardown_disconnect_delay_ms  = 1000U;
 
-PhoenixBleServerContext* g_ble_context = NULL;
+PhoenixBleServerContext* g_ble_context                                          = NULL;
 char                     g_notification_buffer[k_mock_notification_buffer_size] = {};
 
-const char* k_status_ok                = "\"status\":\"ok\"";
-const char* k_status_not_ready         = "\"status\":\"not_ready\"";
-const char* k_status_invalid_argument  = "\"status\":\"invalid_argument\"";
-const char* k_status_error             = "\"status\":\"error\"";
-const char* k_status_invalid_command   = "\"status\":\"invalid_command\"";
+const char* k_status_ok               = "\"status\":\"ok\"";
+const char* k_status_not_ready        = "\"status\":\"not_ready\"";
+const char* k_status_invalid_argument = "\"status\":\"invalid_argument\"";
+const char* k_status_error            = "\"status\":\"error\"";
+const char* k_status_invalid_command  = "\"status\":\"invalid_command\"";
 
 void apply_response_delay(uint32_t delay_ms) {
 #ifndef UNIT_TEST
@@ -81,8 +81,8 @@ bool locate_field_token(const char* json, const char* field_name, const char** v
     return false;
   }
 
-  char token[32] = {};
-  const int written = snprintf(token, sizeof(token), "\"%s\"", field_name);
+  char      token[32] = {};
+  const int written   = snprintf(token, sizeof(token), "\"%s\"", field_name);
   if ((written <= 0) || (static_cast<size_t>(written) >= sizeof(token))) {
     return false;
   }
@@ -113,7 +113,7 @@ double extract_double(const char* json, const char* field_name, bool* found) {
     return 0.0;
   }
 
-  char* end_ptr     = NULL;
+  char*  end_ptr    = NULL;
   double parsed_val = strtod(value_start, &end_ptr);
   if (value_start == end_ptr) {
     *found = false;
@@ -131,8 +131,8 @@ uint32_t extract_uint32(const char* json, const char* field_name, bool* found) {
     return 0U;
   }
 
-  char*    end_ptr     = NULL;
-  unsigned long parsed = strtoul(value_start, &end_ptr, 10);
+  char*         end_ptr = NULL;
+  unsigned long parsed  = strtoul(value_start, &end_ptr, 10);
   if (value_start == end_ptr) {
     *found = false;
     return 0U;
@@ -172,8 +172,8 @@ PhoenixBleStatus send_response(const char* command, const char* parameters_json)
 
   // Step 1: Pack the command envelope so the phone-side contract stays consistent with production.
   size_t           bytes_written = 0U;
-  PhoenixBleStatus return_code   = phoenix_ble_pack_notification_message(command, parameters_json, g_notification_buffer,
-                                                                         sizeof(g_notification_buffer), &bytes_written);
+  PhoenixBleStatus return_code = phoenix_ble_pack_notification_message(command, parameters_json, g_notification_buffer,
+                                                                       sizeof(g_notification_buffer), &bytes_written);
   if (return_code != PHX_OK) {
     return return_code;
   }
@@ -184,7 +184,7 @@ PhoenixBleStatus send_response(const char* command, const char* parameters_json)
 }
 
 PhoenixBleStatus send_status_only(const char* command, const char* status_token) {
-  char parameters_json[k_mock_parameters_buffer_size] = {};
+  char      parameters_json[k_mock_parameters_buffer_size] = {};
   const int written = snprintf(parameters_json, sizeof(parameters_json), "{%s}", status_token);
   if ((written < 0) || (static_cast<size_t>(written) >= sizeof(parameters_json))) {
     return PHX_ERR_INVALID_ARG;
@@ -196,7 +196,7 @@ PhoenixBleStatus send_status_only(const char* command, const char* status_token)
 PhoenixBleStatus handle_reference_start(void) {
   MockReferenceMeasurement measurement = {};
   // Step 1: Request a spoofed reference so the phone receives the expected baseline payload.
-  const MockAppStatus      controller_status = mock_app_controller_run_reference(&measurement);
+  const MockAppStatus controller_status = mock_app_controller_run_reference(&measurement);
 
   if (controller_status == MOCK_APP_STATUS_ERROR_NOT_READY) {
     return send_status_only("reference_start", k_status_not_ready);
@@ -210,17 +210,15 @@ PhoenixBleStatus handle_reference_start(void) {
   apply_response_delay(measurement.response_delay_ms);
 
   // Step 3: Assemble the JSON payload that mirrors the production schema.
-  char parameters_json[k_mock_parameters_buffer_size] = {};
-  const int written = snprintf(parameters_json, sizeof(parameters_json),
-                               "{\"status\":\"ok\",\"sequence\":%lu,\"dark_counts\":%ld," \
-                               "\"signal_counts\":%ld,\"absorbance\":%.5f,\"temperature_c\":%.2f," \
-                               "\"salinity_ppt\":%.2f}",
-                               static_cast<unsigned long>(measurement.sequence_id),
-                               static_cast<long>(measurement.dark_counts),
-                               static_cast<long>(measurement.signal_counts),
-                               static_cast<double>(measurement.absorbance),
-                               static_cast<double>(measurement.temperature_c),
-                               static_cast<double>(measurement.salinity_ppt));
+  char      parameters_json[k_mock_parameters_buffer_size] = {};
+  const int written =
+      snprintf(parameters_json, sizeof(parameters_json),
+               "{\"status\":\"ok\",\"sequence\":%lu,\"dark_counts\":%ld,"
+               "\"signal_counts\":%ld,\"absorbance\":%.5f,\"temperature_c\":%.2f,"
+               "\"salinity_ppt\":%.2f}",
+               static_cast<unsigned long>(measurement.sequence_id), static_cast<long>(measurement.dark_counts),
+               static_cast<long>(measurement.signal_counts), static_cast<double>(measurement.absorbance),
+               static_cast<double>(measurement.temperature_c), static_cast<double>(measurement.salinity_ppt));
 
   if ((written < 0) || (static_cast<size_t>(written) >= sizeof(parameters_json))) {
     return PHX_ERR_INVALID_ARG;
@@ -230,9 +228,9 @@ PhoenixBleStatus handle_reference_start(void) {
 }
 
 PhoenixBleStatus handle_sample_start(void) {
-  MockSampleMeasurement measurement       = {};
+  MockSampleMeasurement measurement = {};
   // Step 1: Generate the spoofed sample payload and honour controller guard rails.
-  const MockAppStatus   controller_status = mock_app_controller_run_sample(&measurement);
+  const MockAppStatus controller_status = mock_app_controller_run_sample(&measurement);
 
   if (controller_status == MOCK_APP_STATUS_ERROR_NOT_READY) {
     return send_status_only("sample_start", k_status_not_ready);
@@ -246,18 +244,16 @@ PhoenixBleStatus handle_sample_start(void) {
   apply_response_delay(measurement.response_delay_ms);
 
   // Step 3: Surface the deterministic payload using the same JSON keys as production firmware.
-  char parameters_json[k_mock_parameters_buffer_size] = {};
-  const int written = snprintf(parameters_json, sizeof(parameters_json),
-                               "{\"status\":\"ok\",\"sequence\":%lu,\"dark_counts\":%ld," \
-                               "\"signal_counts\":%ld,\"absorbance\":%.5f,\"temperature_c\":%.2f," \
-                               "\"salinity_ppt\":%.2f,\"ph_value\":%.2f}",
-                               static_cast<unsigned long>(measurement.sequence_id),
-                               static_cast<long>(measurement.dark_counts),
-                               static_cast<long>(measurement.signal_counts),
-                               static_cast<double>(measurement.absorbance),
-                               static_cast<double>(measurement.temperature_c),
-                               static_cast<double>(measurement.salinity_ppt),
-                               static_cast<double>(measurement.ph_value));
+  char      parameters_json[k_mock_parameters_buffer_size] = {};
+  const int written =
+      snprintf(parameters_json, sizeof(parameters_json),
+               "{\"status\":\"ok\",\"sequence\":%lu,\"dark_counts\":%ld,"
+               "\"signal_counts\":%ld,\"absorbance\":%.5f,\"temperature_c\":%.2f,"
+               "\"salinity_ppt\":%.2f,\"ph_value\":%.2f}",
+               static_cast<unsigned long>(measurement.sequence_id), static_cast<long>(measurement.dark_counts),
+               static_cast<long>(measurement.signal_counts), static_cast<double>(measurement.absorbance),
+               static_cast<double>(measurement.temperature_c), static_cast<double>(measurement.salinity_ppt),
+               static_cast<double>(measurement.ph_value));
 
   if ((written < 0) || (static_cast<size_t>(written) >= sizeof(parameters_json))) {
     return PHX_ERR_INVALID_ARG;
@@ -267,9 +263,9 @@ PhoenixBleStatus handle_sample_start(void) {
 }
 
 PhoenixBleStatus handle_settings_update(const char* request_json) {
-  bool     field_present        = false;
+  bool field_present = false;
   // Step 1: Parse the incoming JSON so the controller receives validated arguments.
-  double   requested_temp       = extract_double(request_json, "temperature_c", &field_present);
+  double requested_temp = extract_double(request_json, "temperature_c", &field_present);
   if (!field_present) {
     return send_status_only("settings_update", k_status_invalid_argument);
   }
@@ -289,7 +285,7 @@ PhoenixBleStatus handle_settings_update(const char* request_json) {
     return send_status_only("settings_update", k_status_invalid_argument);
   }
 
-  MockSettingsUpdate update_request = {};
+  MockSettingsUpdate update_request      = {};
   update_request.requested_temperature_c = static_cast<float>(requested_temp);
   update_request.requested_salinity_ppt  = static_cast<float>(requested_salinity);
   update_request.measurement_interval_ms = interval_ms;
@@ -297,7 +293,7 @@ PhoenixBleStatus handle_settings_update(const char* request_json) {
 
   MockSettingsSnapshot applied_settings = {};
   // Step 2: Apply the configuration update to the controller so future reads match phone expectations.
-  const MockAppStatus  controller_status = mock_app_controller_update_settings(&update_request, &applied_settings);
+  const MockAppStatus controller_status = mock_app_controller_update_settings(&update_request, &applied_settings);
 
   if (controller_status != MOCK_APP_STATUS_OK) {
     return send_status_only("settings_update", k_status_error);
@@ -307,16 +303,15 @@ PhoenixBleStatus handle_settings_update(const char* request_json) {
   (void) snprintf(hash_buffer, sizeof(hash_buffer), "%08lX",
                   static_cast<unsigned long>(applied_settings.configuration_hash));
 
-  char parameters_json[k_mock_parameters_buffer_size] = {};
-  const int written = snprintf(parameters_json, sizeof(parameters_json),
-                               "{\"status\":\"ok\",\"applied\":{\"temperature_c\":%.2f," \
-                               "\"salinity_ppt\":%.2f,\"interval_ms\":%lu,\"alerts_enabled\":%s," \
+  char      parameters_json[k_mock_parameters_buffer_size] = {};
+  const int written                                        = snprintf(parameters_json, sizeof(parameters_json),
+                               "{\"status\":\"ok\",\"applied\":{\"temperature_c\":%.2f,"
+                               "\"salinity_ppt\":%.2f,\"interval_ms\":%lu,\"alerts_enabled\":%s,"
                                "\"configuration_hash\":\"%s\"}}",
                                static_cast<double>(applied_settings.active_temperature_c),
                                static_cast<double>(applied_settings.active_salinity_ppt),
                                static_cast<unsigned long>(applied_settings.measurement_interval_ms),
-                               applied_settings.alerts_enabled ? "true" : "false",
-                               hash_buffer);
+                               applied_settings.alerts_enabled ? "true" : "false", hash_buffer);
 
   if ((written < 0) || (static_cast<size_t>(written) >= sizeof(parameters_json))) {
     return PHX_ERR_INVALID_ARG;
@@ -328,7 +323,7 @@ PhoenixBleStatus handle_settings_update(const char* request_json) {
 PhoenixBleStatus handle_settings_get(void) {
   MockSettingsSnapshot snapshot = {};
   // Step 1: Capture the current controller snapshot to mirror the production `settings_get` response.
-  const MockAppStatus  controller_status = mock_app_controller_get_settings(&snapshot);
+  const MockAppStatus controller_status = mock_app_controller_get_settings(&snapshot);
 
   if (controller_status != MOCK_APP_STATUS_OK) {
     return send_status_only("settings_get", k_status_error);
@@ -337,16 +332,15 @@ PhoenixBleStatus handle_settings_get(void) {
   char hash_buffer[9] = {};
   (void) snprintf(hash_buffer, sizeof(hash_buffer), "%08lX", static_cast<unsigned long>(snapshot.configuration_hash));
 
-  char parameters_json[k_mock_parameters_buffer_size] = {};
-  const int written = snprintf(parameters_json, sizeof(parameters_json),
-                               "{\"status\":\"ok\",\"snapshot\":{\"temperature_c\":%.2f," \
-                               "\"salinity_ppt\":%.2f,\"interval_ms\":%lu,\"alerts_enabled\":%s," \
-                               "\"configuration_hash\":\"%s\"}}",
-                               static_cast<double>(snapshot.active_temperature_c),
-                               static_cast<double>(snapshot.active_salinity_ppt),
-                               static_cast<unsigned long>(snapshot.measurement_interval_ms),
-                               snapshot.alerts_enabled ? "true" : "false",
-                               hash_buffer);
+  char      parameters_json[k_mock_parameters_buffer_size] = {};
+  const int written =
+      snprintf(parameters_json, sizeof(parameters_json),
+               "{\"status\":\"ok\",\"snapshot\":{\"temperature_c\":%.2f,"
+               "\"salinity_ppt\":%.2f,\"interval_ms\":%lu,\"alerts_enabled\":%s,"
+               "\"configuration_hash\":\"%s\"}}",
+               static_cast<double>(snapshot.active_temperature_c), static_cast<double>(snapshot.active_salinity_ppt),
+               static_cast<unsigned long>(snapshot.measurement_interval_ms), snapshot.alerts_enabled ? "true" : "false",
+               hash_buffer);
 
   if ((written < 0) || (static_cast<size_t>(written) >= sizeof(parameters_json))) {
     return PHX_ERR_INVALID_ARG;
@@ -356,7 +350,7 @@ PhoenixBleStatus handle_settings_get(void) {
 }
 
 PhoenixBleStatus handle_battery_status(void) {
-  MockBatteryStatus battery_status     = {};
+  MockBatteryStatus battery_status = {};
   // Step 1: Request the cached battery telemetry so BLE replies stay deterministic for QA.
   const MockAppStatus controller_status = mock_app_controller_read_battery(&battery_status);
 
@@ -368,14 +362,13 @@ PhoenixBleStatus handle_battery_status(void) {
   apply_response_delay(battery_status.response_delay_ms);
 
   // Step 3: Emit the JSON packet that matches the phone-facing schema.
-  char parameters_json[k_mock_parameters_buffer_size] = {};
-  const int written = snprintf(parameters_json, sizeof(parameters_json),
-                               "{\"status\":\"ok\",\"percentage\":%u,\"voltage_v\":%.2f," \
-                               "\"is_low\":%s,\"response_delay_ms\":%lu}",
-                               static_cast<unsigned int>(battery_status.percentage),
-                               static_cast<double>(battery_status.voltage_v),
-                               battery_status.is_low ? "true" : "false",
-                               static_cast<unsigned long>(battery_status.response_delay_ms));
+  char      parameters_json[k_mock_parameters_buffer_size] = {};
+  const int written =
+      snprintf(parameters_json, sizeof(parameters_json),
+               "{\"status\":\"ok\",\"percentage\":%u,\"voltage_v\":%.2f,"
+               "\"is_low\":%s,\"response_delay_ms\":%lu}",
+               static_cast<unsigned int>(battery_status.percentage), static_cast<double>(battery_status.voltage_v),
+               battery_status.is_low ? "true" : "false", static_cast<unsigned long>(battery_status.response_delay_ms));
 
   if ((written < 0) || (static_cast<size_t>(written) >= sizeof(parameters_json))) {
     return PHX_ERR_INVALID_ARG;
@@ -385,9 +378,9 @@ PhoenixBleStatus handle_battery_status(void) {
 }
 
 PhoenixBleStatus handle_alert_inject(void) {
-  MockAlertNotification notification     = {};
+  MockAlertNotification notification = {};
   // Step 1: Surface the canned alert payload so the phone exercises its notification UI.
-  const MockAppStatus    controller_status = mock_app_controller_raise_alert(&notification);
+  const MockAppStatus controller_status = mock_app_controller_raise_alert(&notification);
 
   if (controller_status != MOCK_APP_STATUS_OK) {
     return send_status_only("alert_inject", k_status_error);
@@ -399,13 +392,11 @@ PhoenixBleStatus handle_alert_inject(void) {
 
   const char* message = (notification.message != NULL) ? notification.message : "";
 
-  char parameters_json[k_mock_parameters_buffer_size] = {};
-  const int written = snprintf(parameters_json, sizeof(parameters_json),
-                               "{\"status\":\"ok\",\"alert_code\":\"%s\",\"severity\":%lu," \
+  char      parameters_json[k_mock_parameters_buffer_size] = {};
+  const int written                                        = snprintf(parameters_json, sizeof(parameters_json),
+                               "{\"status\":\"ok\",\"alert_code\":\"%s\",\"severity\":%lu,"
                                "\"message\":\"%s\"}",
-                               alert_code_buffer,
-                               static_cast<unsigned long>(notification.severity),
-                               message);
+                               alert_code_buffer, static_cast<unsigned long>(notification.severity), message);
 
   if ((written < 0) || (static_cast<size_t>(written) >= sizeof(parameters_json))) {
     return PHX_ERR_INVALID_ARG;
@@ -415,31 +406,39 @@ PhoenixBleStatus handle_alert_inject(void) {
 }
 
 PhoenixBleStatus handle_session_teardown(void) {
-  MockSessionSummary summary             = {};
-  // Step 1: Ask the controller for its session summary and shut down BLE state.
+  MockSessionSummary summary = {};
+  // Step 1: Ask the controller for its session summary and record metrics for teardown.
   const MockAppStatus controller_status = mock_app_controller_teardown(&summary);
 
   if (controller_status != MOCK_APP_STATUS_OK) {
     return send_status_only("session_teardown", k_status_error);
   }
 
-  (void) phoenix_ble_server_handle_connection_event(g_ble_context, 0U);
-
   // Step 2: Report the teardown metrics so the phone can display an accurate handoff summary.
-  char parameters_json[k_mock_parameters_buffer_size] = {};
-  const int written = snprintf(parameters_json, sizeof(parameters_json),
-                               "{\"status\":\"ok\",\"summary\":{\"completed_references\":%lu," \
+  char      parameters_json[k_mock_parameters_buffer_size] = {};
+  const int written                                        = snprintf(parameters_json, sizeof(parameters_json),
+                               "{\"status\":\"ok\",\"summary\":{\"completed_references\":%lu,"
                                "\"completed_samples\":%lu,\"uptime_ms\":%lu,\"ble_connected\":%s}}",
                                static_cast<unsigned long>(summary.completed_references),
                                static_cast<unsigned long>(summary.completed_samples),
-                               static_cast<unsigned long>(summary.uptime_ms),
-                               summary.ble_connected ? "true" : "false");
+                               static_cast<unsigned long>(summary.uptime_ms), summary.ble_connected ? "true" : "false");
 
   if ((written < 0) || (static_cast<size_t>(written) >= sizeof(parameters_json))) {
     return PHX_ERR_INVALID_ARG;
   }
 
-  return send_response("session_teardown", parameters_json);
+  const PhoenixBleStatus send_status = send_response("session_teardown", parameters_json);
+  if (send_status != PHX_OK) {
+    return send_status;
+  }
+
+  // Step 3: Allow the BLE stack to flush the final notification before dropping the link.
+  apply_response_delay(k_teardown_disconnect_delay_ms);
+
+  // Step 4: Mark the BLE session offline after notifying the phone about teardown completion.
+  (void) phoenix_ble_server_handle_connection_event(g_ble_context, 0U);
+
+  return PHX_OK;
 }
 }  // namespace
 
@@ -447,7 +446,8 @@ PhoenixBleStatus mock_main_ble_bridge_initialize(PhoenixBleServerContext* contex
   GUARD_NONNULL(context);
 
   // Step 1: Register the bridge handler so BLE command writes reach the mock controller.
-  PhoenixBleStatus return_code = phoenix_ble_server_register_command_handler(context, mock_main_ble_bridge_process_command);
+  PhoenixBleStatus return_code =
+      phoenix_ble_server_register_command_handler(context, mock_main_ble_bridge_process_command);
   if (return_code != PHX_OK) {
     return return_code;
   }

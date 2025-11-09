@@ -14,6 +14,11 @@ This guide explains how to flash the mock firmware, discover it from the phone a
    pio test -e mock_main -vv
    ```
 4. Open a serial monitor at 115200 baud. The controller emits breadcrumbs tagged with `[mock_main]` for every command and response.
+5. Run the end-to-end BLE validation directly against the device:
+   ```
+   conda run -n phoenix-python pytest python/tests/mock_ble/test_device_workflows.py --mock-ble -vv
+   ```
+   Each BLE command reports as its own test (for example `test_mock_ble_command_scenarios[reference_start]`), so onboarding engineers immediately see which behaviour regressed if a change fails.
 
 ## 2. BLE Advertising Profile
 
