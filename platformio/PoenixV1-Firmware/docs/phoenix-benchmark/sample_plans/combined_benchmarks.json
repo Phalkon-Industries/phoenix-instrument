@@ -13,7 +13,8 @@
                 "end_time_us": 200000,
                 "step_delay_us": 0,
                 "osr": 32,
-                "wiper_code": 223
+                "wiper_blue_code": 223,
+                "wiper_green_code": 198
             }
         },
         {

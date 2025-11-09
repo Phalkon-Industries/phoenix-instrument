@@ -35,7 +35,8 @@ struct PhoenixBenchmarkDriftCaptureDefaults {
   uint32_t end_time_us;
   uint32_t step_delay_us;
   uint32_t osr;
-  uint8_t  wiper_code;
+  uint8_t  blue_wiper_code;
+  uint8_t  green_wiper_code;
 };
 
 /**
@@ -50,7 +51,8 @@ struct PhoenixBenchmarkDriftCaptureOptions {
   bool     has_step_override;
   uint32_t osr;
   bool     has_osr_override;
-  uint8_t  wiper_code;
+  uint8_t  blue_wiper_code;
+  uint8_t  green_wiper_code;
   bool     has_wiper_override;
 
   /**
@@ -95,7 +97,8 @@ struct PhoenixBenchmarkDriftCaptureExecutionStatus {
   uint32_t    applied_end_us;
   uint32_t    applied_step_us;
   uint32_t    applied_osr;
-  uint8_t     applied_wiper_code;
+  uint8_t     applied_blue_wiper_code;
+  uint8_t     applied_green_wiper_code;
   std::size_t blue_samples;
   std::size_t green_samples;
 };
@@ -157,7 +160,8 @@ void phoenix_benchmark_drift_capture_set_hardware_ready_checker_for_test(bool (*
  * @brief Override the digipot wiper setter used during unit testing.
  * @param setter Optional hook that applies a wiper code and reports success.
  */
-void phoenix_benchmark_drift_capture_set_wiper_setter_for_test(bool (*setter)(uint8_t wiper_code));
+void phoenix_benchmark_drift_capture_set_wiper_setter_for_test(bool (*setter)(uint8_t blue_wiper_code,
+                                                                              uint8_t green_wiper_code));
 /**
  * @brief Override the LED router setter used during unit testing.
  * @param setter Optional hook that switches the LED routing state.

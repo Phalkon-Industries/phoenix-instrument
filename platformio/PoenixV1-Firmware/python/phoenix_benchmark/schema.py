@@ -120,7 +120,8 @@ class DriftCaptureCommand:
     end_time_us: int | None = None
     step_delay_us: int | None = None
     osr: int | None = None
-    wiper_code: int | None = None
+    wiper_blue_code: int | None = None
+    wiper_green_code: int | None = None
 
     def to_payload(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}
@@ -132,8 +133,10 @@ class DriftCaptureCommand:
             payload["step_delay_us"] = self.step_delay_us
         if self.osr is not None:
             payload["osr"] = self.osr
-        if self.wiper_code is not None:
-            payload["wiper_code"] = self.wiper_code
+        if self.wiper_blue_code is not None:
+            payload["wiper_blue_code"] = self.wiper_blue_code
+        if self.wiper_green_code is not None:
+            payload["wiper_green_code"] = self.wiper_green_code
         return payload
 
 
@@ -326,6 +329,8 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
             "step_delay_us",
             "osr",
             "wiper_code",
+            "wiper_blue_code",
+            "wiper_green_code",
         }
         extra_keys = set(parameters.keys()) - allowed_keys
         if extra_keys:
@@ -380,21 +385,37 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
             if osr_value not in DRIFT_CAPTURE_ALLOWED_OSR_VALUES:
                 raise ValueError("drift_capture.osr is not supported")
 
-        wiper_code = parameters.get("wiper_code")
-        if wiper_code is not None:
-            if not isinstance(wiper_code, int):
-                raise ValueError("drift_capture.wiper_code must be an integer")
-            if not (0 <= wiper_code <= 0xFF):
+        wiper_blue = parameters.get("wiper_blue_code")
+        wiper_green = parameters.get("wiper_green_code")
+        legacy_wiper = parameters.get("wiper_code")
+
+        def _validate_wiper(value: Any, field_name: str) -> int:
+            if not isinstance(value, int):
+                raise ValueError(f"{field_name} must be an integer")
+            if not (0 <= value <= 0xFF):
+                raise ValueError(f"{field_name} must be an integer between 0 and 255")
+            return value
+
+        if legacy_wiper is not None:
+            if wiper_blue is not None or wiper_green is not None:
                 raise ValueError(
-                    "drift_capture.wiper_code must be an integer between 0 and 255"
+                    "drift_capture.wiper_code cannot be combined with per-colour wiper overrides"
                 )
+            override_value = _validate_wiper(legacy_wiper, "drift_capture.wiper_code")
+            wiper_blue = override_value
+            wiper_green = override_value
+        if wiper_blue is not None:
+            wiper_blue = _validate_wiper(wiper_blue, "drift_capture.wiper_blue_code")
+        if wiper_green is not None:
+            wiper_green = _validate_wiper(wiper_green, "drift_capture.wiper_green_code")
 
         command = DriftCaptureCommand(
             start_time_us=start_us,
             end_time_us=end_us,
             step_delay_us=step_us,
             osr=osr_value,
-            wiper_code=wiper_code,
+            wiper_blue_code=wiper_blue,
+            wiper_green_code=wiper_green,
         )
         return BenchmarkCommand(name=name, parameters=command.to_payload())
 

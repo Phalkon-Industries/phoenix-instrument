@@ -120,18 +120,20 @@ Unknown command identifiers return a `# error,unsupported_command` line until th
 
 Requests a rapid dual-LED capture immediately after each LED transitions on. The firmware timestamps blue/green samples relative to the activation edge, stores them in a shared buffer, and emits metadata once both sequences complete.
 
-| Field           | Type    | Required | Notes                                                                                                                                                |
-| --------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start_time_us` | integer | no       | First timestamp to report in microseconds. Defaults to `0` when omitted. Must be ≥ 0 and ≤ `end_time_us`.                                            |
-| `end_time_us`   | integer | no       | Final elapsed timestamp to capture. Defaults to `100000`. Must be ≥ `start_time_us` and within the buffer-derived upper bound documented in Phase 6. |
-| `step_delay_us` | integer | no       | Optional inter-sample pause. Defaults to `0` (tight loop). Positive values insert a guarded delay between samples.                                   |
-| `osr`           | integer | no       | Optional ADC oversampling ratio override. Defaults to the most recent channel-map context when omitted.                                              |
-| `wiper_code`    | integer | no       | Optional potentiometer wiper override applied before the burst. Defaults to the last channel-map wiper.                                              |
+| Field              | Type    | Required | Notes                                                                                                                                                |
+| ------------------ | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_time_us`    | integer | no       | First timestamp to report in microseconds. Defaults to `0` when omitted. Must be ≥ 0 and ≤ `end_time_us`.                                            |
+| `end_time_us`      | integer | no       | Final elapsed timestamp to capture. Defaults to `100000`. Must be ≥ `start_time_us` and within the buffer-derived upper bound documented in Phase 6. |
+| `step_delay_us`    | integer | no       | Optional inter-sample pause. Defaults to `0` (tight loop). Positive values insert a guarded delay between samples.                                   |
+| `osr`              | integer | no       | Optional ADC oversampling ratio override. Defaults to the most recent channel-map context when omitted.                                              |
+| `wiper_blue_code`  | integer | no       | Optional blue-channel potentiometer override applied before the burst. Defaults to the last channel-map wiper when omitted.                          |
+| `wiper_green_code` | integer | no       | Optional green-channel potentiometer override applied before the burst. Defaults to the last channel-map wiper when omitted.                         |
+| `wiper_code`       | integer | no       | Legacy alias that applies the same override to both channels. Retained for backwards compatibility but normalised to the per-colour fields above.    |
 
 **Example**
 
 ```json
-{"command": "drift_capture", "parameters": {"start_time_us": 0, "end_time_us": 50000, "step_delay_us": 10, "osr": 4096, "wiper_code": 42}}
+{"command": "drift_capture", "parameters": {"start_time_us": 0, "end_time_us": 50000, "step_delay_us": 10, "osr": 4096, "wiper_blue_code": 42, "wiper_green_code": 84}}
 ```
 
 **Serial output**
@@ -139,7 +141,7 @@ Requests a rapid dual-LED capture immediately after each LED transitions on. The
 Drift captures defer all output until both LED buffers are populated, then emit the following sequence (prefixes not shown in JSON payloads):
 
 1. `# running,scenario=drift_capture,...` – announces the scenario with resolved metadata.
-2. `# drift_capture,metadata,start_us=...,end_us=...,step_delay_us=...,osr=...,wiper_code=...` – records the applied capture settings.
+2. `# drift_capture,metadata,start_us=...,end_us=...,step_delay_us=...,osr=...,wiper_blue=...,wiper_green=...` – records the applied capture settings and per-channel wipers.
 3. `# drift_capture,results,blue_samples=<N1>,green_samples=<N2>,warning_mask=<mask>` – reports sample counts and the combined warning bitmask (`0x01` buffer overflow, `0x02` saturation, `0x04` restore failure).
 4. `Elapsed_Blue_us	Code_Blue	Elapsed_Green_us	Code_Green` header followed by tab-separated sample rows. Missing values are printed as `nan` to keep blue/green timelines aligned.
 5. Blank line terminates the sample section prior to `# benchmark_complete`.

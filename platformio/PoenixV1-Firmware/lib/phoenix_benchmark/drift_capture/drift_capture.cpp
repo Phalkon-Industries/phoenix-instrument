@@ -13,11 +13,12 @@
 namespace {
 
 constexpr PhoenixBenchmarkDriftCaptureDefaults k_default_drift_defaults = {
-    .start_time_us = 0u,
-    .end_time_us   = 100000u,
-    .step_delay_us = 0u,
-    .osr           = 4096u,
-    .wiper_code    = 0x00u,
+    .start_time_us    = 0u,
+    .end_time_us      = 100000u,
+    .step_delay_us    = 0u,
+    .osr              = 4096u,
+    .blue_wiper_code  = 0x00u,
+    .green_wiper_code = 0x00u,
 };
 
 constexpr uint32_t    k_adc_timeout_us = 1000000u;
@@ -43,7 +44,7 @@ std::size_t                          g_sample_counts[k_led_count] = {0u, 0u};
 uint8_t                              g_warning_mask               = 0u;
 
 using HardwareReadyChecker = bool (*)(void);
-using WiperSetter          = bool (*)(uint8_t);
+using WiperSetter          = bool (*)(uint8_t, uint8_t);
 using LedSetter            = int (*)(LedRouterState);
 using OsrSetter            = int (*)(mcp356x_osr);
 using AdcReader            = bool (*)(AdcHalChannel, int32_t*);
@@ -56,11 +57,12 @@ OsrSetter            g_osr_setter             = mcp356x_set_osr;
 MicrosProvider       g_micros_provider        = ::micros;
 DelayProvider        g_delay_provider         = ::delayMicroseconds;
 
-bool default_wiper_setter(uint8_t code) {
-  for (uint8_t channel : k_digipot_channels) {
-    if (ad524x_set_wiper(channel, code) != AD524X_OK) {
-      return false;
-    }
+bool default_wiper_setter(uint8_t blue_code, uint8_t green_code) {
+  if (ad524x_set_wiper(k_digipot_channels[0], blue_code) != AD524X_OK) {
+    return false;
+  }
+  if (ad524x_set_wiper(k_digipot_channels[1], green_code) != AD524X_OK) {
+    return false;
   }
   return true;
 }
@@ -286,17 +288,18 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
     const PhoenixBenchmarkDriftCaptureOptions&         input_options,
     const PhoenixBenchmarkDriftCaptureOutputCallbacks& callbacks) {
   PhoenixBenchmarkDriftCaptureExecutionStatus status = {
-      .success            = false,
-      .has_warnings       = false,
-      .warning_mask       = 0u,
-      .message            = nullptr,
-      .applied_start_us   = 0u,
-      .applied_end_us     = 0u,
-      .applied_step_us    = 0u,
-      .applied_osr        = 0u,
-      .applied_wiper_code = 0u,
-      .blue_samples       = 0u,
-      .green_samples      = 0u,
+      .success                  = false,
+      .has_warnings             = false,
+      .warning_mask             = 0u,
+      .message                  = nullptr,
+      .applied_start_us         = 0u,
+      .applied_end_us           = 0u,
+      .applied_step_us          = 0u,
+      .applied_osr              = 0u,
+      .applied_blue_wiper_code  = 0u,
+      .applied_green_wiper_code = 0u,
+      .blue_samples             = 0u,
+      .green_samples            = 0u,
   };
 
   auto emit_failure_line = [&](const char* message) {
@@ -315,11 +318,12 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
   options.apply_defaults(g_defaults);
 
   // Step 1: Record the effective configuration so metadata reflects applied defaults.
-  status.applied_start_us   = options.start_time_us;
-  status.applied_end_us     = options.end_time_us;
-  status.applied_step_us    = options.step_delay_us;
-  status.applied_osr        = options.osr;
-  status.applied_wiper_code = options.wiper_code;
+  status.applied_start_us         = options.start_time_us;
+  status.applied_end_us           = options.end_time_us;
+  status.applied_step_us          = options.step_delay_us;
+  status.applied_osr              = options.osr;
+  status.applied_blue_wiper_code  = options.blue_wiper_code;
+  status.applied_green_wiper_code = options.green_wiper_code;
 
   // Step 2: Validate caller input before touching any hardware state.
   const char* validation_message = nullptr;
@@ -340,7 +344,7 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
   }
 
   // Step 5: Apply the requested digipot wiper code before enabling the LEDs.
-  if ((g_wiper_setter == nullptr) || !g_wiper_setter(options.wiper_code)) {
+  if ((g_wiper_setter == nullptr) || !g_wiper_setter(options.blue_wiper_code, options.green_wiper_code)) {
     emit_line(callbacks, "# drift_capture,error=wiper_configuration_failed");
     status.message = k_error_wiper_failed;
     return status;
@@ -436,11 +440,13 @@ PhoenixBenchmarkDriftCaptureExecutionStatus run_drift_capture(
     status.success = true;
 
     char buffer[160] = {};
-    std::snprintf(buffer, sizeof(buffer),
-                  "# drift_capture,metadata,start_us=%lu,end_us=%lu,step_delay_us=%lu,osr=%lu,wiper_code=0x%02X",
-                  static_cast<unsigned long>(status.applied_start_us),
-                  static_cast<unsigned long>(status.applied_end_us), static_cast<unsigned long>(status.applied_step_us),
-                  static_cast<unsigned long>(status.applied_osr), static_cast<unsigned int>(status.applied_wiper_code));
+    std::snprintf(
+        buffer, sizeof(buffer),
+        "# drift_capture,metadata,start_us=%lu,end_us=%lu,step_delay_us=%lu,osr=%lu,wiper_blue=0x%02X,wiper_green=0x%02X",
+        static_cast<unsigned long>(status.applied_start_us), static_cast<unsigned long>(status.applied_end_us),
+        static_cast<unsigned long>(status.applied_step_us), static_cast<unsigned long>(status.applied_osr),
+        static_cast<unsigned int>(status.applied_blue_wiper_code),
+        static_cast<unsigned int>(status.applied_green_wiper_code));
     emit_line(callbacks, buffer);
 
     std::snprintf(buffer, sizeof(buffer),
@@ -610,9 +616,11 @@ PhoenixBenchmarkDriftCaptureParseResult parse_json_command(const char*          
         ++cursor;
         cursor = skip_whitespace(cursor);
 
+        const bool is_wiper_key = (std::strcmp(param_key_buffer, "wiper_code") == 0) ||
+                                  (std::strcmp(param_key_buffer, "wiper_blue_code") == 0) ||
+                                  (std::strcmp(param_key_buffer, "wiper_green_code") == 0);
         uint32_t parsed_value = 0u;
-        if (!parse_unsigned_value(cursor, (std::strcmp(param_key_buffer, "wiper_code") == 0) ? 0 : 10, &parsed_value,
-                                  &cursor)) {
+        if (!parse_unsigned_value(cursor, is_wiper_key ? 0 : 10, &parsed_value, &cursor)) {
           return failure(k_error_invalid_value);
         }
 
@@ -636,7 +644,23 @@ PhoenixBenchmarkDriftCaptureParseResult parse_json_command(const char*          
           if (parsed_value > 0xFFu) {
             return failure(k_error_invalid_value);
           }
-          options.wiper_code         = static_cast<uint8_t>(parsed_value & 0xFFu);
+          const uint8_t override_code = static_cast<uint8_t>(parsed_value & 0xFFu);
+          options.blue_wiper_code     = override_code;
+          options.green_wiper_code    = override_code;
+          options.has_wiper_override  = true;
+        }
+        else if (std::strcmp(param_key_buffer, "wiper_blue_code") == 0) {
+          if (parsed_value > 0xFFu) {
+            return failure(k_error_invalid_value);
+          }
+          options.blue_wiper_code    = static_cast<uint8_t>(parsed_value & 0xFFu);
+          options.has_wiper_override = true;
+        }
+        else if (std::strcmp(param_key_buffer, "wiper_green_code") == 0) {
+          if (parsed_value > 0xFFu) {
+            return failure(k_error_invalid_value);
+          }
+          options.green_wiper_code   = static_cast<uint8_t>(parsed_value & 0xFFu);
           options.has_wiper_override = true;
         }
         else {
@@ -709,7 +733,8 @@ void PhoenixBenchmarkDriftCaptureOptions::apply_defaults(const PhoenixBenchmarkD
     osr = defaults.osr;
   }
   if (!has_wiper_override) {
-    wiper_code = defaults.wiper_code;
+    blue_wiper_code  = defaults.blue_wiper_code;
+    green_wiper_code = defaults.green_wiper_code;
   }
 }
 
@@ -804,7 +829,8 @@ void phoenix_benchmark_drift_capture_set_hardware_ready_checker_for_test(bool (*
   g_hardware_ready_checker = (checker != nullptr) ? checker : phoenix_benchmark_channel_map_ensure_hardware_ready;
 }
 
-void phoenix_benchmark_drift_capture_set_wiper_setter_for_test(bool (*setter)(uint8_t wiper_code)) {
+void phoenix_benchmark_drift_capture_set_wiper_setter_for_test(bool (*setter)(uint8_t blue_wiper_code,
+                                                                              uint8_t green_wiper_code)) {
   g_wiper_setter = (setter != nullptr) ? setter : default_wiper_setter;
 }
 

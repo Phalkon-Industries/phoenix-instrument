@@ -332,14 +332,16 @@ class DriftCaptureBurst:
     end_us: int
     step_us: int
     osr: int
-    wiper_code: str
+    wiper_blue: str
+    wiper_green: str
     warning_mask: int
     combined_samples: List[DriftCaptureSampleRow]
 
     def slug(self) -> str:
         return (
             "drift_capture_start_us"
-            f"{self.start_us}_end_us{self.end_us}_step_us{self.step_us}_osr{self.osr}_wiper_{self.wiper_code}"
+            f"{self.start_us}_end_us{self.end_us}_step_us{self.step_us}_osr{self.osr}_"
+            f"wiper_blue_{self.wiper_blue}_wiper_green_{self.wiper_green}"
         )
 
     @property
@@ -365,7 +367,8 @@ class DriftCaptureBurst:
             "end_us": self.end_us,
             "step_delay_us": self.step_us,
             "osr": self.osr,
-            "wiper_code": self.wiper_code,
+            "wiper_blue": self.wiper_blue,
+            "wiper_green": self.wiper_green,
         }
 
 
@@ -986,7 +989,23 @@ def parse_drift_capture_transcript(lines: Iterable[str]) -> List[DriftCaptureBur
         osr = _parse_int_token(
             metadata_tokens.get("osr"), default=DRIFT_CAPTURE_DEFAULT_OSR
         )
-        wiper_code = _normalise_wiper_code(metadata_tokens.get("wiper_code"))
+        wiper_blue_token = metadata_tokens.get("wiper_blue")
+        wiper_green_token = metadata_tokens.get("wiper_green")
+        legacy_wiper_token = metadata_tokens.get("wiper_code")
+        if (
+            wiper_blue_token is None
+            and wiper_green_token is None
+            and legacy_wiper_token is not None
+        ):
+            wiper_blue_token = legacy_wiper_token
+            wiper_green_token = legacy_wiper_token
+        if wiper_blue_token is None and wiper_green_token is not None:
+            wiper_blue_token = wiper_green_token
+        if wiper_green_token is None and wiper_blue_token is not None:
+            wiper_green_token = wiper_blue_token
+
+        wiper_blue = _normalise_wiper_code(wiper_blue_token)
+        wiper_green = _normalise_wiper_code(wiper_green_token)
 
         index += 1
         if index >= len(entries):
@@ -1040,7 +1059,8 @@ def parse_drift_capture_transcript(lines: Iterable[str]) -> List[DriftCaptureBur
                 end_us=end_us,
                 step_us=step_us,
                 osr=osr,
-                wiper_code=wiper_code,
+                wiper_blue=wiper_blue,
+                wiper_green=wiper_green,
                 warning_mask=warning_mask,
                 combined_samples=samples,
             )
@@ -1979,7 +1999,7 @@ def _render_drift_capture_plot(burst: DriftCaptureBurst, output_path: Path) -> N
 
     ax_primary.set_xlabel("Elapsed (us)")
     ax_primary.set_title(
-        f"Drift capture burst {burst.index} (wiper {burst.wiper_code})"
+        f"Drift capture burst {burst.index} (wipers {burst.wiper_blue}/{burst.wiper_green})"
     )
     ax_primary.grid(axis="both", linestyle="--", alpha=0.4)
 
@@ -2745,22 +2765,23 @@ def _render_markdown_report(
         lines.append("## Drift Capture")
         lines.append("")
         lines.append(
-            "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | Blue Samples | Green Samples | Warnings |"
+            "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper (blue) | Wiper (green) | Blue Samples | Green Samples | Warnings |"
         )
-        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
         for entry in drift_entries:
             burst = entry.burst
             warning_label = (
                 ", ".join(burst.warning_labels) if burst.warning_labels else "none"
             )
             lines.append(
-                "| {index} | {start} | {end} | {step} | {osr} | {wiper} | {blue} | {green} | {warnings} |".format(
+                "| {index} | {start} | {end} | {step} | {osr} | {wiper_blue} | {wiper_green} | {blue} | {green} | {warnings} |".format(
                     index=burst.index,
                     start=burst.start_us,
                     end=burst.end_us,
                     step=burst.step_us,
                     osr=burst.osr,
-                    wiper=burst.wiper_code,
+                    wiper_blue=burst.wiper_blue,
+                    wiper_green=burst.wiper_green,
                     blue=burst.blue_sample_count,
                     green=burst.green_sample_count,
                     warnings=warning_label,

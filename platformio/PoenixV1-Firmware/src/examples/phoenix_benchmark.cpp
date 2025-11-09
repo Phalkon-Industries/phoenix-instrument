@@ -41,11 +41,12 @@ const PhoenixBenchmarkChannelMapDefaults k_channel_map_defaults = {
 };
 
 const PhoenixBenchmarkDriftCaptureDefaults k_drift_capture_defaults = {
-    .start_time_us = 0u,
-    .end_time_us   = 100000u,
-    .step_delay_us = 0u,
-    .osr           = 4096u,
-    .wiper_code    = k_channel_map_defaults.wiper_code,
+    .start_time_us    = 0u,
+    .end_time_us      = 100000u,
+    .step_delay_us    = 0u,
+    .osr              = 4096u,
+    .blue_wiper_code  = k_channel_map_defaults.wiper_code,
+    .green_wiper_code = k_channel_map_defaults.wiper_code,
 };
 
 const PhoenixBenchmarkAdcSpeedDefaults k_adc_speed_defaults = {

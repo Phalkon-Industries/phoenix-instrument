@@ -366,10 +366,10 @@ static void test_cold_sweep_run_reports_error_when_hardware_not_ready(void) {
   g_cold_sweep_hardware_ready = false;
   phoenix_benchmark_cold_sweep_set_hardware_ready_checker_for_test(cold_sweep_fake_hardware_ready);
 
-  LightReadingsSweepSample     sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT] = {};
-  LightReadingsSweepCollection sweep_collection                              = {
-                                   .sweep_count = 0u,
-                                   .sweeps      = sweep_storage,
+  static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT] = {};
+  LightReadingsSweepCollection    sweep_collection                              = {
+                                      .sweep_count = 0u,
+                                      .sweeps      = sweep_storage,
   };
   LightReadingsSweepStats stats = {};
 
@@ -520,7 +520,8 @@ static PhoenixBenchmarkDriftCaptureLed g_drift_capture_current_led             =
 static bool                            g_drift_capture_led_active              = false;
 static LedRouterState                  g_drift_capture_router_transitions[8]   = {};
 static std::size_t                     g_drift_capture_router_transition_count = 0u;
-static uint8_t                         g_drift_capture_last_wiper_code         = 0u;
+static uint8_t                         g_drift_capture_last_blue_wiper_code    = 0u;
+static uint8_t                         g_drift_capture_last_green_wiper_code   = 0u;
 static uint32_t                        g_drift_capture_last_osr_enum           = 0u;
 static std::size_t                     g_drift_capture_osr_call_count          = 0u;
 static AdcHalChannel                   g_drift_capture_last_channel            = AdcHalChannel::ADC_HAL_CHANNEL_4;
@@ -538,7 +539,8 @@ static void drift_capture_reset_fakes(void) {
   g_drift_capture_current_led             = PhoenixBenchmarkDriftCaptureLed::kBlue;
   g_drift_capture_led_active              = false;
   g_drift_capture_router_transition_count = 0u;
-  g_drift_capture_last_wiper_code         = 0u;
+  g_drift_capture_last_blue_wiper_code    = 0u;
+  g_drift_capture_last_green_wiper_code   = 0u;
   g_drift_capture_last_osr_enum           = 0u;
   g_drift_capture_osr_call_count          = 0u;
   g_drift_capture_last_channel            = AdcHalChannel::ADC_HAL_CHANNEL_4;
@@ -557,8 +559,9 @@ static bool drift_capture_fake_hardware_ready(void) {
   return true;
 }
 
-static bool drift_capture_fake_wiper_setter(uint8_t code) {
-  g_drift_capture_last_wiper_code = code;
+static bool drift_capture_fake_wiper_setter(uint8_t blue_code, uint8_t green_code) {
+  g_drift_capture_last_blue_wiper_code  = blue_code;
+  g_drift_capture_last_green_wiper_code = green_code;
   return true;
 }
 
@@ -645,7 +648,13 @@ static void drift_capture_uninstall_fakes(void) {
 static void test_drift_capture_options_apply_defaults_inherit_initialised_values(void) {
   // Step 1: Supply defaults and ensure options inherit fields when overrides are absent.
   const PhoenixBenchmarkDriftCaptureDefaults defaults = {
-      .start_time_us = 0u, .end_time_us = 100000u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x20u};
+      .start_time_us    = 0u,
+      .end_time_us      = 100000u,
+      .step_delay_us    = 10u,
+      .osr              = 4096u,
+      .blue_wiper_code  = 0x22u,
+      .green_wiper_code = 0x33u,
+  };
 
   PhoenixBenchmarkDriftCaptureOptions options = {};
   options.has_start_override                  = false;
@@ -659,7 +668,8 @@ static void test_drift_capture_options_apply_defaults_inherit_initialised_values
   TEST_ASSERT_EQUAL_UINT32(defaults.end_time_us, options.end_time_us);
   TEST_ASSERT_EQUAL_UINT32(defaults.step_delay_us, options.step_delay_us);
   TEST_ASSERT_EQUAL_UINT32(defaults.osr, options.osr);
-  TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, options.wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(defaults.blue_wiper_code, options.blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(defaults.green_wiper_code, options.green_wiper_code);
 }
 
 static void test_drift_capture_options_validate_rejects_inverted_range(void) {
@@ -673,7 +683,8 @@ static void test_drift_capture_options_validate_rejects_inverted_range(void) {
       .has_step_override  = true,
       .osr                = 4096u,
       .has_osr_override   = true,
-      .wiper_code         = 0x10u,
+      .blue_wiper_code    = 0x10u,
+      .green_wiper_code   = 0x10u,
       .has_wiper_override = true,
   };
 
@@ -693,7 +704,8 @@ static void test_drift_capture_options_validate_rejects_schedule_exceeding_buffe
       .has_step_override  = true,
       .osr                = 4096u,
       .has_osr_override   = true,
-      .wiper_code         = 0x01u,
+      .blue_wiper_code    = 0x01u,
+      .green_wiper_code   = 0x01u,
       .has_wiper_override = true,
   };
 
@@ -706,7 +718,13 @@ static void test_drift_capture_parse_command_accepts_plain_token(void) {
   // Step 1: Ensure the bare command inherits initialised defaults.
   phoenix_benchmark_drift_capture_reset_state();
   const PhoenixBenchmarkDriftCaptureDefaults defaults = {
-      .start_time_us = 0u, .end_time_us = 100000u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u};
+      .start_time_us    = 0u,
+      .end_time_us      = 100000u,
+      .step_delay_us    = 0u,
+      .osr              = 4096u,
+      .blue_wiper_code  = 0xAAu,
+      .green_wiper_code = 0xBBu,
+  };
   phoenix_benchmark_drift_capture_initialise(defaults);
 
   const PhoenixBenchmarkDriftCaptureParseResult result = phoenix_benchmark_drift_capture_parse_command("drift_capture");
@@ -722,14 +740,19 @@ static void test_drift_capture_parse_command_accepts_plain_token(void) {
   TEST_ASSERT_EQUAL_UINT32(defaults.end_time_us, result.options.end_time_us);
   TEST_ASSERT_EQUAL_UINT32(defaults.step_delay_us, result.options.step_delay_us);
   TEST_ASSERT_EQUAL_UINT32(defaults.osr, result.options.osr);
-  TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, result.options.wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(defaults.blue_wiper_code, result.options.blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(defaults.green_wiper_code, result.options.green_wiper_code);
 }
 
 static void test_drift_capture_parse_command_accepts_json_overrides(void) {
   // Step 1: Provide explicit overrides for timing, OSR, and the wiper code.
   phoenix_benchmark_drift_capture_reset_state();
-  phoenix_benchmark_drift_capture_initialise(
-      {.start_time_us = 0u, .end_time_us = 100000u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+  phoenix_benchmark_drift_capture_initialise({.start_time_us    = 0u,
+                                              .end_time_us      = 100000u,
+                                              .step_delay_us    = 0u,
+                                              .osr              = 4096u,
+                                              .blue_wiper_code  = 0x00u,
+                                              .green_wiper_code = 0x00u});
 
   const char* payload =
       "{\"command\":\"drift_capture\",\"parameters\":{\"start_time_us\":500,\"end_time_us\":1500,"
@@ -747,14 +770,19 @@ static void test_drift_capture_parse_command_accepts_json_overrides(void) {
   TEST_ASSERT_EQUAL_UINT32(1500u, result.options.end_time_us);
   TEST_ASSERT_EQUAL_UINT32(25u, result.options.step_delay_us);
   TEST_ASSERT_EQUAL_UINT32(8192u, result.options.osr);
-  TEST_ASSERT_EQUAL_UINT8(64u, result.options.wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(64u, result.options.blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(64u, result.options.green_wiper_code);
 }
 
 static void test_drift_capture_parse_command_rejects_invalid_range(void) {
   // Step 1: Attempt to parse a JSON payload where the capture window is inverted.
   phoenix_benchmark_drift_capture_reset_state();
-  phoenix_benchmark_drift_capture_initialise(
-      {.start_time_us = 0u, .end_time_us = 100000u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+  phoenix_benchmark_drift_capture_initialise({.start_time_us    = 0u,
+                                              .end_time_us      = 100000u,
+                                              .step_delay_us    = 0u,
+                                              .osr              = 4096u,
+                                              .blue_wiper_code  = 0x00u,
+                                              .green_wiper_code = 0x00u});
 
   const char* payload =
       "{\"command\":\"drift_capture\",\"parameters\":{\"start_time_us\":5000,\"end_time_us\":200,\"osr\":4096}}";
@@ -769,7 +797,13 @@ static void test_drift_capture_run_captures_leds_in_sequence(void) {
   // Step 1: Execute a deterministic capture covering both LED paths.
   phoenix_benchmark_drift_capture_reset_state();
   const PhoenixBenchmarkDriftCaptureDefaults defaults = {
-      .start_time_us = 0u, .end_time_us = 20u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x12u};
+      .start_time_us    = 0u,
+      .end_time_us      = 20u,
+      .step_delay_us    = 10u,
+      .osr              = 4096u,
+      .blue_wiper_code  = 0x12u,
+      .green_wiper_code = 0x34u,
+  };
   phoenix_benchmark_drift_capture_initialise(defaults);
   drift_capture_reset_fakes();
 
@@ -794,7 +828,8 @@ static void test_drift_capture_run_captures_leds_in_sequence(void) {
   TEST_ASSERT_FALSE(status.has_warnings);
   TEST_ASSERT_EQUAL_UINT8(0u, status.warning_mask);
   TEST_ASSERT_EQUAL_UINT32(defaults.osr, status.applied_osr);
-  TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, status.applied_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(defaults.blue_wiper_code, status.applied_blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(defaults.green_wiper_code, status.applied_green_wiper_code);
   TEST_ASSERT_EQUAL_UINT32(defaults.start_time_us, status.applied_start_us);
   TEST_ASSERT_EQUAL_UINT32(defaults.end_time_us, status.applied_end_us);
   TEST_ASSERT_EQUAL_UINT32(defaults.step_delay_us, status.applied_step_us);
@@ -802,7 +837,8 @@ static void test_drift_capture_run_captures_leds_in_sequence(void) {
                            static_cast<uint32_t>(status.blue_samples));
   TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(g_drift_capture_green_length),
                            static_cast<uint32_t>(status.green_samples));
-  TEST_ASSERT_EQUAL_UINT8(defaults.wiper_code, g_drift_capture_last_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(defaults.blue_wiper_code, g_drift_capture_last_blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(defaults.green_wiper_code, g_drift_capture_last_green_wiper_code);
   TEST_ASSERT_TRUE(g_drift_capture_osr_call_count >= 1u);
 
   std::size_t                                     blue_count = 0u;
@@ -834,8 +870,12 @@ static void test_drift_capture_run_captures_leds_in_sequence(void) {
 static void test_drift_capture_run_sets_saturation_warning(void) {
   // Step 1: Feed a saturated sample to confirm warning propagation.
   phoenix_benchmark_drift_capture_reset_state();
-  phoenix_benchmark_drift_capture_initialise(
-      {.start_time_us = 0u, .end_time_us = 0u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+  phoenix_benchmark_drift_capture_initialise({.start_time_us    = 0u,
+                                              .end_time_us      = 0u,
+                                              .step_delay_us    = 0u,
+                                              .osr              = 4096u,
+                                              .blue_wiper_code  = 0x00u,
+                                              .green_wiper_code = 0x00u});
   drift_capture_reset_fakes();
 
   static const int32_t blue_codes[]  = {k_phoenix_benchmark_adc_positive_full_scale_code};
@@ -848,8 +888,12 @@ static void test_drift_capture_run_sets_saturation_warning(void) {
   drift_capture_install_fakes();
 
   PhoenixBenchmarkDriftCaptureOptions options = {};
-  options.apply_defaults(
-      {.start_time_us = 0u, .end_time_us = 0u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+  options.apply_defaults({.start_time_us    = 0u,
+                          .end_time_us      = 0u,
+                          .step_delay_us    = 0u,
+                          .osr              = 4096u,
+                          .blue_wiper_code  = 0x00u,
+                          .green_wiper_code = 0x00u});
   const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {nullptr};
 
   const PhoenixBenchmarkDriftCaptureExecutionStatus status = phoenix_benchmark_drift_capture_run(options, callbacks);
@@ -864,8 +908,12 @@ static void test_drift_capture_run_sets_saturation_warning(void) {
 static void test_drift_capture_run_sets_overflow_warning(void) {
   // Step 1: Allow step=0 captures to saturate the static buffer and halt gracefully.
   phoenix_benchmark_drift_capture_reset_state();
-  phoenix_benchmark_drift_capture_initialise(
-      {.start_time_us = 0u, .end_time_us = 500000u, .step_delay_us = 0u, .osr = 4096u, .wiper_code = 0x00u});
+  phoenix_benchmark_drift_capture_initialise({.start_time_us    = 0u,
+                                              .end_time_us      = 500000u,
+                                              .step_delay_us    = 0u,
+                                              .osr              = 4096u,
+                                              .blue_wiper_code  = 0x00u,
+                                              .green_wiper_code = 0x00u});
   drift_capture_reset_fakes();
 
   static int32_t led_codes[k_phoenix_benchmark_drift_capture_max_sample_count + 8u];
@@ -893,14 +941,18 @@ static void test_drift_capture_run_sets_overflow_warning(void) {
   TEST_ASSERT_TRUE(status.has_warnings);
   TEST_ASSERT_NOT_EQUAL(0u, status.warning_mask & k_phoenix_benchmark_drift_capture_warning_buffer_overflow);
   TEST_ASSERT_EQUAL_UINT32(k_phoenix_benchmark_drift_capture_max_sample_count,
-                           static_cast<uint32_t)(status.blue_samples));
+                           static_cast<uint32_t>(status.blue_samples));
 }
 
 static void test_drift_capture_run_emits_nan_padding(void) {
   // Step 1: Capture mismatched LED lengths and confirm missing entries are padded.
   phoenix_benchmark_drift_capture_reset_state();
-  phoenix_benchmark_drift_capture_initialise(
-      {.start_time_us = 0u, .end_time_us = 10u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x00u});
+  phoenix_benchmark_drift_capture_initialise({.start_time_us    = 0u,
+                                              .end_time_us      = 10u,
+                                              .step_delay_us    = 10u,
+                                              .osr              = 4096u,
+                                              .blue_wiper_code  = 0x00u,
+                                              .green_wiper_code = 0x00u});
   drift_capture_reset_fakes();
 
   static const int32_t blue_codes[]  = {10, 20};
@@ -913,8 +965,12 @@ static void test_drift_capture_run_emits_nan_padding(void) {
   drift_capture_install_fakes();
 
   PhoenixBenchmarkDriftCaptureOptions options = {};
-  options.apply_defaults(
-      {.start_time_us = 0u, .end_time_us = 10u, .step_delay_us = 10u, .osr = 4096u, .wiper_code = 0x00u});
+  options.apply_defaults({.start_time_us    = 0u,
+                          .end_time_us      = 10u,
+                          .step_delay_us    = 10u,
+                          .osr              = 4096u,
+                          .blue_wiper_code  = 0x00u,
+                          .green_wiper_code = 0x00u});
   const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {drift_capture_collect_line};
 
   const PhoenixBenchmarkDriftCaptureExecutionStatus status = phoenix_benchmark_drift_capture_run(options, callbacks);
@@ -1181,7 +1237,7 @@ static void test_dwell_sweep_run_uses_light_readings_saturation_reporting(void) 
   light_readings_force_saturation_for_test(true);
 
   // Step 2: Execute the dwell sweep and capture the resulting metrics.
-  PhoenixBenchmarkDwellSweepRowMetrics            rows[1] = {};
+  static PhoenixBenchmarkDwellSweepRowMetrics     rows[1] = {};
   const PhoenixBenchmarkDwellSweepExecutionStatus status =
       phoenix_benchmark_dwell_sweep_run(options, rows, sizeof(rows) / sizeof(rows[0]));
 
