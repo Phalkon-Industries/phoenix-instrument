@@ -1,9 +1,9 @@
 # Phoenix Mock BLE Testing
 
-The Phoenix mock BLE workflows now execute through pytest instead of a standalone
-CLI. This page documents how to run the regression suite, which lives under
-`python/tests/mock_ble/test_device_workflows.py`, and how to interpret the
-output.
+The Phoenix mock BLE workflows execute through pytest rather than a bespoke
+CLI. This guide walks a new teammate from zero context to running the
+per-command regression that covers every BLE interaction documented in
+`docs/phone_instrument_interactions.md`.
 
 ## Prerequisites
 - Activate the shared Python environment: `conda run -n phoenix-python …`
@@ -11,18 +11,37 @@ output.
   `Phoenix Mock`).
 - Connect the BLE adapter that hosts the `bleak` transport.
 
+## Quick Start (New Teammate Primer)
+- **Step 1**: Flash the mock firmware with `pio run -e mock_main -t upload`
+  (see `docs/mock_main_ble_quickstart.md` for a full walkthrough).
+- **Step 2**: Confirm your workstation can see the board by running
+  `conda run -n phoenix-python python python/bleak_basic_check.py`.
+- **Step 3**: Run the BLE regression suite directly against hardware:
+
+  ```powershell
+  conda run -n phoenix-python pytest python/tests/mock_ble/test_device_workflows.py --mock-ble -vv
+  ```
+
+  The `-vv` flag keeps pytest verbose so each BLE command reports as an
+  individual test (e.g. `settings_get_defaults`, `sample_start_after_reference`).
+
 ## Running the Workflows
-Use pytest with the dedicated flag that enables the BLE fixtures:
+The canonical command above expands to the general pattern:
 
 ```powershell
-conda run -n phoenix-python pytest --mock-ble
+conda run -n phoenix-python pytest <paths> --mock-ble [pytest-options]
 ```
 
-Pytest discovers any tests marked with `@pytest.mark.mock_ble`. The session-scoped
-fixture `ble_exchange` (defined in `python/tests/mock_ble/test_device_workflows.py`)
-connects to the device, exercises the command surface directly, and validates
-each response payload. If a step fails, pytest raises an assertion immediately
-with the offending payload so CI can surface the mismatch.
+Pytest discovers every test tagged with `@pytest.mark.mock_ble`. The
+session-scoped fixture `ble_exchange` (defined in
+`python/tests/mock_ble/test_device_workflows.py`) connects to the device,
+exercises the command surface directly, and validates each response payload.
+
+### Why per-command tests?
+Each command scenario executes independently with any prerequisite calls staged
+automatically. When a contributor tweaks, say, `alert_inject`, only the
+`test_mock_ble_command_scenarios[alert_inject]` case fails, making regressions
+obvious in CI results and local runs alike.
 
 ### Command-Line Options
 - `--mock-ble-device` – Advertised BLE name (default `Phoenix Mock`).
@@ -41,10 +60,11 @@ conda run -n phoenix-python pytest --mock-ble \
 ```
 
 ### Output
-The pytest terminal summary reports the usual passed/failed counts. Each failure
-prints the decoded response so firmware and mobile engineers can diagnose the
-mismatch quickly. Pytest exits with code `1` if any command does not respond as
-expected, allowing CI to gate on the result.
+- Pytest enumerates each BLE command as its own test case when you use `-vv`.
+- Failures print the decoded response so firmware and mobile engineers can
+  diagnose the mismatch quickly.
+- Pytest exits with code `1` if any command does not respond as expected,
+  allowing CI and pre-commit hooks to gate on the result.
 
 ### Stubbing for Development
 Set the environment variable `PHOENIX_MOCK_BLE_RUNNER_FACTORY` to

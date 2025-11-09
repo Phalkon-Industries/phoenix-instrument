@@ -49,7 +49,7 @@ Use this checklist whenever you begin work in this repository. It captures the n
 
 
 ## 10. Exercise the BLE regression suite
-- Run the mock BLE workflows through pytest: `conda run -n phoenix-python pytest --mock-ble`.
+- Run the mock BLE workflows through pytest: `conda run -n phoenix-python pytest python/tests/mock_ble/test_device_workflows.py --mock-ble -vv` so each command reports individually.
 - Review `docs/mock_ble_testing.md` for option details, summary interpretation, and guidance on overriding the runner for simulation.
 
 

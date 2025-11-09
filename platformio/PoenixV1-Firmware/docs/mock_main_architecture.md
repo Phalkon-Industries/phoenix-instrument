@@ -27,8 +27,8 @@ Default jitter ranges already captured in the controller mirror the production t
 
 ## Command & Telemetry Flow
 
-1. **BLE Availability** – The BLE quick start documents the advertising profile (`Phoenix Mock`, UUIDs). The forthcoming BLE shim will surface the controller functions over the command characteristic.
-2. **Connection Handshake** – Once connected, the bridge will call `mock_app_controller_initialize()` and share the canned capability summary with the phone app.
+1. **BLE Availability** – The BLE quick start documents the advertising profile (`Phoenix Mock`, UUIDs). The bridge in `lib/mocks/mock_main_ble_bridge.cpp` already surfaces the controller functions over the command characteristic.
+2. **Connection Handshake** – Once connected, the bridge calls `mock_app_controller_initialize()` and shares the canned capability summary with the phone app.
 3. **Reference Measurement** – `mock_app_controller_run_reference()` waits roughly two seconds, generates deterministic counts, and caches the baseline for downstream samples.
 4. **Sample Measurement** – Requires a prior reference. `mock_app_controller_run_sample()` validates readiness, applies optional jitter, and returns absorbance and pH.
 5. **Settings Update / Refresh** – `mock_app_controller_update_settings()` mutates the in-memory snapshot; `mock_app_controller_get_settings()` echoes either defaults or the latest overrides.
@@ -39,6 +39,7 @@ Default jitter ranges already captured in the controller mirror the production t
 ## Test Strategy
 
 - **Unity Tests**: The suite under `test/mock_tests/test_mock_main/` drives every controller feature directly. Negative-path checks cover missing references and guard error propagation so newcomers see how failures should surface.
+- **BLE Regression (Pytest)**: The hardware-in-the-loop workflow at `python/tests/mock_ble/test_device_workflows.py` now mirrors every BLE command as its own pytest case. Run it with `conda run -n phoenix-python pytest python/tests/mock_ble/test_device_workflows.py --mock-ble -vv` to validate the contract after flashing new firmware.
 - **Legacy Test Isolation**: The `mock_main` PlatformIO environment filters out hardware-centric Unity suites, keeping this firmware free from device dependencies.
 - **Data Control with Fuzziness**: The seed-based jitter helpers ensure reproducible tests (seed `0`) while letting QA opt into variability when needed.
 
