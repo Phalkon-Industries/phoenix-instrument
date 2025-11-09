@@ -1374,6 +1374,19 @@ def _max_std(row: DwellSweepSummaryRow) -> float | None:
     return max(metrics)
 
 
+def _max_std_with_label(row: DwellSweepSummaryRow) -> tuple[str, float] | None:
+    labelled = [
+        ("Drain blue σ", row.drain_blue_std),
+        ("Drain green σ", row.drain_green_std),
+        ("Blue σ", row.blue_std),
+        ("Green σ", row.green_std),
+    ]
+    candidates = [(label, value) for label, value in labelled if value is not None]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[1])
+
+
 def _compute_dwell_recommendations(
     rows: List[DwellSweepSummaryRow],
 ) -> Dict[str, object]:
@@ -1718,6 +1731,39 @@ def _render_osr_sweep_plots(
     return [stddev_path, duration_path]
 
 
+def _offset_twin_axis(axis: plt.Axes, offset: float) -> None:
+    axis.spines["right"].set_position(("axes", offset))
+    axis.set_frame_on(True)
+    axis.patch.set_visible(False)
+
+
+def _attach_series_axis(
+    base_axis: plt.Axes,
+    series_index: int,
+    label: str,
+    color: str,
+    marker: str,
+    points: List[tuple[float, float]],
+) -> tuple[plt.Axes, object | None]:
+    if series_index == 0:
+        axis = base_axis
+    else:
+        axis = base_axis.twinx()
+        _offset_twin_axis(axis, 1.0 + 0.15 * (series_index - 1))
+
+    if points:
+        x_vals, y_vals = zip(*points)
+        (line,) = axis.plot(x_vals, y_vals, marker=marker, color=color, label=label)
+        axis.set_ylabel(label, color=color)
+        axis.tick_params(axis="y", colors=color)
+        return axis, line
+
+    axis.set_ylabel(f"{label} (n/a)", color=color)
+    axis.tick_params(axis="y", colors=color)
+    axis.set_yticks([])
+    return axis, None
+
+
 def _sort_osr_rows(rows: List[OsrSweepSummaryRow]) -> List[OsrSweepSummaryRow]:
     return sorted(
         rows,
@@ -1752,90 +1798,41 @@ def _render_osr_standard_deviation_plot(
         _render_placeholder_plot("No OSR sweep metrics available", output_path)
         return
 
-    fig, ax_drain = plt.subplots(figsize=(10, 6))
-    ax_blue = ax_drain.twinx()
-    ax_green = ax_drain.twinx()
-    ax_green.spines["right"].set_position(("axes", 1.15))
-    ax_green.set_frame_on(True)
-    ax_green.patch.set_visible(False)
+    fig, base_axis = plt.subplots(figsize=(10, 6))
 
-    handles = []
-    labels = []
+    series = [
+        ("Drain blue σ", "#4C72B0", "o", drain_blue_points),
+        ("Drain green σ", "#2E8B57", "d", drain_green_points),
+        ("Blue σ", "#55A868", "s", blue_points),
+        ("Green σ", "#C44E52", "^", green_points),
+    ]
 
-    if drain_blue_points:
-        x_vals, y_vals = zip(*drain_blue_points)
-        (line_drain_blue,) = ax_drain.plot(
-            x_vals,
-            y_vals,
-            marker="o",
-            color="#4C72B0",
-            label="Drain blue σ",
+    handles: List[object] = []
+    labels: List[str] = []
+    axes_for_scale: List[plt.Axes] = []
+
+    for index, (label, color, marker, points) in enumerate(series):
+        axis, handle = _attach_series_axis(
+            base_axis,
+            index,
+            label,
+            color,
+            marker,
+            points,
         )
-        handles.append(line_drain_blue)
-        labels.append("Drain blue σ")
-
-    if drain_green_points:
-        x_vals, y_vals = zip(*drain_green_points)
-        (line_drain_green,) = ax_drain.plot(
-            x_vals,
-            y_vals,
-            marker="d",
-            color="#2E8B57",
-            label="Drain green σ",
-        )
-        handles.append(line_drain_green)
-        labels.append("Drain green σ")
-
-    if drain_blue_points or drain_green_points:
-        ax_drain.set_ylabel("Drain σ")
-    else:
-        ax_drain.set_ylabel("Drain σ (n/a)")
-        ax_drain.set_yticks([])
-
-    if blue_points:
-        x_vals, y_vals = zip(*blue_points)
-        (line_blue,) = ax_blue.plot(
-            x_vals,
-            y_vals,
-            marker="s",
-            color="#55A868",
-            label="Blue σ",
-        )
-        handles.append(line_blue)
-        labels.append("Blue σ")
-        ax_blue.set_ylabel("Blue σ", color="#55A868")
-        ax_blue.tick_params(axis="y", colors="#55A868")
-    else:
-        ax_blue.set_ylabel("Blue σ (n/a)", color="#55A868")
-        ax_blue.tick_params(axis="y", colors="#55A868")
-        ax_blue.set_yticks([])
-
-    if green_points:
-        x_vals, y_vals = zip(*green_points)
-        (line_green,) = ax_green.plot(
-            x_vals,
-            y_vals,
-            marker="^",
-            color="#C44E52",
-            label="Green σ",
-        )
-        handles.append(line_green)
-        labels.append("Green σ")
-        ax_green.set_ylabel("Green σ", color="#C44E52")
-        ax_green.tick_params(axis="y", colors="#C44E52")
-    else:
-        ax_green.set_ylabel("Green σ (n/a)", color="#C44E52")
-        ax_green.tick_params(axis="y", colors="#C44E52")
-        ax_green.set_yticks([])
+        axes_for_scale.append(axis)
+        if handle is not None:
+            handles.append(handle)
+            labels.append(label)
 
     x_axis = [row.osr_value for row in sorted_rows if row.osr_value is not None]
-    ax_drain.set_xlabel("OSR setting")
-    _apply_osr_log_axis([ax_drain, ax_blue, ax_green], x_axis)
-    ax_drain.set_title("OSR sweep standard deviation")
-    ax_drain.grid(axis="both", linestyle="--", alpha=0.4)
+    base_axis.set_xlabel("OSR setting")
+    _apply_osr_log_axis(axes_for_scale, x_axis)
+    base_axis.set_title("OSR sweep standard deviation")
+    base_axis.grid(axis="both", linestyle="--", alpha=0.4)
 
     if handles:
-        ax_drain.legend(handles, labels, loc="upper right")
+        base_axis.legend(handles, labels, loc="upper right")
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -2124,24 +2121,71 @@ def _render_pot_sweep_plot(
         return
 
     sorted_rows = sorted(rows, key=lambda row: row.wiper_code)
-    wipers = [row.wiper_code for row in sorted_rows]
-    blue_codes = [row.blue_max_code for row in sorted_rows]
-    green_codes = [row.green_max_code for row in sorted_rows]
+    blue_points = [(row.wiper_code, row.blue_max_code) for row in sorted_rows]
+    green_points = [(row.wiper_code, row.green_max_code) for row in sorted_rows]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(wipers, blue_codes, marker="o", color="#4C72B0", label="Blue max")
-    ax.plot(wipers, green_codes, marker="s", color="#55A868", label="Green max")
-    ax.axhline(
-        saturation_threshold,
-        color="#C44E52",
-        linestyle="--",
-        label="Saturation threshold",
+    fig, base_axis = plt.subplots(figsize=(10, 6))
+
+    handles: List[object] = []
+    labels: List[str] = []
+
+    axis_blue, handle_blue = _attach_series_axis(
+        base_axis,
+        0,
+        "Blue max",
+        "#4C72B0",
+        "o",
+        blue_points,
     )
-    ax.set_xlabel("Wiper code")
-    ax.set_ylabel("ADC code")
-    ax.set_title("Potentiometer sweep LED headroom")
-    ax.grid(axis="both", linestyle="--", alpha=0.4)
-    ax.legend()
+    if handle_blue is not None:
+        handles.append(handle_blue)
+        labels.append("Blue max")
+
+    axis_green, handle_green = _attach_series_axis(
+        base_axis,
+        1,
+        "Green max",
+        "#55A868",
+        "s",
+        green_points,
+    )
+    if handle_green is not None:
+        handles.append(handle_green)
+        labels.append("Green max")
+
+    threshold_line = None
+    for axis in [axis_blue, axis_green]:
+        if axis.lines:
+            threshold_line = axis.axhline(
+                saturation_threshold,
+                color="#C44E52",
+                linestyle="--",
+                label="Saturation threshold",
+            )
+            break
+    if threshold_line is None:
+        threshold_line = base_axis.axhline(
+            saturation_threshold,
+            color="#C44E52",
+            linestyle="--",
+            label="Saturation threshold",
+        )
+    handles.append(threshold_line)
+    labels.append("Saturation threshold")
+
+    other_axis = axis_green if threshold_line.axes is axis_blue else axis_blue
+    if other_axis is not threshold_line.axes:
+        other_axis.axhline(
+            saturation_threshold,
+            color="#C44E52",
+            linestyle="--",
+        )
+
+    base_axis.set_xlabel("Wiper code")
+    base_axis.set_title("Potentiometer sweep LED headroom")
+    base_axis.grid(axis="both", linestyle="--", alpha=0.4)
+    if handles:
+        base_axis.legend(handles, labels, loc="best")
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -2179,73 +2223,88 @@ def _render_dwell_variance_plot(
         _render_placeholder_plot("No dwell sweep metrics available", output_path)
         return
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, base_axis = plt.subplots(figsize=(10, 6))
 
-    handles = []
-    labels = []
+    series = [
+        ("Drain blue σ", "#4C72B0", "o", drain_blue_points),
+        ("Drain green σ", "#2E8B57", "d", drain_green_points),
+        ("Blue σ", "#55A868", "s", blue_points),
+        ("Green σ", "#C44E52", "^", green_points),
+    ]
 
-    if drain_blue_points:
-        x_vals, y_vals = zip(*drain_blue_points)
-        (line_drain_blue,) = ax.plot(
-            x_vals, y_vals, marker="o", color="#4C72B0", label="Drain blue σ"
+    handles: List[object] = []
+    labels: List[str] = []
+    axis_lookup: Dict[str, plt.Axes] = {}
+
+    for index, (label, color, marker, points) in enumerate(series):
+        axis, handle = _attach_series_axis(
+            base_axis,
+            index,
+            label,
+            color,
+            marker,
+            points,
         )
-        handles.append(line_drain_blue)
-        labels.append("Drain blue σ")
+        axis_lookup[label] = axis
+        if handle is not None:
+            handles.append(handle)
+            labels.append(label)
 
-    if drain_green_points:
-        x_vals, y_vals = zip(*drain_green_points)
-        (line_drain_green,) = ax.plot(
-            x_vals, y_vals, marker="d", color="#2E8B57", label="Drain green σ"
-        )
-        handles.append(line_drain_green)
-        labels.append("Drain green σ")
+    threshold_axis = None
+    for label in [item[0] for item in series]:
+        candidate = axis_lookup.get(label)
+        if candidate and candidate.lines:
+            threshold_axis = candidate
+            break
+    if threshold_axis is None:
+        threshold_axis = base_axis
 
-    if blue_points:
-        x_vals, y_vals = zip(*blue_points)
-        (line_blue,) = ax.plot(
-            x_vals, y_vals, marker="s", color="#55A868", label="Blue σ"
-        )
-        handles.append(line_blue)
-        labels.append("Blue σ")
-
-    if green_points:
-        x_vals, y_vals = zip(*green_points)
-        (line_green,) = ax.plot(
-            x_vals, y_vals, marker="^", color="#C44E52", label="Green σ"
-        )
-        handles.append(line_green)
-        labels.append("Green σ")
-
-    ax.axhline(
+    threshold_line = threshold_axis.axhline(
         threshold,
         color="#8172B3",
         linestyle="--",
         linewidth=1.0,
         label=f"σ threshold ({threshold:.2f})",
     )
+    handles.append(threshold_line)
+    labels.append(f"σ threshold ({threshold:.2f})")
 
     warning_rows = [
         row for row in metric_rows if (row.warning_mask & DWELL_SATURATION_MASK) != 0
     ]
-    warning_points = [
-        (row.dwell_us, _max_std(row))
-        for row in warning_rows
-        if _max_std(row) is not None
-    ]
-    if warning_points:
-        x_vals, y_vals = zip(*warning_points)
-        scatter = ax.scatter(
-            x_vals, y_vals, color="#DD8452", marker="x", label="saturation warning"
+    warnings_by_label: Dict[str, List[tuple[float, float]]] = {}
+    for row in warning_rows:
+        labelled_value = _max_std_with_label(row)
+        if labelled_value is None:
+            continue
+        warning_label, warning_value = labelled_value
+        warnings_by_label.setdefault(warning_label, []).append(
+            (row.dwell_us, warning_value)
         )
-        handles.append(scatter)
-        labels.append("saturation warning")
 
-    ax.set_xlabel("Dwell (µs)")
-    ax.set_ylabel("Standard deviation")
-    ax.set_title("Dwell sweep variance by channel")
-    ax.grid(axis="both", linestyle="--", alpha=0.4)
+    warning_handle_added = False
+    for label, points in warnings_by_label.items():
+        axis = axis_lookup.get(label)
+        if axis is None or not points:
+            continue
+        x_vals, y_vals = zip(*points)
+        scatter = axis.scatter(
+            x_vals,
+            y_vals,
+            color="#DD8452",
+            marker="x",
+            label="saturation warning",
+        )
+        if not warning_handle_added:
+            handles.append(scatter)
+            labels.append("saturation warning")
+            warning_handle_added = True
+
+    base_axis.set_xlabel("Dwell (µs)")
+    base_axis.set_title("Dwell sweep variance by channel")
+    base_axis.grid(axis="both", linestyle="--", alpha=0.4)
     if handles:
-        ax.legend(handles, labels, loc="best")
+        base_axis.legend(handles, labels, loc="best")
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
