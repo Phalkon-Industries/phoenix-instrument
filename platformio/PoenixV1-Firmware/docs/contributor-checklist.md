@@ -48,4 +48,9 @@ Use this checklist whenever you begin work in this repository. It captures the n
 - Only modify test expectations when the documented requirements change, and explain why in your change notes.
 
 
+## 10. Exercise the BLE regression suite
+- Run the mock BLE workflows through pytest: `conda run -n phoenix-python pytest --mock-ble`.
+- Review `docs/mock_ble_testing.md` for option details, summary interpretation, and guidance on overriding the runner for simulation.
+
+
 Keep this checklist alongside `docs/git-workflow.md`, `docs/style-guide.md`, and `docs/tdd-workflow.md` whenever you begin a new task. Together they cover process, style, testing discipline, and environment requirements.

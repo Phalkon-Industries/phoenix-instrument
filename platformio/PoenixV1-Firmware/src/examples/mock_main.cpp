@@ -20,9 +20,7 @@ void setup(void)
 {
     // Step 1: Initialise the TinyUSB serial interface before interacting with the controller.
     Serial.begin(115200);
-    while (!Serial) {
-        delay(10);
-    }
+        delay(100);
 
     // Step 2: Reset the mock controller so BLE commands surface deterministic payloads.
     if (mock_app_controller_initialize() != MOCK_APP_STATUS_OK) {
