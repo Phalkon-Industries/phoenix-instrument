@@ -716,6 +716,9 @@ def create_report(
         plot_path = output_dir / f"{slug}.png"
         _render_channel_plot(channel_rows, plot_path)
         plot_paths["channel_map"] = [plot_path]
+        csv_path = output_dir / f"{slug}_samples.csv"
+        _write_channel_map_csv(channel_rows, csv_path)
+        csv_paths["channel_map"] = [csv_path]
 
     if "adc_speed" in summaries:
         adc_rows = [
@@ -1835,6 +1838,33 @@ def _write_pot_sweep_csv(rows: List[PotSweepSummaryRow], output_path: Path) -> N
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_channel_map_csv(rows: List[SummaryRow], output_path: Path) -> None:
+    header = (
+        "state,sample_count,mean_a,std_a,slope_a,min_a,max_a,"
+        "mean_b,std_b,slope_b,min_b,max_b,channel_alignment,warning_label"
+    )
+    lines = [header]
+    for row in rows:
+        values = [
+            row.label,
+            str(row.sample_count),
+            _format_optional_float(row.mean_channel_a),
+            _format_optional_float(row.std_channel_a),
+            _format_optional_float(row.slope_channel_a, digits=SLOPE_PRECISION),
+            _format_optional_float(row.min_channel_a),
+            _format_optional_float(row.max_channel_a),
+            _format_optional_float(row.mean_channel_b),
+            _format_optional_float(row.std_channel_b),
+            _format_optional_float(row.slope_channel_b, digits=SLOPE_PRECISION),
+            _format_optional_float(row.min_channel_b),
+            _format_optional_float(row.max_channel_b),
+            row.channel_alignment or "--",
+            row.warning_label or "--",
+        ]
+        lines.append(",".join(values))
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _write_dwell_sweep_csv(rows: List[DwellSweepSummaryRow], output_path: Path) -> None:
     header = (
         "dwell_us,sweeps_completed,drain_mean,drain_std,drain_slope,"
@@ -2562,20 +2592,16 @@ def _render_pot_sweep_section(
     lines.append(f"_Warnings_: {warning_label}")
     lines.append("")
 
-    lines.append("<details>")
-    lines.append("<summary>Full potentiometer sweep results</summary>")
-    lines.append("")
     table_lines = _build_pot_sweep_table(rows)
-    if table_lines:
-        lines.extend(table_lines)
-    else:
-        lines.append("_(no pot sweep metrics)_")
-    lines.append("")
     if csv_paths:
         csv_link = csv_paths[0].as_posix()
         lines.append(f"[Download CSV]({csv_link})")
         lines.append("")
-    lines.append("</details>")
+        lines.append("_Full sweep results available via CSV download._")
+    elif table_lines:
+        lines.extend(table_lines)
+    else:
+        lines.append("_(no pot sweep metrics)_")
     lines.append("")
 
     if plot_paths:
@@ -2696,6 +2722,11 @@ def _render_markdown_report(
                 lines.append(section.header)
                 lines.extend(section.rows)
                 lines.append("```")
+            csv_entries = csv_paths.get(section.scenario, [])
+            if csv_entries:
+                for index, csv_entry in enumerate(csv_entries, start=1):
+                    suffix = f" #{index}" if len(csv_entries) > 1 else ""
+                    lines.append(f"[Download CSV{suffix}]({csv_entry.as_posix()})")
             lines.append("")
             if section.scenario in plot_paths:
                 for index, path in enumerate(plot_paths[section.scenario], start=1):
@@ -2748,24 +2779,5 @@ def _render_markdown_report(
                 f"[JSON]({entry.json.as_posix()})",
             ]
             lines.append("Artifacts: " + " · ".join(artifact_links))
-            lines.append("")
-            lines.append("<details>")
-            lines.append(f"<summary>Burst {burst.index} samples</summary>")
-            lines.append("")
-            lines.append(
-                "| Elapsed Blue (us) | Code Blue | Elapsed Green (us) | Code Green |"
-            )
-            lines.append("| --- | --- | --- | --- |")
-            for sample in burst.combined_samples:
-                lines.append(
-                    "| {blue_elapsed} | {blue_code} | {green_elapsed} | {green_code} |".format(
-                        blue_elapsed=_format_drift_optional(sample.blue_elapsed_us),
-                        blue_code=_format_drift_optional(sample.blue_code),
-                        green_elapsed=_format_drift_optional(sample.green_elapsed_us),
-                        green_code=_format_drift_optional(sample.green_code),
-                    )
-                )
-            lines.append("")
-            lines.append("</details>")
             lines.append("")
     return "\n".join(lines)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from typing import Dict, List
@@ -311,6 +312,65 @@ class ColdSweepSerial(DummySerial):
         ]
 
 
+class MultiCommandSerial(DummySerial):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        header = (_channel_map_header() + "\n").encode("utf-8")
+        first_row = (
+            _channel_map_row(
+                "Blue",
+                8,
+                120.0,
+                1.5,
+                0.000321,
+                118.0,
+                124.0,
+                322.0,
+                2.5,
+                -0.000210,
+                315.0,
+                329.0,
+                "A=OK",
+                "--",
+            )
+            + "\n"
+        ).encode("utf-8")
+        second_row = (
+            _channel_map_row(
+                "Green",
+                9,
+                121.0,
+                1.6,
+                0.000111,
+                119.0,
+                125.0,
+                323.0,
+                2.6,
+                -0.000199,
+                316.0,
+                330.0,
+                "A=OK",
+                "--",
+            )
+            + "\n"
+        ).encode("utf-8")
+        self._line_queue = [
+            b"# phoenix benchmark ready\n",
+            b"# summary_table\n",
+            header,
+            first_row,
+            b"\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+            b"# summary_table\n",
+            header,
+            second_row,
+            b"\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+        ]
+
+
 def test_cli_dry_run_emits_preview(tmp_path: Path, capsys) -> None:
     plan = tmp_path / "plan.json"
     plan.write_text(
@@ -330,6 +390,7 @@ def test_cli_dry_run_emits_preview(tmp_path: Path, capsys) -> None:
     stdout = capsys.readouterr().out
     assert "# phoenix benchmark command plan" in stdout
     assert "channel_map" in stdout
+    assert "# progress" not in stdout
 
 
 def test_cli_requires_port_when_not_dry_run(tmp_path: Path) -> None:
@@ -402,6 +463,15 @@ def test_cli_streams_plan_to_serial_port(
     stdout = capsys.readouterr().out
     assert "# phoenix benchmark ready" in stdout
     assert "# benchmark_complete" in stdout
+    progress_lines = [
+        line for line in stdout.splitlines() if line.startswith("# progress")
+    ]
+    assert len(progress_lines) == 1
+    progress_line = progress_lines[0]
+    assert "step=1" in progress_line
+    assert "total=1" in progress_line
+    assert "command=channel_map" in progress_line
+    assert re.search(r"started_at=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", progress_line)
 
     instance = DummySerial.last_instance
     assert instance is not None
@@ -418,6 +488,76 @@ def test_cli_streams_plan_to_serial_port(
     recorded_lines = captured["lines"]
     assert isinstance(recorded_lines, list)
     assert "# summary_table" in recorded_lines
+    assert not any(line.startswith("# progress") for line in recorded_lines)
+
+
+def test_cli_emits_progress_for_multiple_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {"command": "channel_map", "parameters": {"sweeps": 5}},
+                    {"command": "channel_map", "parameters": {"sweeps": 3}},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", MultiCommandSerial)
+
+    captured: dict[str, object] = {}
+
+    class DummyArtifacts:
+        def __init__(self, directory: Path) -> None:
+            self.output_dir = directory
+            self.transcript_path = directory / "transcript.txt"
+            self.summary_json_path = directory / "summary.json"
+            self.plot_path = directory / "channel_map.png"
+            self.report_markdown_path = directory / "report.md"
+            self.scenarios = ["channel_map"]
+            self.plot_paths = {"channel_map": [self.plot_path]}
+            self.csv_paths = {}
+            self.pot_sweep_recommendations = {}
+            self.pot_sweep_warning = None
+            self.dwell_sweep_recommendations = {}
+            self.dwell_sweep_warning = None
+
+    def fake_create_report(lines, plan_path, output_dir, drift_captures=None):  # type: ignore[no-untyped-def]
+        captured["lines"] = list(lines)
+        captured["plan"] = plan_path
+        captured["output"] = output_dir
+        captured["drift_captures"] = drift_captures
+        return DummyArtifacts(output_dir)
+
+    monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
+
+    exit_code = main([str(plan), "--port", "COM5"])
+    assert exit_code == 0
+
+    stdout = capsys.readouterr().out
+    progress_lines = [
+        line for line in stdout.splitlines() if line.startswith("# progress")
+    ]
+    assert len(progress_lines) == 2
+    assert progress_lines[0].startswith("# progress,step=1,total=2,command=channel_map")
+    assert progress_lines[1].startswith("# progress,step=2,total=2,command=channel_map")
+    for line in progress_lines:
+        assert re.search(r"started_at=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", line)
+
+    recorded_lines = captured["lines"]
+    assert isinstance(recorded_lines, list)
+    assert not any(line.startswith("# progress") for line in recorded_lines)
+
+    instance = MultiCommandSerial.last_instance
+    assert instance is not None
+    assert len(instance.written) >= 3
+    assert instance.written[0] == b"\n"
+    assert b'"sweeps":5' in instance.written[1]
+    assert b'"sweeps":3' in instance.written[2]
 
 
 def test_cli_streams_cold_sweep_command(

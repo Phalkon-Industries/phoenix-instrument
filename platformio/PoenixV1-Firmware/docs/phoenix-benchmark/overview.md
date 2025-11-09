@@ -43,8 +43,13 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
    conda run -n phoenix-python python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/combined_benchmarks.json --port COM6 --ready-timeout 10 --command-timeout 240
    ```
    The CLI waits for the firmware `# ready` banner, streams each command, prints device output to stdout, and stores every line in a transcript buffer. Provide `--output <path>` to capture artifacts inside a preferred workspace location.
+   Progress updates appear as host-side `# progress,step=<n>,total=<m>,command=<name>,started_at=<timestamp>` lines so operators can track scenario execution without polluting the stored transcript.
+   When invoking the CLI through `conda run`, add `--live-stream` so Conda forwards stdout as it arrives; otherwise, Conda buffers the output until the process exits. Running `conda activate phoenix-python` and calling `python ...` directly achieves the same live behaviour without the extra flag.
+   ```powershell
+   conda run --live-stream -n phoenix-python python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/combined_benchmarks.json --port COM6 --ready-timeout 10 --command-timeout 240
+   ```
    The firmware also accepts manual overrides directly from a serial terminal using the key-value syntax: `channel_map sweeps=25` or `adc_speed duration_ms=750 enable_irq=false`. Cold sweeps must be issued immediately after boot to honour the cold-start contract; the CLI therefore sends `cold_sweep` as the first command in combined plans.
-4. **Automated Report** – After each scenario signals `# benchmark_complete`, the CLI writes a report bundle (`transcript_<scenarios>.txt`, `summary_<scenarios>.json`, `report.md`, plus scenario-specific plots and CSVs) to the chosen output folder (default: `~/Downloads/phoenix-benchmark/<timestamp>`). Markdown tables now summarize every scenario, drift captures include a warning/context table with per-burst `<details>` blocks, dwell-sweep charts map dwell vs variance/runtime, and OSR plots render on a log₂ x-axis with diagonally angled tick labels to reduce overlap.
+4. **Automated Report** – After each scenario signals `# benchmark_complete`, the CLI writes a report bundle (`transcript_<scenarios>.txt`, `summary_<scenarios>.json`, `report.md`, plus scenario-specific plots and CSVs) to the chosen output folder (default: `~/Downloads/phoenix-benchmark/<timestamp>`). Markdown tables now summarize every scenario, drift captures include a warning/context table with per-burst CSV/JSON download links, dwell-sweep charts map dwell vs variance/runtime, and OSR plots render on a log₂ x-axis with diagonally angled tick labels to reduce overlap.
 5. **Extended Analysis** – Use the JSON or transcript artifacts in separate notebooks or scripts as needed; this repository remains focused on the source code and first-line automation flow.
 
 ## Output Structure
@@ -53,7 +58,7 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
 - ADC-speed summary tables contain one row per enabled mode (blocking and/or IRQ) with samples-per-second, average loop timing, error counts, and free-form notes that highlight warnings such as ADC error spikes.
 - OSR sweep summary tables list every oversampling preset with drain/LED statistics and elapsed sweep time. The CLI renders paired plots comparing drain/LED standard deviation across presets and sweep duration vs OSR on a log₂ axis.
 - Dwell sweep summary tables include dwell duration, per-channel variance, sweep timing, and warning masks that highlight saturation or ADC recovery events. Companion plots trace dwell duration against variance and runtime to guide dwell selection.
-- Drift capture sections list each burst with start/end bounds, wiper code, OSR, sample counts, and decoded warning labels, followed by collapsible tables that align blue/green samples and link CSV/JSON artifacts alongside annotated settle plots.
+- Drift capture sections list each burst with start/end bounds, wiper code, OSR, sample counts, and decoded warning labels, and link CSV/JSON artifacts alongside annotated settle plots so the raw samples stay downloadable without bloating the Markdown.
 - Cold sweep sections highlight drain/LED statistics, list captured sweep counts and timestamp metadata, enumerate saturated channels, embed a raw-sample CSV link, and include a per-channel sample timeline (one y-axis per sensor) so engineers can confirm sensors converge without clipping.
 
 ## Revision History

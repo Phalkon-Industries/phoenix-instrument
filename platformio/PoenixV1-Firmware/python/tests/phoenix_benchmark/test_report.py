@@ -352,6 +352,12 @@ def test_create_report_generates_artifacts(tmp_path: Path) -> None:
         in report_text
     )
     assert "Blue" in report_text
+    assert "channel_map" in artifacts.csv_paths
+    channel_map_csvs = artifacts.csv_paths["channel_map"]
+    assert len(channel_map_csvs) == 1
+    assert channel_map_csvs[0].exists()
+    assert "[Download CSV](channel_map_samples.csv)" in report_text
+    assert "<details>" not in report_text
 
 
 def test_create_report_handles_cold_sweep(tmp_path: Path) -> None:
@@ -599,9 +605,11 @@ def test_create_report_handles_pot_sweep(tmp_path: Path) -> None:
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "| LED | Recommended Wiper |" in report_text
     assert "| Blue | 0x10 |" in report_text
-    assert "<details>" in report_text
-    assert "</details>" in report_text
-    assert "Wiper | Blue max" in report_text
+    pot_csv_name = csv_files[0].name
+    assert f"[Download CSV]({pot_csv_name})" in report_text
+    assert "<details>" not in report_text
+    assert "Full potentiometer sweep results" not in report_text
+    assert "Wiper | Blue max" not in report_text
 
 
 def _dwell_sweep_summary_lines() -> List[str]:
@@ -700,6 +708,7 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
         in report_text
     )
     assert "![dwell_sweep plot #2]" in report_text
+    assert "<details>" not in report_text
 
 
 def _drift_capture_lines() -> List[str]:
@@ -756,11 +765,8 @@ def test_create_report_handles_drift_capture(tmp_path: Path) -> None:
     assert "### Burst 1" in report_text
     artifact_line = f"Artifacts: [CSV]({slug}.csv) · [JSON]({slug}.json)"
     assert artifact_line in report_text
-    assert "<details>" in report_text
-    assert "<summary>Burst 1 samples</summary>" in report_text
-    assert "</details>" in report_text
-    assert "Elapsed Blue" in report_text
-    assert "buffer_overflow" in report_text
     plot_token = f"![drift_capture plot]({slug}.png)"
     assert plot_token in report_text
-    assert report_text.index(plot_token) < report_text.index("<details>")
+    assert "<details>" not in report_text
+    assert "Elapsed Blue" not in report_text
+    assert "buffer_overflow" in report_text

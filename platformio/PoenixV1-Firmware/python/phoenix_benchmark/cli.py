@@ -169,12 +169,19 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     output_dir = _resolve_output_dir(args.output)
     transcript: List[str] = []
+    total_steps = len(commands)
 
     try:
         with serial.Serial(args.port, 115200, timeout=1.0) as connection:
             _request_ready_prompt(connection)
             _await_ready_prompt(connection, transcript, ready_timeout)
-            _execute_plan(connection, commands, transcript, command_timeout)
+            _execute_plan(
+                connection,
+                commands,
+                transcript,
+                command_timeout,
+                total_steps,
+            )
     except serial.SerialException as exc:  # pragma: no cover - sanity guard
         sys.stderr.write(f"# ERROR: {exc}\n")
         return 1
@@ -255,8 +262,13 @@ def _execute_plan(
     commands: Iterable[BenchmarkCommand],
     transcript: List[str],
     command_timeout: float,
+    total_steps: int,
 ) -> None:
-    for command in commands:
+    if total_steps <= 0:
+        return
+
+    for index, command in enumerate(commands, start=1):
+        _emit_progress(index, total_steps, command)
         payload = command.to_serial_line().encode("utf-8")
         connection.write(payload)
         connection.flush()
@@ -296,6 +308,15 @@ def _request_ready_prompt(connection: serial.Serial) -> None:
     # the host attaches after an earlier session.
     connection.write(b"\n")
     connection.flush()
+
+
+def _emit_progress(step: int, total: int, command: BenchmarkCommand) -> None:
+    timestamp = _dt.datetime.now(tz=_dt.timezone.utc).replace(microsecond=0)
+    iso_timestamp = timestamp.strftime("%Y-%m-%dT%H:%M:%SZ")
+    sys.stdout.write(
+        f"# progress,step={step},total={total},command={command.name},started_at={iso_timestamp}\n"
+    )
+    sys.stdout.flush()
 
 
 def _resolve_output_dir(requested: Path | None) -> Path:
