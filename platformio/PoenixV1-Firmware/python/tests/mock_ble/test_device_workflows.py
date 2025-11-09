@@ -1,7 +1,8 @@
 """End-to-end BLE workflow tests for the Phoenix mock instrument."""
 
 import json
-from typing import Any, Callable, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 import pytest
 
@@ -27,6 +28,197 @@ _UPDATED_SETTINGS_REQUEST: JsonDict = {
 }
 
 _UPDATED_SETTINGS_RESPONSE: JsonDict = dict(_UPDATED_SETTINGS_REQUEST)
+
+_REFERENCE_EXPECTED: JsonDict = {
+    "status": "ok",
+    "dark_counts": 195000,
+    "signal_counts": 210000,
+    "absorbance": 0.15,
+    "temperature_c": 25.0,
+    "salinity_ppt": 35.0,
+}
+
+_SAMPLE_EXPECTED: JsonDict = {
+    "status": "ok",
+    "dark_counts": 196250,
+    "signal_counts": 224500,
+    "absorbance": 0.2825,
+    "temperature_c": 25.5,
+    "salinity_ppt": 35.2,
+    "ph_value": 7.42,
+}
+
+_BATTERY_EXPECTED: JsonDict = {
+    "status": "ok",
+    "percentage": 78,
+    "voltage_v": 3.92,
+    "is_low": False,
+}
+
+_ALERT_EXPECTED: JsonDict = {
+    "status": "ok",
+    "alert_code": "0004",
+    "severity": 1,
+    "message": "Mock sensor fault detected.",
+}
+
+
+@dataclass(frozen=True)
+class CommandCall:
+    command: str
+    expected_subset: JsonDict
+    request_override: Optional[JsonDict] = None
+    response_timeout: Optional[float] = None
+
+
+@dataclass(frozen=True)
+class CommandScenario:
+    name: str
+    command: str
+    expected_subset: JsonDict
+    request_override: Optional[JsonDict] = None
+    response_timeout: Optional[float] = None
+    preparation: Sequence[CommandCall] = ()
+
+
+_COMMAND_SCENARIOS: Tuple[CommandScenario, ...] = (
+    CommandScenario(
+        name="settings_update_defaults",
+        command="settings_update",
+        request_override=_DEFAULT_SETTINGS_REQUEST,
+        expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+    ),
+    CommandScenario(
+        name="settings_get_defaults",
+        command="settings_get",
+        expected_subset={"status": "ok", "snapshot": _DEFAULT_SETTINGS_RESPONSE},
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_DEFAULT_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+            ),
+        ),
+    ),
+    CommandScenario(
+        name="reference_start",
+        command="reference_start",
+        expected_subset=_REFERENCE_EXPECTED,
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_DEFAULT_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+            ),
+        ),
+    ),
+    CommandScenario(
+        name="sample_start_after_reference",
+        command="sample_start",
+        expected_subset=_SAMPLE_EXPECTED,
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_DEFAULT_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+            ),
+            CommandCall(
+                command="reference_start",
+                expected_subset=_REFERENCE_EXPECTED,
+            ),
+        ),
+    ),
+    CommandScenario(
+        name="settings_update_alternate",
+        command="settings_update",
+        request_override=_UPDATED_SETTINGS_REQUEST,
+        expected_subset={"status": "ok", "applied": _UPDATED_SETTINGS_RESPONSE},
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_DEFAULT_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+            ),
+        ),
+    ),
+    CommandScenario(
+        name="settings_get_alternate",
+        command="settings_get",
+        expected_subset={"status": "ok", "snapshot": _UPDATED_SETTINGS_RESPONSE},
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_DEFAULT_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+            ),
+            CommandCall(
+                command="settings_update",
+                request_override=_UPDATED_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _UPDATED_SETTINGS_RESPONSE},
+            ),
+        ),
+    ),
+    CommandScenario(
+        name="restore_default_settings",
+        command="settings_update",
+        request_override=_DEFAULT_SETTINGS_REQUEST,
+        expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_UPDATED_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _UPDATED_SETTINGS_RESPONSE},
+            ),
+        ),
+    ),
+    CommandScenario(
+        name="battery_status",
+        command="battery_status",
+        expected_subset=_BATTERY_EXPECTED,
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_DEFAULT_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+            ),
+        ),
+    ),
+    CommandScenario(
+        name="alert_inject",
+        command="alert_inject",
+        expected_subset=_ALERT_EXPECTED,
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_DEFAULT_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+            ),
+        ),
+    ),
+    CommandScenario(
+        name="session_teardown",
+        command="session_teardown",
+        expected_subset={"status": "ok"},
+        response_timeout=10.0,
+        preparation=(
+            CommandCall(
+                command="settings_update",
+                request_override=_DEFAULT_SETTINGS_REQUEST,
+                expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
+            ),
+            CommandCall(
+                command="reference_start",
+                expected_subset=_REFERENCE_EXPECTED,
+            ),
+            CommandCall(
+                command="sample_start",
+                expected_subset=_SAMPLE_EXPECTED,
+            ),
+        ),
+    ),
+)
+
+_SCENARIO_IDS = [scenario.name for scenario in _COMMAND_SCENARIOS]
 
 
 def _assert_response_subset(expected: JsonDict, actual: JsonDict, *, path: str = "parameters") -> None:
@@ -111,102 +303,26 @@ def _ble_exchange(ble_transport, ble_device_config: JsonDict) -> Callable[..., J
 
 
 @pytest.mark.mock_ble
-def test_mock_ble_full_workflow(ble_exchange):
-    # Step 1: Normalize settings to the known default profile.
-    default_update = ble_exchange(
-        command="settings_update",
-        request_override=_DEFAULT_SETTINGS_REQUEST,
-        expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
-    )
-    assert default_update["parameters"]["status"] == "ok"
+@pytest.mark.parametrize("scenario", _COMMAND_SCENARIOS, ids=_SCENARIO_IDS)
+def test_mock_ble_command_scenarios(ble_exchange, scenario: CommandScenario) -> None:
+    # Step 1: Execute any preparation commands so the controller enters the required state.
+    for preparation in scenario.preparation:
+        ble_exchange(
+            command=preparation.command,
+            expected_subset=preparation.expected_subset,
+            request_override=preparation.request_override,
+            response_timeout=preparation.response_timeout,
+        )
 
-    # Step 2: Confirm the device reports the default settings snapshot.
-    snapshot_default = ble_exchange(
-        command="settings_get",
-        expected_subset={"status": "ok", "snapshot": _DEFAULT_SETTINGS_RESPONSE},
+    # Step 2: Run the target command and verify its deterministic payload.
+    response = ble_exchange(
+        command=scenario.command,
+        expected_subset=scenario.expected_subset,
+        request_override=scenario.request_override,
+        response_timeout=scenario.response_timeout,
     )
-    assert snapshot_default["parameters"]["status"] == "ok"
 
-    # Step 3: Capture a reference bundle for repeatable sampling.
-    reference = ble_exchange(
-        command="reference_start",
-        expected_subset={
-            "status": "ok",
-            "dark_counts": 195000,
-            "signal_counts": 210000,
-            "absorbance": 0.15,
-            "temperature_c": 25.0,
-            "salinity_ppt": 35.0,
-        },
-    )
-    assert reference["parameters"]["status"] == "ok"
-
-    # Step 4: Take a sample measurement and validate deterministic payload fields.
-    sample = ble_exchange(
-        command="sample_start",
-        expected_subset={
-            "status": "ok",
-            "dark_counts": 196250,
-            "signal_counts": 224500,
-            "absorbance": 0.2825,
-            "temperature_c": 25.5,
-            "salinity_ppt": 35.2,
-            "ph_value": 7.42,
-        },
-    )
-    assert sample["parameters"]["status"] == "ok"
-
-    # Step 5: Apply an alternate settings profile and confirm it echoes back.
-    applied = ble_exchange(
-        command="settings_update",
-        request_override=_UPDATED_SETTINGS_REQUEST,
-        expected_subset={"status": "ok", "applied": _UPDATED_SETTINGS_RESPONSE},
-    )
-    assert applied["parameters"]["status"] == "ok"
-
-    # Step 6: Verify the alternate profile is now active.
-    snapshot_updated = ble_exchange(
-        command="settings_get",
-        expected_subset={"status": "ok", "snapshot": _UPDATED_SETTINGS_RESPONSE},
-    )
-    assert snapshot_updated["parameters"]["status"] == "ok"
-
-    # Step 7: Inspect the battery telemetry payload for level metadata.
-    battery = ble_exchange(
-        command="battery_status",
-        expected_subset={
-            "status": "ok",
-            "percentage": 78,
-            "voltage_v": 3.92,
-            "is_low": False,
-        },
-    )
-    assert battery["parameters"]["status"] == "ok"
-
-    # Step 8: Trigger a mock alert and confirm the diagnostics block.
-    alert = ble_exchange(
-        command="alert_inject",
-        expected_subset={
-            "status": "ok",
-            "alert_code": "0004",
-            "severity": 1,
-            "message": "Mock sensor fault detected.",
-        },
-    )
-    assert alert["parameters"]["status"] == "ok"
-
-    # Step 9: Restore defaults so subsequent sessions start from a clean baseline.
-    restore_defaults = ble_exchange(
-        command="settings_update",
-        request_override=_DEFAULT_SETTINGS_REQUEST,
-        expected_subset={"status": "ok", "applied": _DEFAULT_SETTINGS_RESPONSE},
-    )
-    assert restore_defaults["parameters"]["status"] == "ok"
-
-    # Step 10: Request a teardown summary and tolerate firmware latency during shutdown.
-    teardown = ble_exchange(
-        command="session_teardown",
-        expected_subset={"status": "ok"},
-        response_timeout=10.0,
-    )
-    assert teardown["parameters"]["status"] == "ok"
+    # Step 3: Confirm the status line advertises success so the pytest report is concise.
+    parameters = response.get("parameters", {})
+    if "status" in parameters:
+        assert parameters["status"] == scenario.expected_subset.get("status", parameters["status"])
