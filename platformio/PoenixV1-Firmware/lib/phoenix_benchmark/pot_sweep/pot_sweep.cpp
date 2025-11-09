@@ -390,13 +390,13 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
   uint32_t rows_generated = 0u;
   bool     has_warnings   = false;
 
-  bool    led1_recommendation_valid = false;
-  uint8_t led1_recommended_wiper    = 0u;
-  int32_t led1_best_code            = std::numeric_limits<int32_t>::min();
+  bool    blue_recommendation_valid = false;
+  uint8_t blue_recommended_wiper    = 0u;
+  int32_t blue_best_code            = std::numeric_limits<int32_t>::min();
 
-  bool    led2_recommendation_valid = false;
-  uint8_t led2_recommended_wiper    = 0u;
-  int32_t led2_best_code            = std::numeric_limits<int32_t>::min();
+  bool    green_recommendation_valid = false;
+  uint8_t green_recommended_wiper    = 0u;
+  int32_t green_best_code            = std::numeric_limits<int32_t>::min();
 
   for (uint32_t wiper = 0u; wiper <= 0xFFu; ++wiper) {
     const uint8_t wiper_code = static_cast<uint8_t>(wiper & 0xFFu);
@@ -414,10 +414,10 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
               has_warnings,
               k_error_light_runtime,
               rows_generated,
-              led1_recommendation_valid,
-              led1_recommended_wiper,
-              led2_recommendation_valid,
-              led2_recommended_wiper};
+              blue_recommendation_valid,
+              blue_recommended_wiper,
+              green_recommendation_valid,
+              green_recommended_wiper};
     }
 
     const int sweep_result = light_readings_sweep_n(options.sweeps_per_wiper, &sweep_collection);
@@ -427,10 +427,10 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
               has_warnings,
               k_error_light_sweep,
               rows_generated,
-              led1_recommendation_valid,
-              led1_recommended_wiper,
-              led2_recommendation_valid,
-              led2_recommended_wiper};
+              blue_recommendation_valid,
+              blue_recommended_wiper,
+              green_recommendation_valid,
+              green_recommended_wiper};
     }
 
     LightReadingsSweepStats sweep_stats = {};
@@ -440,25 +440,25 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
               has_warnings,
               k_error_light_stats,
               rows_generated,
-              led1_recommendation_valid,
-              led1_recommended_wiper,
-              led2_recommendation_valid,
-              led2_recommended_wiper};
+              blue_recommendation_valid,
+              blue_recommended_wiper,
+              green_recommendation_valid,
+              green_recommended_wiper};
     }
 
     PhoenixBenchmarkPotSweepRowMetrics& row = rows[rows_generated];
     row                                     = PhoenixBenchmarkPotSweepRowMetrics{};
     row.wiper_code                          = wiper_code;
 
-    row.led1_max_code = sweep_stats.blue.has_samples ? sweep_stats.blue.max_value : 0;
-    row.led2_max_code = sweep_stats.green.has_samples ? sweep_stats.green.max_value : 0;
+    row.blue_max_code  = sweep_stats.blue.has_samples ? sweep_stats.blue.max_value : 0;
+    row.green_max_code = sweep_stats.green.has_samples ? sweep_stats.green.max_value : 0;
 
-    const int32_t led1_abs_code = (row.led1_max_code < 0) ? -row.led1_max_code : row.led1_max_code;
-    const int32_t led2_abs_code = (row.led2_max_code < 0) ? -row.led2_max_code : row.led2_max_code;
+    const int32_t blue_abs_code  = (row.blue_max_code < 0) ? -row.blue_max_code : row.blue_max_code;
+    const int32_t green_abs_code = (row.green_max_code < 0) ? -row.green_max_code : row.green_max_code;
 
-    bool led1_sample_saturated = false;
-    bool led2_sample_saturated = false;
-    bool sweep_saw_saturation  = false;
+    bool blue_sample_saturated  = false;
+    bool green_sample_saturated = false;
+    bool sweep_saw_saturation   = false;
     if ((sweep_collection.sweeps != nullptr) && (sweep_collection.sweep_count > 0u)) {
       for (uint32_t sample_index = 0u; sample_index < sweep_collection.sweep_count; ++sample_index) {
         const LightReadingsSweepSample& sample = sweep_collection.sweeps[sample_index];
@@ -468,52 +468,52 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
           sweep_saw_saturation = true;
         }
         if (phoenix_benchmark_is_adc_code_saturated(sample.blue_code)) {
-          led1_sample_saturated = true;
+          blue_sample_saturated = true;
           sweep_saw_saturation  = true;
         }
         if (phoenix_benchmark_is_adc_code_saturated(sample.green_code)) {
-          led2_sample_saturated = true;
-          sweep_saw_saturation  = true;
+          green_sample_saturated = true;
+          sweep_saw_saturation   = true;
         }
       }
     }
 
     const bool adc_reported_saturation = light_readings_last_sweep_detected_saturation();
 
-    row.led1_saturated = (led1_abs_code >= k_pot_sweep_saturation_threshold) || led1_sample_saturated;
-    row.led2_saturated = (led2_abs_code >= k_pot_sweep_saturation_threshold) || led2_sample_saturated;
+    row.blue_saturated  = (blue_abs_code >= k_pot_sweep_saturation_threshold) || blue_sample_saturated;
+    row.green_saturated = (green_abs_code >= k_pot_sweep_saturation_threshold) || green_sample_saturated;
 
-    if (row.led1_saturated || row.led2_saturated || sweep_saw_saturation || adc_reported_saturation) {
+    if (row.blue_saturated || row.green_saturated || sweep_saw_saturation || adc_reported_saturation) {
       has_warnings = true;
     }
 
-    if (!row.led1_saturated) {
-      if (!led1_recommendation_valid || (led1_abs_code > led1_best_code)) {
-        led1_recommendation_valid = true;
-        led1_recommended_wiper    = wiper_code;
-        led1_best_code            = led1_abs_code;
+    if (!row.blue_saturated) {
+      if (!blue_recommendation_valid || (blue_abs_code > blue_best_code)) {
+        blue_recommendation_valid = true;
+        blue_recommended_wiper    = wiper_code;
+        blue_best_code            = blue_abs_code;
       }
     }
 
-    if (!row.led2_saturated) {
-      if (!led2_recommendation_valid || (led2_abs_code > led2_best_code)) {
-        led2_recommendation_valid = true;
-        led2_recommended_wiper    = wiper_code;
-        led2_best_code            = led2_abs_code;
+    if (!row.green_saturated) {
+      if (!green_recommendation_valid || (green_abs_code > green_best_code)) {
+        green_recommendation_valid = true;
+        green_recommended_wiper    = wiper_code;
+        green_best_code            = green_abs_code;
       }
     }
 
     rows_generated += 1u;
   }
 
-  if (!led1_recommendation_valid) {
-    led1_recommendation_valid = true;
-    led1_recommended_wiper    = 0x00u;
+  if (!blue_recommendation_valid) {
+    blue_recommendation_valid = true;
+    blue_recommended_wiper    = 0x00u;
   }
 
-  if (!led2_recommendation_valid) {
-    led2_recommendation_valid = true;
-    led2_recommended_wiper    = 0x00u;
+  if (!green_recommendation_valid) {
+    green_recommendation_valid = true;
+    green_recommended_wiper    = 0x00u;
   }
 
   const int shutdown_result = shutdown_light_readings();
@@ -525,10 +525,10 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
           has_warnings || (shutdown_result != LIGHT_READINGS_OK),
           (shutdown_result == LIGHT_READINGS_OK) ? nullptr : k_error_light_shutdown,
           rows_generated,
-          led1_recommendation_valid,
-          led1_recommended_wiper,
-          led2_recommendation_valid,
-          led2_recommended_wiper};
+          blue_recommendation_valid,
+          blue_recommended_wiper,
+          green_recommendation_valid,
+          green_recommended_wiper};
 }
 
 int32_t phoenix_benchmark_pot_sweep_saturation_threshold(void) {

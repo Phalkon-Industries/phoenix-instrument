@@ -72,6 +72,8 @@ struct PhoenixBenchmarkStateAccumulator {
   PhoenixBenchmarkRunningStats<int32_t> channel_b_codes;
   uint32_t                              channel_a_saturation_count = 0u;
   uint32_t                              channel_b_saturation_count = 0u;
+  double                                channel_a_drift_slope      = 0.0;
+  double                                channel_b_drift_slope      = 0.0;
 };
 
 /// @brief Captures a single benchmark sample for CSV emission.

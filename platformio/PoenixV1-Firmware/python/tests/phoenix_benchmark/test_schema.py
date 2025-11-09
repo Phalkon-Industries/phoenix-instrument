@@ -422,7 +422,8 @@ def test_load_command_plan_accepts_drift_capture(tmp_path: Path) -> None:
                             "end_time_us": 10_000,
                             "step_delay_us": 25,
                             "osr": 4096,
-                            "wiper_code": 170,
+                            "wiper_blue_code": 170,
+                            "wiper_green_code": 34,
                         },
                     }
                 ]
@@ -441,8 +442,39 @@ def test_load_command_plan_accepts_drift_capture(tmp_path: Path) -> None:
         "end_time_us": 10_000,
         "step_delay_us": 25,
         "osr": 4096,
-        "wiper_code": 170,
+        "wiper_blue_code": 170,
+        "wiper_green_code": 34,
     }
+
+
+def test_load_command_plan_accepts_legacy_drift_capture_wiper(tmp_path: Path) -> None:
+    plan_path = tmp_path / "drift_capture_legacy.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "drift_capture",
+                        "parameters": {
+                            "start_time_us": 500,
+                            "end_time_us": 5_000,
+                            "step_delay_us": 5,
+                            "wiper_code": 85,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    drift_command = commands[0]
+    assert drift_command.name == "drift_capture"
+    assert drift_command.parameters["wiper_blue_code"] == 85
+    assert drift_command.parameters["wiper_green_code"] == 85
 
 
 @pytest.mark.parametrize(
@@ -479,6 +511,14 @@ def test_load_command_plan_accepts_drift_capture(tmp_path: Path) -> None:
                 "end_time_us": 10_000,
                 "osr": 123,
             },
+        },
+        {
+            "command": "drift_capture",
+            "parameters": {"wiper_blue_code": 300},
+        },
+        {
+            "command": "drift_capture",
+            "parameters": {"wiper_green_code": 300},
         },
         {
             "command": "drift_capture",

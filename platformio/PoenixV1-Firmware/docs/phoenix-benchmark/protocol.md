@@ -15,9 +15,9 @@ This document tracks the evolving host ↔ firmware contract. Beginning with Pha
 
 Requests a single sweep that identifies which ADC channel responds to each LED state.
 
-| Field    | Type    | Required | Notes                                                                       |
-| -------- | ------- | -------- | --------------------------------------------------------------------------- |
-| `sweeps` | integer | yes      | Number of complete Drain → LED1 → LED2 cycles to capture. Must be positive. |
+| Field    | Type    | Required | Notes                                                                        |
+| -------- | ------- | -------- | ---------------------------------------------------------------------------- |
+| `sweeps` | integer | yes      | Number of complete Drain → blue → green cycles to capture. Must be positive. |
 
 Channel-map inherits dwell timing and potentiometer settings from the device configuration. Any attempt to provide
 `dwell_us` or `wiper_code` arguments is rejected by the command parser so the sweep matches the light readings defaults.
@@ -112,26 +112,28 @@ Requests a dwell-duration sensitivity sweep. The firmware iterates a linear dwel
 {"command": "dwell_sweep", "parameters": {"sweeps_per_dwell": 4, "start_dwell_us": 100, "end_dwell_us": 500, "dwell_step_us": 100}}
 ```
 
-Run headers list the schedule bounds (`start_us`, `end_us`, `step_us`, `steps`). Per-row metadata lines surface dwell duration, sweeps completed, elapsed time, channel variance, and a warning mask so the host can highlight saturation or ADC recovery events.
+Run headers list the schedule bounds (`start_us`, `end_us`, `step_us`, `steps`). Per-row metadata lines surface dwell duration, sweeps completed, elapsed time, split drain_blue/drain_green variance, LED variance, and a warning mask so the host can highlight saturation or ADC recovery events.
 
 Unknown command identifiers return a `# error,unsupported_command` line until the corresponding firmware feature ships.
 
 ### `drift_capture`
 
-Requests a rapid dual-LED capture immediately after each LED transitions on. The firmware timestamps LED1/LED2 samples relative to the activation edge, stores them in a shared buffer, and emits metadata once both sequences complete.
+Requests a rapid dual-LED capture immediately after each LED transitions on. The firmware timestamps blue/green samples relative to the activation edge, stores them in a shared buffer, and emits metadata once both sequences complete.
 
-| Field           | Type    | Required | Notes                                                                                                                                                |
-| --------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `start_time_us` | integer | no       | First timestamp to report in microseconds. Defaults to `0` when omitted. Must be ≥ 0 and ≤ `end_time_us`.                                            |
-| `end_time_us`   | integer | no       | Final elapsed timestamp to capture. Defaults to `100000`. Must be ≥ `start_time_us` and within the buffer-derived upper bound documented in Phase 6. |
-| `step_delay_us` | integer | no       | Optional inter-sample pause. Defaults to `0` (tight loop). Positive values insert a guarded delay between samples.                                   |
-| `osr`           | integer | no       | Optional ADC oversampling ratio override. Defaults to the most recent channel-map context when omitted.                                              |
-| `wiper_code`    | integer | no       | Optional potentiometer wiper override applied before the burst. Defaults to the last channel-map wiper.                                              |
+| Field              | Type    | Required | Notes                                                                                                                                                |
+| ------------------ | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_time_us`    | integer | no       | First timestamp to report in microseconds. Defaults to `0` when omitted. Must be ≥ 0 and ≤ `end_time_us`.                                            |
+| `end_time_us`      | integer | no       | Final elapsed timestamp to capture. Defaults to `100000`. Must be ≥ `start_time_us` and within the buffer-derived upper bound documented in Phase 6. |
+| `step_delay_us`    | integer | no       | Optional inter-sample pause. Defaults to `0` (tight loop). Positive values insert a guarded delay between samples.                                   |
+| `osr`              | integer | no       | Optional ADC oversampling ratio override. Defaults to the most recent channel-map context when omitted.                                              |
+| `wiper_blue_code`  | integer | no       | Optional blue-channel potentiometer override applied before the burst. Defaults to the last channel-map wiper when omitted.                          |
+| `wiper_green_code` | integer | no       | Optional green-channel potentiometer override applied before the burst. Defaults to the last channel-map wiper when omitted.                         |
+| `wiper_code`       | integer | no       | Legacy alias that applies the same override to both channels. Retained for backwards compatibility but normalised to the per-colour fields above.    |
 
 **Example**
 
 ```json
-{"command": "drift_capture", "parameters": {"start_time_us": 0, "end_time_us": 50000, "step_delay_us": 10, "osr": 4096, "wiper_code": 42}}
+{"command": "drift_capture", "parameters": {"start_time_us": 0, "end_time_us": 50000, "step_delay_us": 10, "osr": 4096, "wiper_blue_code": 42, "wiper_green_code": 84}}
 ```
 
 **Serial output**
@@ -139,9 +141,9 @@ Requests a rapid dual-LED capture immediately after each LED transitions on. The
 Drift captures defer all output until both LED buffers are populated, then emit the following sequence (prefixes not shown in JSON payloads):
 
 1. `# running,scenario=drift_capture,...` – announces the scenario with resolved metadata.
-2. `# drift_capture,metadata,start_us=...,end_us=...,step_delay_us=...,osr=...,wiper_code=...` – records the applied capture settings.
-3. `# drift_capture,results,led1_samples=<N1>,led2_samples=<N2>,warning_mask=<mask>` – reports sample counts and the combined warning bitmask (`0x01` buffer overflow, `0x02` saturation, `0x04` restore failure).
-4. `Elapsed_LED1_us	Code_LED1	Elapsed_LED2_us	Code_LED2` header followed by tab-separated sample rows. Missing values are printed as `nan` to keep LED1/LED2 timelines aligned.
+2. `# drift_capture,metadata,start_us=...,end_us=...,step_delay_us=...,osr=...,wiper_blue=...,wiper_green=...` – records the applied capture settings and per-channel wipers. When the request omits explicit wiper overrides, the firmware seeds these fields from `g_device_light_readings_config` so the transcript mirrors the hardware configuration.
+3. `# drift_capture,results,blue_samples=<N1>,green_samples=<N2>,warning_mask=<mask>` – reports sample counts and the combined warning bitmask (`0x01` buffer overflow, `0x02` saturation, `0x04` restore failure).
+4. `Elapsed_Blue_us	Code_Blue	Elapsed_Green_us	Code_Green` header followed by tab-separated sample rows. Missing values are printed as `nan` to keep blue/green timelines aligned.
 5. Blank line terminates the sample section prior to `# benchmark_complete`.
 
 The CLI translates `nan` tokens into `None` values, persists the aligned samples to CSV/JSON, and emits a `# drift_capture_summary,bursts=...,slugs=...,warnings=...` line summarising the run.
@@ -151,7 +153,7 @@ The CLI translates `nan` tokens into `None` values, persists the aligned samples
 1. Operator invokes the CLI with a plan file. The CLI prints a numbered preview of the JSON lines that will be transmitted.
 2. When `--port` is provided (non dry-run), the CLI opens the serial port at 115200 baud, waits for the firmware's `# phoenix benchmark ready` + `# ready` banner, and stores every line it receives in a transcript buffer while echoing it to stdout.
 3. Each queued command is streamed verbatim as one JSON line followed by `\n`. The firmware's command loop trims the newline, dispatches to the scenario-specific parser (`phoenix_benchmark_channel_map_parse_command`, `phoenix_benchmark_cold_sweep_parse_command`, `phoenix_benchmark_osr_sweep_parse_command`, `phoenix_benchmark_dwell_sweep_parse_command`, `phoenix_benchmark_pot_sweep_parse_command`, or `phoenix_benchmark_adc_speed_parse_command`), and executes the request. Unsupported identifiers emit `# error,unsupported_command` before the dispatcher returns to idle.
-4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit a per-state table with channel statistics, alignment verdicts, and a new `Warnings` column that reports saturation notices; cold sweeps emit per-channel statistics and a raw-sample timeline annotated with saturation tokens; OSR sweeps emit one row per oversampling preset alongside runtime metrics; dwell sweeps emit one row per dwell window with variance, timing, and warning masks; pot sweeps emit wiper recommendations and saturation flags; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
+4. During execution the firmware prints the scenario metadata (`# running,scenario=...`) plus summary tables. Channel-map runs emit a per-state table with channel statistics (mean, standard deviation, least-squares slope, min, max), alignment verdicts, and a `Warnings` column that reports saturation notices; cold sweeps emit per-channel statistics and a raw-sample timeline annotated with saturation tokens; OSR sweeps emit one row per oversampling preset with drain_blue/drain_green + LED metrics alongside runtime data; dwell sweeps emit one row per dwell window with split drain_blue/drain_green variance, LED variance, timing, and warning masks; pot sweeps emit wiper recommendations and saturation flags; ADC-speed runs emit a mode-oriented throughput table. The CLI mirrors the output and records it for later parsing.
 5. After each `# benchmark_complete` line, the firmware prints a fresh `# ready` prompt. The CLI stays attached until the plan is exhausted, then persists the transcript, parses every captured table (including cold-sweep metadata, raw samples, and the drift-capture metadata/results block), and produces a Markdown report with scenario-tagged sections inside the selected output directory. Artifact file names now embed the scenario list to aid long-term archiving (e.g., `transcript_cold_sweep_channel_map_drift_capture_osr_sweep_adc_speed.txt`).
 
 ## Host Expectations
@@ -160,7 +162,7 @@ The CLI translates `nan` tokens into `None` values, persists the aligned samples
 - Host plans store an ordered list of command objects under a `commands` (or `sequence`) array.
 - Tooling serialises each entry with compact separators so commands remain single-line friendly for terminal usage.
 - The CLI awaits the firmware's `# ready` prompt before issuing the first command and prints every line the device emits so logs can be redirected or parsed downstream.
-- After a run completes, the CLI writes a `transcript_<scenarios>.txt`, `summary_<scenarios>.json`, and `report.md` bundle (plus scenario-specific plots and CSV exports) to the chosen output folder. The Markdown report embeds every summary table—including cold sweeps, OSR, dwell, pot sweeps, and drift captures—and links plots with scenario-specific axes (log₂ for OSR, linear dwell, wiper code for potentiometer, elapsed microseconds for drift capture, sweep index for cold-start timelines).
+- After a run completes, the CLI writes a `transcript_<scenarios>.txt`, `summary_<scenarios>.json`, and `report.md` bundle (plus scenario-specific plots and CSV exports) to the chosen output folder. The Markdown report embeds every summary table—including cold sweeps, OSR, dwell, pot sweeps, and drift captures—and links plots with scenario-specific axes (log₂ for OSR, linear dwell, wiper code for potentiometer, elapsed microseconds for drift capture, sweep index for cold-start timelines). Channel-map sections now surface the drift slopes alongside the existing per-channel statistics so reports highlight slow trends immediately.
 
 ## Firmware Expectations
 
@@ -169,4 +171,4 @@ The CLI translates `nan` tokens into `None` values, persists the aligned samples
 - During Phase 1, channel-to-LED association is reported in the summary table via the new `Channel_Map` column:
   - `A=OK` or `B=OK` indicates that the observed dominant ADC channel matches the expected LED routing.
   - `B!=A`, `A!=B`, or `??!=A/B` highlight mismatches or ambiguous responses.
-- Min/max ADC codes are now included per channel so host automation can surface saturation without parsing the streamed CSV. Channel-map summary rows also embed a `Warnings` column sourced from the saturation detector; OSR sweeps report per-preset drain/LED statistics plus sweep timing; dwell sweeps report per-dwell variance, warning masks, and runtime; pot sweeps report LED-specific saturation flags and recommended wiper codes; throughput runs report samples-per-second, loop timing, and ADC error counts per enabled mode; drift captures flag warning masks alongside aligned LED timelines; warnings surface via the `Warnings`, `Notes`, `Warning Mask`, or drift warning columns when issues occur.
+- Min/max ADC codes are now included per channel so host automation can surface saturation without parsing the streamed CSV. Channel-map summary rows also embed a `Warnings` column sourced from the saturation detector; OSR sweeps report per-preset drain_blue/drain_green and LED statistics plus sweep timing; dwell sweeps report per-dwell drain_blue/drain_green variance, LED variance, warning masks, and runtime; pot sweeps report LED-specific saturation flags and recommended wiper codes; throughput runs report samples-per-second, loop timing, and ADC error counts per enabled mode; drift captures flag warning masks alongside aligned LED timelines; warnings surface via the `Warnings`, `Notes`, `Warning Mask`, or drift warning columns when issues occur.

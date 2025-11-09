@@ -462,8 +462,9 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
     }
 
     auto assign_summary = [](const LightReadingsStatisticSummary&   summary,
-                             PhoenixBenchmarkRunningStats<int32_t>& destination) {
+                             PhoenixBenchmarkRunningStats<int32_t>& destination, double& slope_destination) {
       destination.count = summary.sample_count;
+      slope_destination = summary.drift_slope;
 
       if (!summary.has_samples) {
         destination.mean      = 0.0;
@@ -481,19 +482,19 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
       destination.max_value = summary.max_value;
     };
 
-    assign_summary(sweep_stats.drain_blue, row.drain.channel_a_codes);
-    assign_summary(sweep_stats.drain_green, row.drain.channel_b_codes);
-    assign_summary(sweep_stats.blue, row.led1.channel_a_codes);
-    assign_summary(sweep_stats.drain_green, row.led1.channel_b_codes);
-    assign_summary(sweep_stats.drain_blue, row.led2.channel_a_codes);
-    assign_summary(sweep_stats.green, row.led2.channel_b_codes);
+    assign_summary(sweep_stats.drain_blue, row.drain.channel_a_codes, row.drain.channel_a_drift_slope);
+    assign_summary(sweep_stats.drain_green, row.drain.channel_b_codes, row.drain.channel_b_drift_slope);
+    assign_summary(sweep_stats.blue, row.blue.channel_a_codes, row.blue.channel_a_drift_slope);
+    assign_summary(sweep_stats.drain_green, row.blue.channel_b_codes, row.blue.channel_b_drift_slope);
+    assign_summary(sweep_stats.drain_blue, row.green.channel_a_codes, row.green.channel_a_drift_slope);
+    assign_summary(sweep_stats.green, row.green.channel_b_codes, row.green.channel_b_drift_slope);
 
     row.drain.channel_a_saturation_count = 0u;
     row.drain.channel_b_saturation_count = 0u;
-    row.led1.channel_a_saturation_count  = 0u;
-    row.led1.channel_b_saturation_count  = 0u;
-    row.led2.channel_a_saturation_count  = 0u;
-    row.led2.channel_b_saturation_count  = 0u;
+    row.blue.channel_a_saturation_count  = 0u;
+    row.blue.channel_b_saturation_count  = 0u;
+    row.green.channel_a_saturation_count = 0u;
+    row.green.channel_b_saturation_count = 0u;
 
     bool saw_saturation = false;
     if ((sweep_collection.sweeps != nullptr) && (sweep_collection.sweep_count > 0u)) {
@@ -502,20 +503,20 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
 
         if (phoenix_benchmark_is_adc_code_saturated(sample.drain_blue_code)) {
           ++row.drain.channel_a_saturation_count;
-          ++row.led2.channel_a_saturation_count;
+          ++row.green.channel_a_saturation_count;
           saw_saturation = true;
         }
         if (phoenix_benchmark_is_adc_code_saturated(sample.drain_green_code)) {
           ++row.drain.channel_b_saturation_count;
-          ++row.led1.channel_b_saturation_count;
+          ++row.blue.channel_b_saturation_count;
           saw_saturation = true;
         }
         if (phoenix_benchmark_is_adc_code_saturated(sample.blue_code)) {
-          ++row.led1.channel_a_saturation_count;
+          ++row.blue.channel_a_saturation_count;
           saw_saturation = true;
         }
         if (phoenix_benchmark_is_adc_code_saturated(sample.green_code)) {
-          ++row.led2.channel_b_saturation_count;
+          ++row.green.channel_b_saturation_count;
           saw_saturation = true;
         }
       }
@@ -532,16 +533,16 @@ PhoenixBenchmarkDwellSweepExecutionStatus phoenix_benchmark_dwell_sweep_run(
     }
 
     PhoenixBenchmarkChannel       dominant_channel = PhoenixBenchmarkChannel::kUnknown;
-    const PhoenixBenchmarkChannel led1_channel =
-        phoenix_benchmark_channel_map_determine_dominant_channel(row.drain, row.led1, k_minimum_alignment_delta);
-    if (led1_channel == PhoenixBenchmarkChannel::kChannelA) {
+    const PhoenixBenchmarkChannel blue_channel =
+        phoenix_benchmark_channel_map_determine_dominant_channel(row.drain, row.blue, k_minimum_alignment_delta);
+    if (blue_channel == PhoenixBenchmarkChannel::kChannelA) {
       dominant_channel = PhoenixBenchmarkChannel::kChannelA;
     }
 
-    const PhoenixBenchmarkChannel led2_channel =
-        phoenix_benchmark_channel_map_determine_dominant_channel(row.drain, row.led2, k_minimum_alignment_delta);
+    const PhoenixBenchmarkChannel green_channel =
+        phoenix_benchmark_channel_map_determine_dominant_channel(row.drain, row.green, k_minimum_alignment_delta);
     if ((dominant_channel == PhoenixBenchmarkChannel::kUnknown) &&
-        (led2_channel == PhoenixBenchmarkChannel::kChannelB)) {
+        (green_channel == PhoenixBenchmarkChannel::kChannelB)) {
       dominant_channel = PhoenixBenchmarkChannel::kChannelB;
     }
 

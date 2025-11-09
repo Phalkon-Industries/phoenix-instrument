@@ -18,8 +18,8 @@
 static constexpr PhoenixBenchmarkChannelMapStateDescriptor
     k_state_descriptors[k_phoenix_benchmark_channel_map_state_descriptor_count] = {
         {"Drain", PhoenixBenchmarkChannel::kUnknown, true, true},
-        {"LED1", PhoenixBenchmarkChannel::kChannelA, true, false},
-        {"LED2", PhoenixBenchmarkChannel::kChannelB, true, false},
+        {"Blue", PhoenixBenchmarkChannel::kChannelA, true, false},
+        {"Green", PhoenixBenchmarkChannel::kChannelB, true, false},
 };
 
 static constexpr std::size_t k_accumulator_count = k_phoenix_benchmark_channel_map_state_descriptor_count;
@@ -76,8 +76,10 @@ static void reset_accumulators(PhoenixBenchmarkStateAccumulator* accumulators) {
 }
 
 static void populate_running_stats_from_summary(const LightReadingsStatisticSummary&   summary,
-                                                PhoenixBenchmarkRunningStats<int32_t>& stats) {
-  stats.count = summary.sample_count;
+                                                PhoenixBenchmarkRunningStats<int32_t>& stats,
+                                                double&                                slope_destination) {
+  stats.count       = summary.sample_count;
+  slope_destination = summary.drift_slope;
 
   if (!summary.has_samples) {
     stats.mean      = 0.0;
@@ -232,20 +234,26 @@ PhoenixBenchmarkChannelMapExecutionStatus phoenix_benchmark_channel_map_run(
     return {false, PHOENIX_BENCHMARK_ERR_SAMPLING_FAILURE, k_error_sampling_failure, false};
   }
 
-  populate_running_stats_from_summary(sweep_stats.drain_blue,
-                                      accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_a_codes);
-  populate_running_stats_from_summary(sweep_stats.drain_green,
-                                      accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_b_codes);
+  populate_running_stats_from_summary(
+      sweep_stats.drain_blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_a_codes,
+      accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_a_drift_slope);
+  populate_running_stats_from_summary(
+      sweep_stats.drain_green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_b_codes,
+      accumulators[k_phoenix_benchmark_channel_map_drain_state_index].channel_b_drift_slope);
 
   populate_running_stats_from_summary(
-      sweep_stats.blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_a_codes);
+      sweep_stats.blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_a_codes,
+      accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_a_drift_slope);
   populate_running_stats_from_summary(
-      sweep_stats.drain_green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_b_codes);
+      sweep_stats.drain_green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_b_codes,
+      accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 1u].channel_b_drift_slope);
 
   populate_running_stats_from_summary(
-      sweep_stats.drain_blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_a_codes);
+      sweep_stats.drain_blue, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_a_codes,
+      accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_a_drift_slope);
   populate_running_stats_from_summary(
-      sweep_stats.green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_b_codes);
+      sweep_stats.green, accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_b_codes,
+      accumulators[k_phoenix_benchmark_channel_map_drain_state_index + 2u].channel_b_drift_slope);
 
   // Step 9: Determine whether any saturation was detected during the sweep.
   bool run_has_warnings = light_readings_last_sweep_detected_saturation();

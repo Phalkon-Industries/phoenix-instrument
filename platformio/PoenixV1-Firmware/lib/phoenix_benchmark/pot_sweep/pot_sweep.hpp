@@ -58,10 +58,10 @@ struct PhoenixBenchmarkPotSweepParseResult {
  */
 struct PhoenixBenchmarkPotSweepRowMetrics {
   uint8_t wiper_code;
-  int32_t led1_max_code;
-  int32_t led2_max_code;
-  bool    led1_saturated;
-  bool    led2_saturated;
+  int32_t blue_max_code;
+  int32_t green_max_code;
+  bool    blue_saturated;
+  bool    green_saturated;
 };
 
 /**
@@ -72,10 +72,10 @@ struct PhoenixBenchmarkPotSweepExecutionStatus {
   bool        has_warnings;
   const char* message;
   uint32_t    rows_generated;
-  bool        led1_recommendation_valid;
-  uint8_t     led1_recommended_wiper;
-  bool        led2_recommendation_valid;
-  uint8_t     led2_recommended_wiper;
+  bool        blue_recommendation_valid;
+  uint8_t     blue_recommended_wiper;
+  bool        green_recommendation_valid;
+  uint8_t     green_recommended_wiper;
 };
 
 /**

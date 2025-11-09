@@ -41,11 +41,12 @@ const PhoenixBenchmarkChannelMapDefaults k_channel_map_defaults = {
 };
 
 const PhoenixBenchmarkDriftCaptureDefaults k_drift_capture_defaults = {
-    .start_time_us = 0u,
-    .end_time_us   = 100000u,
-    .step_delay_us = 0u,
-    .osr           = 4096u,
-    .wiper_code    = k_channel_map_defaults.wiper_code,
+    .start_time_us    = 0u,
+    .end_time_us      = 100000u,
+    .step_delay_us    = 0u,
+    .osr              = 4096u,
+    .blue_wiper_code  = k_channel_map_defaults.wiper_code,
+    .green_wiper_code = k_channel_map_defaults.wiper_code,
 };
 
 const PhoenixBenchmarkAdcSpeedDefaults k_adc_speed_defaults = {
@@ -220,10 +221,12 @@ void print_summary_table(void) {
         .sample_count        = accumulator.channel_a_codes.count,
         .mean_channel_a      = accumulator.channel_a_codes.mean,
         .std_channel_a       = accumulator.channel_a_codes.standard_deviation(),
+        .slope_channel_a     = accumulator.channel_a_drift_slope,
         .min_channel_a       = static_cast<double>(accumulator.channel_a_codes.min_value),
         .max_channel_a       = static_cast<double>(accumulator.channel_a_codes.max_value),
         .mean_channel_b      = accumulator.channel_b_codes.mean,
         .std_channel_b       = accumulator.channel_b_codes.standard_deviation(),
+        .slope_channel_b     = accumulator.channel_b_drift_slope,
         .min_channel_b       = static_cast<double>(accumulator.channel_b_codes.min_value),
         .max_channel_b       = static_cast<double>(accumulator.channel_b_codes.max_value),
         .channel_alignment   = aligned ? alignment_label : nullptr,
@@ -594,26 +597,29 @@ bool print_osr_sweep_summary(const PhoenixBenchmarkOsrSweepRowMetrics* rows, std
     PhoenixBenchmarkOsrSweepSummaryRowValues summary_values   = {};
     char                                     label_buffer[12] = {};
     format_osr_label(row.osr_value, label_buffer, sizeof(label_buffer));
-    summary_values.label        = label_buffer;
-    summary_values.sample_count = row.drain.channel_a_codes.count;
-    summary_values.drain_mean   = row.drain.channel_a_codes.mean;
-    summary_values.drain_std    = row.drain.channel_a_codes.standard_deviation();
-    summary_values.drain_min    = static_cast<double>(row.drain.channel_a_codes.min_value);
-    summary_values.drain_max    = static_cast<double>(row.drain.channel_a_codes.max_value);
+    summary_values.label            = label_buffer;
+    summary_values.sample_count     = row.drain.channel_a_codes.count;
+    summary_values.drain_blue_mean  = row.drain.channel_a_codes.mean;
+    summary_values.drain_blue_std   = row.drain.channel_a_codes.standard_deviation();
+    summary_values.drain_blue_min   = static_cast<double>(row.drain.channel_a_codes.min_value);
+    summary_values.drain_blue_max   = static_cast<double>(row.drain.channel_a_codes.max_value);
+    summary_values.drain_green_mean = row.drain.channel_b_codes.mean;
+    summary_values.drain_green_std  = row.drain.channel_b_codes.standard_deviation();
+    summary_values.drain_green_min  = static_cast<double>(row.drain.channel_b_codes.min_value);
+    summary_values.drain_green_max  = static_cast<double>(row.drain.channel_b_codes.max_value);
 
-    summary_values.led1_mean = row.led1.channel_a_codes.mean;
-    summary_values.led1_std  = row.led1.channel_a_codes.standard_deviation();
-    summary_values.led1_min  = static_cast<double>(row.led1.channel_a_codes.min_value);
-    summary_values.led1_max  = static_cast<double>(row.led1.channel_a_codes.max_value);
-
-    summary_values.led2_mean = row.led2.channel_b_codes.mean;
-    summary_values.led2_std  = row.led2.channel_b_codes.standard_deviation();
-    summary_values.led2_min  = static_cast<double>(row.led2.channel_b_codes.min_value);
-    summary_values.led2_max  = static_cast<double>(row.led2.channel_b_codes.max_value);
+    summary_values.blue_mean  = row.blue.channel_a_codes.mean;
+    summary_values.blue_std   = row.blue.channel_a_codes.standard_deviation();
+    summary_values.blue_min   = static_cast<double>(row.blue.channel_a_codes.min_value);
+    summary_values.blue_max   = static_cast<double>(row.blue.channel_a_codes.max_value);
+    summary_values.green_mean = row.green.channel_b_codes.mean;
+    summary_values.green_std  = row.green.channel_b_codes.standard_deviation();
+    summary_values.green_min  = static_cast<double>(row.green.channel_b_codes.min_value);
+    summary_values.green_max  = static_cast<double>(row.green.channel_b_codes.max_value);
 
     summary_values.sweep_duration_us = row.elapsed_microseconds;
-    summary_values.has_metrics = row.drain.channel_a_codes.has_samples() && row.led1.channel_a_codes.has_samples() &&
-                                 row.led2.channel_b_codes.has_samples();
+    summary_values.has_metrics = row.drain.channel_a_codes.has_samples() && row.drain.channel_b_codes.has_samples() &&
+                                 row.blue.channel_a_codes.has_samples() && row.green.channel_b_codes.has_samples();
 
     if (!phoenix_benchmark_osr_sweep_format_summary_row(summary_values, line_buffer, sizeof(line_buffer))) {
       Serial.println(F("# summary_table_row_format_failed"));
@@ -657,21 +663,27 @@ bool print_dwell_sweep_summary(const PhoenixBenchmarkDwellSweepRowMetrics* rows,
   for (uint32_t index = 0u; index < row_count; ++index) {
     const PhoenixBenchmarkDwellSweepRowMetrics& row = rows[index];
 
-    const bool has_metrics = row.drain.channel_a_codes.has_samples() && row.led1.channel_a_codes.has_samples() &&
-                             row.led2.channel_b_codes.has_samples();
+    const bool has_metrics = row.drain.channel_a_codes.has_samples() && row.drain.channel_b_codes.has_samples() &&
+                             row.blue.channel_a_codes.has_samples() && row.green.channel_b_codes.has_samples();
 
     PhoenixBenchmarkDwellSweepSummaryRowValues summary_values = {
-        .dwell_us         = row.dwell_us,
-        .sweeps_completed = row.sweeps_completed,
-        .drain_mean       = row.drain.channel_a_codes.mean,
-        .drain_std        = row.drain.channel_a_codes.standard_deviation(),
-        .led1_mean        = row.led1.channel_a_codes.mean,
-        .led1_std         = row.led1.channel_a_codes.standard_deviation(),
-        .led2_mean        = row.led2.channel_b_codes.mean,
-        .led2_std         = row.led2.channel_b_codes.standard_deviation(),
-        .duration_us      = row.elapsed_microseconds,
-        .warning_mask     = row.warning_mask,
-        .has_metrics      = has_metrics,
+        .dwell_us          = row.dwell_us,
+        .sweeps_completed  = row.sweeps_completed,
+        .drain_blue_mean   = row.drain.channel_a_codes.mean,
+        .drain_blue_std    = row.drain.channel_a_codes.standard_deviation(),
+        .drain_blue_slope  = row.drain.channel_a_drift_slope,
+        .drain_green_mean  = row.drain.channel_b_codes.mean,
+        .drain_green_std   = row.drain.channel_b_codes.standard_deviation(),
+        .drain_green_slope = row.drain.channel_b_drift_slope,
+        .blue_mean         = row.blue.channel_a_codes.mean,
+        .blue_std          = row.blue.channel_a_codes.standard_deviation(),
+        .blue_slope        = row.blue.channel_a_drift_slope,
+        .green_mean        = row.green.channel_b_codes.mean,
+        .green_std         = row.green.channel_b_codes.standard_deviation(),
+        .green_slope       = row.green.channel_b_drift_slope,
+        .duration_us       = row.elapsed_microseconds,
+        .warning_mask      = row.warning_mask,
+        .has_metrics       = has_metrics,
     };
 
     if (!phoenix_benchmark_dwell_sweep_format_summary_row(summary_values, line_buffer, sizeof(line_buffer))) {
@@ -787,11 +799,11 @@ bool print_pot_sweep_summary(const PhoenixBenchmarkPotSweepRowMetrics* rows, std
     const PhoenixBenchmarkPotSweepRowMetrics& row = rows[index];
 
     PhoenixBenchmarkPotSweepSummaryRowValues summary_values = {
-        .wiper_code     = row.wiper_code,
-        .led1_max_code  = row.led1_max_code,
-        .led2_max_code  = row.led2_max_code,
-        .led1_saturated = row.led1_saturated,
-        .led2_saturated = row.led2_saturated,
+        .wiper_code      = row.wiper_code,
+        .blue_max_code   = row.blue_max_code,
+        .green_max_code  = row.green_max_code,
+        .blue_saturated  = row.blue_saturated,
+        .green_saturated = row.green_saturated,
     };
 
     if (!phoenix_benchmark_pot_sweep_format_summary_row(summary_values, line_buffer, sizeof(line_buffer))) {
@@ -835,27 +847,27 @@ bool execute_pot_sweep_command(const PhoenixBenchmarkPotSweepOptions& options) {
   }
 
   // Step 4: Report recommended wiper selections for each LED when available.
-  if (status.led1_recommendation_valid) {
-    Serial.print(F("# pot_sweep_recommendation,led=led1,wiper=0x"));
-    if (status.led1_recommended_wiper < 0x10u) {
+  if (status.blue_recommendation_valid) {
+    Serial.print(F("# pot_sweep_recommendation,led=blue,wiper=0x"));
+    if (status.blue_recommended_wiper < 0x10u) {
       Serial.print('0');
     }
-    Serial.println(status.led1_recommended_wiper, HEX);
+    Serial.println(status.blue_recommended_wiper, HEX);
   }
 
-  if (status.led2_recommendation_valid) {
-    Serial.print(F("# pot_sweep_recommendation,led=led2,wiper=0x"));
-    if (status.led2_recommended_wiper < 0x10u) {
+  if (status.green_recommendation_valid) {
+    Serial.print(F("# pot_sweep_recommendation,led=green,wiper=0x"));
+    if (status.green_recommended_wiper < 0x10u) {
       Serial.print('0');
     }
-    Serial.println(status.led2_recommended_wiper, HEX);
+    Serial.println(status.green_recommended_wiper, HEX);
   }
 
   // Step 5: Surface warning context when saturation or channel-map issues occurred.
   if (status.has_warnings) {
     bool saturation_detected = false;
     for (std::size_t index = 0u; index < status.rows_generated; ++index) {
-      if (g_pot_sweep_rows[index].led1_saturated || g_pot_sweep_rows[index].led2_saturated) {
+      if (g_pot_sweep_rows[index].blue_saturated || g_pot_sweep_rows[index].green_saturated) {
         saturation_detected = true;
         break;
       }
@@ -1121,11 +1133,16 @@ bool execute_drift_capture_command(const PhoenixBenchmarkDriftCaptureOptions& op
   Serial.print(options.step_delay_us);
   Serial.print(F(",osr="));
   Serial.print(options.osr);
-  Serial.print(F(",wiper_code=0x"));
-  if (options.wiper_code < 0x10u) {
+  Serial.print(F(",blue_wiper=0x"));
+  if (options.blue_wiper_code < 0x10u) {
     Serial.print('0');
   }
-  Serial.println(options.wiper_code, HEX);
+  Serial.print(options.blue_wiper_code, HEX);
+  Serial.print(F(",green_wiper=0x"));
+  if (options.green_wiper_code < 0x10u) {
+    Serial.print('0');
+  }
+  Serial.println(options.green_wiper_code, HEX);
 
   const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {serial_print_line};
   const PhoenixBenchmarkDriftCaptureExecutionStatus status    = phoenix_benchmark_drift_capture_run(options, callbacks);
@@ -1422,7 +1439,10 @@ void setup() {
   phoenix_benchmark_pot_sweep_reset_state();
   phoenix_benchmark_pot_sweep_initialise(k_pot_sweep_defaults);
   phoenix_benchmark_drift_capture_reset_state();
-  phoenix_benchmark_drift_capture_initialise(k_drift_capture_defaults);
+  PhoenixBenchmarkDriftCaptureDefaults drift_capture_defaults =
+      phoenix_benchmark_drift_capture_defaults_from_light_config(g_device_light_readings_config,
+                                                                 k_drift_capture_defaults);
+  phoenix_benchmark_drift_capture_initialise(drift_capture_defaults);
   phoenix_benchmark_cold_sweep_reset_state();
 
   // Step 3: Clear previous measurements and present the ready prompt.

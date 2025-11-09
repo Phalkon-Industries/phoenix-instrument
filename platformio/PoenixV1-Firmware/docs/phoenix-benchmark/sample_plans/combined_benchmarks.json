@@ -15,8 +15,7 @@
                 "start_time_us": 0,
                 "end_time_us": 200000,
                 "step_delay_us": 0,
-                "osr": 32,
-                "wiper_code": 223
+                "osr": 32
             }
         },
         {

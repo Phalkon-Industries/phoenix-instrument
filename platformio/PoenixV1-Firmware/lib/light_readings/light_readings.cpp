@@ -31,6 +31,10 @@ struct LightReadingsRunningStats {
   double   m2;
   int32_t  min_value;
   int32_t  max_value;
+  double   sum_x;
+  double   sum_y;
+  double   sum_xy;
+  double   sum_xx;
 };
 
 static void light_readings_running_stats_reset(LightReadingsRunningStats* stats) {
@@ -39,15 +43,26 @@ static void light_readings_running_stats_reset(LightReadingsRunningStats* stats)
   stats->m2           = 0.0;
   stats->min_value    = INT32_MAX;
   stats->max_value    = INT32_MIN;
+  stats->sum_x        = 0.0;
+  stats->sum_y        = 0.0;
+  stats->sum_xy       = 0.0;
+  stats->sum_xx       = 0.0;
 }
 
-static void light_readings_running_stats_update(LightReadingsRunningStats* stats, int32_t value) {
+static void light_readings_running_stats_update(LightReadingsRunningStats* stats, uint32_t sample_index,
+                                                int32_t value) {
   ++stats->sample_count;
   const double double_value = static_cast<double>(value);
   const double delta        = double_value - stats->mean;
   stats->mean += delta / static_cast<double>(stats->sample_count);
   const double delta2 = double_value - stats->mean;
   stats->m2 += delta * delta2;
+
+  const double double_index = static_cast<double>(sample_index);
+  stats->sum_x += double_index;
+  stats->sum_y += double_value;
+  stats->sum_xy += double_index * double_value;
+  stats->sum_xx += double_index * double_index;
 
   if (value < stats->min_value) {
     stats->min_value = value;
@@ -57,6 +72,21 @@ static void light_readings_running_stats_update(LightReadingsRunningStats* stats
   }
 }
 
+static double light_readings_calculate_slope(const LightReadingsRunningStats& running_stats) {
+  if (running_stats.sample_count < 2u) {
+    return 0.0;
+  }
+
+  const double sample_count = static_cast<double>(running_stats.sample_count);
+  const double denominator  = (sample_count * running_stats.sum_xx) - (running_stats.sum_x * running_stats.sum_x);
+  if (fabs(denominator) < 1e-12) {
+    return 0.0;
+  }
+
+  const double numerator = (sample_count * running_stats.sum_xy) - (running_stats.sum_x * running_stats.sum_y);
+  return numerator / denominator;
+}
+
 static void light_readings_populate_summary(const LightReadingsRunningStats& running_stats,
                                             LightReadingsStatisticSummary*   summary_out) {
   summary_out->sample_count = running_stats.sample_count;
@@ -64,6 +94,7 @@ static void light_readings_populate_summary(const LightReadingsRunningStats& run
   summary_out->mean         = summary_out->has_samples ? running_stats.mean : 0.0;
   summary_out->min_value    = summary_out->has_samples ? running_stats.min_value : 0;
   summary_out->max_value    = summary_out->has_samples ? running_stats.max_value : 0;
+  summary_out->drift_slope  = summary_out->has_samples ? light_readings_calculate_slope(running_stats) : 0.0;
 
   if (running_stats.sample_count > 1u) {
     summary_out->standard_deviation = sqrt(running_stats.m2 / static_cast<double>(running_stats.sample_count - 1u));
@@ -249,10 +280,10 @@ int light_readings_compute_sweep_stats(const LightReadingsSweepCollection* sweep
   // Step 4: Fold each sweep sample into the corresponding running statistics accumulator.
   for (uint32_t index = 0u; index < sweep_collection->sweep_count; ++index) {
     const LightReadingsSweepSample& sweep = sweep_collection->sweeps[index];
-    light_readings_running_stats_update(&drain_blue_stats, sweep.drain_blue_code);
-    light_readings_running_stats_update(&drain_green_stats, sweep.drain_green_code);
-    light_readings_running_stats_update(&blue_stats, sweep.blue_code);
-    light_readings_running_stats_update(&green_stats, sweep.green_code);
+    light_readings_running_stats_update(&drain_blue_stats, index, sweep.drain_blue_code);
+    light_readings_running_stats_update(&drain_green_stats, index, sweep.drain_green_code);
+    light_readings_running_stats_update(&blue_stats, index, sweep.blue_code);
+    light_readings_running_stats_update(&green_stats, index, sweep.green_code);
   }
 
   // Step 5: Populate caller-visible summaries for each channel.

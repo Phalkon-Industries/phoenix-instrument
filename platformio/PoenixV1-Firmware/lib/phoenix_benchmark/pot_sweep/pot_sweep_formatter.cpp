@@ -7,7 +7,7 @@ bool phoenix_benchmark_pot_sweep_format_summary_header(char* buffer, std::size_t
     return false;
   }
 
-  const int written = std::snprintf(buffer, length, "Wiper LED1_Max LED2_Max LED1_Sat LED2_Sat");
+  const int written = std::snprintf(buffer, length, "Wiper Blue_Max Green_Max Blue_Sat Green_Sat");
   if (written <= 0) {
     return false;
   }
@@ -24,8 +24,8 @@ bool phoenix_benchmark_pot_sweep_format_summary_row(const PhoenixBenchmarkPotSwe
   }
 
   const int written = std::snprintf(buffer, length, "0x%02X %9ld %9ld %5s %5s", values.wiper_code,
-                                    static_cast<long>(values.led1_max_code), static_cast<long>(values.led2_max_code),
-                                    values.led1_saturated ? "yes" : "no", values.led2_saturated ? "yes" : "no");
+                                    static_cast<long>(values.blue_max_code), static_cast<long>(values.green_max_code),
+                                    values.blue_saturated ? "yes" : "no", values.green_saturated ? "yes" : "no");
   if (written <= 0) {
     return false;
   }

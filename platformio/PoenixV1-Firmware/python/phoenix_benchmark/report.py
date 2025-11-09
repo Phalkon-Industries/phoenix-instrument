@@ -23,8 +23,10 @@ from phoenix_benchmark.schema import (
 LABEL_WIDTH = 8
 SAMPLES_WIDTH = 9
 CHANNEL_WIDTH = 12
+CHANNEL_COLUMN_COUNT = 10
 MAP_WIDTH = 12
 WARNING_WIDTH = 14
+SLOPE_PRECISION = 6
 POT_SWEEP_SATURATION_THRESHOLD = 7_549_746
 DWELL_VARIANCE_THRESHOLD = 0.75
 DWELL_SATURATION_MASK = 0x01
@@ -75,10 +77,12 @@ class SummaryRow:
     sample_count: int
     mean_channel_a: float | None
     std_channel_a: float | None
+    slope_channel_a: float | None
     min_channel_a: float | None
     max_channel_a: float | None
     mean_channel_b: float | None
     std_channel_b: float | None
+    slope_channel_b: float | None
     min_channel_b: float | None
     max_channel_b: float | None
     channel_alignment: str | None
@@ -91,10 +95,12 @@ class SummaryRow:
             "sample_count": self.sample_count,
             "mean_channel_a": self.mean_channel_a,
             "std_channel_a": self.std_channel_a,
+            "slope_channel_a": self.slope_channel_a,
             "min_channel_a": self.min_channel_a,
             "max_channel_a": self.max_channel_a,
             "mean_channel_b": self.mean_channel_b,
             "std_channel_b": self.std_channel_b,
+            "slope_channel_b": self.slope_channel_b,
             "min_channel_b": self.min_channel_b,
             "max_channel_b": self.max_channel_b,
             "channel_alignment": self.channel_alignment,
@@ -172,18 +178,22 @@ class OsrSweepSummaryRow:
     label: str
     osr_value: int | None
     sample_count: int
-    drain_mean: float | None
-    drain_std: float | None
-    drain_min: float | None
-    drain_max: float | None
-    led1_mean: float | None
-    led1_std: float | None
-    led1_min: float | None
-    led1_max: float | None
-    led2_mean: float | None
-    led2_std: float | None
-    led2_min: float | None
-    led2_max: float | None
+    drain_blue_mean: float | None
+    drain_blue_std: float | None
+    drain_blue_min: float | None
+    drain_blue_max: float | None
+    drain_green_mean: float | None
+    drain_green_std: float | None
+    drain_green_min: float | None
+    drain_green_max: float | None
+    blue_mean: float | None
+    blue_std: float | None
+    blue_min: float | None
+    blue_max: float | None
+    green_mean: float | None
+    green_std: float | None
+    green_min: float | None
+    green_max: float | None
     sweep_duration_us: int | None
     has_metrics: bool
 
@@ -192,18 +202,22 @@ class OsrSweepSummaryRow:
             "label": self.label,
             "osr_value": self.osr_value,
             "sample_count": self.sample_count,
-            "drain_mean": self.drain_mean,
-            "drain_std": self.drain_std,
-            "drain_min": self.drain_min,
-            "drain_max": self.drain_max,
-            "led1_mean": self.led1_mean,
-            "led1_std": self.led1_std,
-            "led1_min": self.led1_min,
-            "led1_max": self.led1_max,
-            "led2_mean": self.led2_mean,
-            "led2_std": self.led2_std,
-            "led2_min": self.led2_min,
-            "led2_max": self.led2_max,
+            "drain_blue_mean": self.drain_blue_mean,
+            "drain_blue_std": self.drain_blue_std,
+            "drain_blue_min": self.drain_blue_min,
+            "drain_blue_max": self.drain_blue_max,
+            "drain_green_mean": self.drain_green_mean,
+            "drain_green_std": self.drain_green_std,
+            "drain_green_min": self.drain_green_min,
+            "drain_green_max": self.drain_green_max,
+            "blue_mean": self.blue_mean,
+            "blue_std": self.blue_std,
+            "blue_min": self.blue_min,
+            "blue_max": self.blue_max,
+            "green_mean": self.green_mean,
+            "green_std": self.green_std,
+            "green_min": self.green_min,
+            "green_max": self.green_max,
             "sweep_duration_us": self.sweep_duration_us,
             "has_metrics": self.has_metrics,
         }
@@ -212,18 +226,18 @@ class OsrSweepSummaryRow:
 @dataclass(frozen=True)
 class PotSweepSummaryRow:
     wiper_code: int
-    led1_max_code: int
-    led2_max_code: int
-    led1_saturated: bool
-    led2_saturated: bool
+    blue_max_code: int
+    green_max_code: int
+    blue_saturated: bool
+    green_saturated: bool
 
     def to_dict(self) -> dict[str, object]:
         return {
             "wiper_code": self.wiper_code,
-            "led1_max_code": self.led1_max_code,
-            "led2_max_code": self.led2_max_code,
-            "led1_saturated": self.led1_saturated,
-            "led2_saturated": self.led2_saturated,
+            "blue_max_code": self.blue_max_code,
+            "green_max_code": self.green_max_code,
+            "blue_saturated": self.blue_saturated,
+            "green_saturated": self.green_saturated,
         }
 
 
@@ -231,12 +245,18 @@ class PotSweepSummaryRow:
 class DwellSweepSummaryRow:
     dwell_us: int
     sweeps_completed: int
-    drain_mean: float | None
-    drain_std: float | None
-    led1_mean: float | None
-    led1_std: float | None
-    led2_mean: float | None
-    led2_std: float | None
+    drain_blue_mean: float | None
+    drain_blue_std: float | None
+    drain_blue_slope: float | None
+    drain_green_mean: float | None
+    drain_green_std: float | None
+    drain_green_slope: float | None
+    blue_mean: float | None
+    blue_std: float | None
+    blue_slope: float | None
+    green_mean: float | None
+    green_std: float | None
+    green_slope: float | None
     duration_us: int | None
     warning_mask: int
     has_metrics: bool
@@ -245,12 +265,18 @@ class DwellSweepSummaryRow:
         return {
             "dwell_us": self.dwell_us,
             "sweeps_completed": self.sweeps_completed,
-            "drain_mean": self.drain_mean,
-            "drain_std": self.drain_std,
-            "led1_mean": self.led1_mean,
-            "led1_std": self.led1_std,
-            "led2_mean": self.led2_mean,
-            "led2_std": self.led2_std,
+            "drain_blue_mean": self.drain_blue_mean,
+            "drain_blue_std": self.drain_blue_std,
+            "drain_blue_slope": self.drain_blue_slope,
+            "drain_green_mean": self.drain_green_mean,
+            "drain_green_std": self.drain_green_std,
+            "drain_green_slope": self.drain_green_slope,
+            "blue_mean": self.blue_mean,
+            "blue_std": self.blue_std,
+            "blue_slope": self.blue_slope,
+            "green_mean": self.green_mean,
+            "green_std": self.green_std,
+            "green_slope": self.green_slope,
             "duration_us": self.duration_us,
             "warning_mask": self.warning_mask,
             "has_metrics": self.has_metrics,
@@ -299,17 +325,17 @@ ParsedSummary = Union[
 
 @dataclass(frozen=True)
 class DriftCaptureSampleRow:
-    led1_elapsed_us: int | None
-    led1_code: int | None
-    led2_elapsed_us: int | None
-    led2_code: int | None
+    blue_elapsed_us: int | None
+    blue_code: int | None
+    green_elapsed_us: int | None
+    green_code: int | None
 
     def to_dict(self) -> Dict[str, int | None]:
         return {
-            "led1_elapsed_us": self.led1_elapsed_us,
-            "led1_code": self.led1_code,
-            "led2_elapsed_us": self.led2_elapsed_us,
-            "led2_code": self.led2_code,
+            "blue_elapsed_us": self.blue_elapsed_us,
+            "blue_code": self.blue_code,
+            "green_elapsed_us": self.green_elapsed_us,
+            "green_code": self.green_code,
         }
 
 
@@ -320,26 +346,28 @@ class DriftCaptureBurst:
     end_us: int
     step_us: int
     osr: int
-    wiper_code: str
+    wiper_blue: str
+    wiper_green: str
     warning_mask: int
     combined_samples: List[DriftCaptureSampleRow]
 
     def slug(self) -> str:
         return (
             "drift_capture_start_us"
-            f"{self.start_us}_end_us{self.end_us}_step_us{self.step_us}_osr{self.osr}_wiper_{self.wiper_code}"
+            f"{self.start_us}_end_us{self.end_us}_step_us{self.step_us}_osr{self.osr}_"
+            f"wiper_blue_{self.wiper_blue}_wiper_green_{self.wiper_green}"
         )
 
     @property
-    def led1_sample_count(self) -> int:
+    def blue_sample_count(self) -> int:
         return sum(
-            1 for row in self.combined_samples if row.led1_elapsed_us is not None
+            1 for row in self.combined_samples if row.blue_elapsed_us is not None
         )
 
     @property
-    def led2_sample_count(self) -> int:
+    def green_sample_count(self) -> int:
         return sum(
-            1 for row in self.combined_samples if row.led2_elapsed_us is not None
+            1 for row in self.combined_samples if row.green_elapsed_us is not None
         )
 
     @property
@@ -353,7 +381,8 @@ class DriftCaptureBurst:
             "end_us": self.end_us,
             "step_delay_us": self.step_us,
             "osr": self.osr,
-            "wiper_code": self.wiper_code,
+            "wiper_blue": self.wiper_blue,
+            "wiper_green": self.wiper_green,
         }
 
 
@@ -483,25 +512,42 @@ def _parse_cold_sweep_samples(lines: List[str]) -> List[ColdSweepSampleRow]:
             if stripped.startswith("#"):
                 break
 
-            parts = row_line.split()
+            parts = stripped.split()
             if len(parts) < 6:
-                raise ValueError(f"Invalid cold_sweep sample row: '{row_line.strip()}'")
-
-            saturation_token = " ".join(parts[5:]) if len(parts) > 6 else parts[5]
-            samples.append(
-                ColdSweepSampleRow(
-                    index=int(parts[0]),
-                    drain_blue_code=int(parts[1]),
-                    drain_green_code=int(parts[2]),
-                    blue_code=int(parts[3]),
-                    green_code=int(parts[4]),
-                    saturation=saturation_token.strip(),
+                raise ValueError(
+                    f"Invalid cold_sweep sample row: '{row_line.rstrip()}'"
                 )
+
+            saturation_token = " ".join(parts[5:]) if len(parts) > 5 else parts[5]
+            sample = ColdSweepSampleRow(
+                index=_parse_int(parts[0]),
+                drain_blue_code=_parse_int(parts[1]),
+                drain_green_code=_parse_int(parts[2]),
+                blue_code=_parse_int(parts[3]),
+                green_code=_parse_int(parts[4]),
+                saturation=saturation_token,
             )
+            samples.append(sample)
             index += 1
         break
 
     return samples
+
+
+def _calculate_cold_sweep_drift(
+    samples: List[ColdSweepSampleRow],
+) -> Dict[str, int]:
+    if len(samples) < 2:
+        return {}
+
+    first = samples[0]
+    last = samples[-1]
+    return {
+        "drain_blue": last.drain_blue_code - first.drain_blue_code,
+        "drain_green": last.drain_green_code - first.drain_green_code,
+        "blue": last.blue_code - first.blue_code,
+        "green": last.green_code - first.green_code,
+    }
 
 
 def _extract_cold_sweep_metadata(lines: Iterable[str]) -> Dict[str, object]:
@@ -602,6 +648,7 @@ def create_report(
             cold_run_metadata = section.metadata.copy()
             break
 
+    cold_drift_codes = _calculate_cold_sweep_drift(cold_samples)
     if cold_summary_rows or cold_metadata or cold_samples:
         saturated_channels = sorted(
             {row.channel for row in cold_summary_rows if row.saturated}
@@ -618,6 +665,8 @@ def create_report(
             cold_extras["timestamp_us"] = timestamp
         if saturated_channels:
             cold_extras["saturated_channels"] = saturated_channels
+        if cold_drift_codes:
+            cold_extras["drift_codes"] = cold_drift_codes
         if cold_run_metadata:
             cold_extras["run_metadata"] = dict(sorted(cold_run_metadata.items()))
 
@@ -644,8 +693,8 @@ def create_report(
                     "slug": burst.slug(),
                     "warning_mask": burst.warning_mask,
                     "warning_labels": burst.warning_labels,
-                    "led1_sample_count": burst.led1_sample_count,
-                    "led2_sample_count": burst.led2_sample_count,
+                    "blue_sample_count": burst.blue_sample_count,
+                    "green_sample_count": burst.green_sample_count,
                     "metadata": burst.metadata,
                 }
                 for burst in drift_bursts
@@ -685,6 +734,9 @@ def create_report(
         plot_path = output_dir / f"{slug}.png"
         _render_channel_plot(channel_rows, plot_path)
         plot_paths["channel_map"] = [plot_path]
+        csv_path = output_dir / f"{slug}_samples.csv"
+        _write_channel_map_csv(channel_rows, csv_path)
+        csv_paths["channel_map"] = [csv_path]
 
     if "adc_speed" in summaries:
         adc_rows = [
@@ -730,10 +782,12 @@ def create_report(
         _write_dwell_sweep_csv(dwell_rows, csv_path)
         csv_paths["dwell_sweep"] = [csv_path]
         variance_path = output_dir / f"{slug}_variance.png"
+        slope_path = output_dir / f"{slug}_slope.png"
         duration_path = output_dir / f"{slug}_duration.png"
         _render_dwell_variance_plot(dwell_rows, variance_path, DWELL_VARIANCE_THRESHOLD)
+        _render_dwell_slope_plot(dwell_rows, slope_path)
         _render_dwell_duration_plot(dwell_rows, duration_path)
-        plot_paths["dwell_sweep"] = [variance_path, duration_path]
+        plot_paths["dwell_sweep"] = [variance_path, slope_path, duration_path]
 
     if drift_bursts:
         plot_paths["drift_capture"] = [
@@ -950,7 +1004,23 @@ def parse_drift_capture_transcript(lines: Iterable[str]) -> List[DriftCaptureBur
         osr = _parse_int_token(
             metadata_tokens.get("osr"), default=DRIFT_CAPTURE_DEFAULT_OSR
         )
-        wiper_code = _normalise_wiper_code(metadata_tokens.get("wiper_code"))
+        wiper_blue_token = metadata_tokens.get("wiper_blue")
+        wiper_green_token = metadata_tokens.get("wiper_green")
+        legacy_wiper_token = metadata_tokens.get("wiper_code")
+        if (
+            wiper_blue_token is None
+            and wiper_green_token is None
+            and legacy_wiper_token is not None
+        ):
+            wiper_blue_token = legacy_wiper_token
+            wiper_green_token = legacy_wiper_token
+        if wiper_blue_token is None and wiper_green_token is not None:
+            wiper_blue_token = wiper_green_token
+        if wiper_green_token is None and wiper_blue_token is not None:
+            wiper_green_token = wiper_blue_token
+
+        wiper_blue = _normalise_wiper_code(wiper_blue_token)
+        wiper_green = _normalise_wiper_code(wiper_green_token)
 
         index += 1
         if index >= len(entries):
@@ -982,16 +1052,16 @@ def parse_drift_capture_transcript(lines: Iterable[str]) -> List[DriftCaptureBur
             parts = sample_line.split("\t")
             if len(parts) != 4:
                 raise ValueError(f"Invalid drift capture sample row: '{sample_line}'")
-            led1_elapsed = _parse_optional_int_field(parts[0])
-            led1_code = _parse_optional_int_field(parts[1])
-            led2_elapsed = _parse_optional_int_field(parts[2])
-            led2_code = _parse_optional_int_field(parts[3])
+            blue_elapsed = _parse_optional_int_field(parts[0])
+            blue_code = _parse_optional_int_field(parts[1])
+            green_elapsed = _parse_optional_int_field(parts[2])
+            green_code = _parse_optional_int_field(parts[3])
             samples.append(
                 DriftCaptureSampleRow(
-                    led1_elapsed_us=led1_elapsed,
-                    led1_code=led1_code,
-                    led2_elapsed_us=led2_elapsed,
-                    led2_code=led2_code,
+                    blue_elapsed_us=blue_elapsed,
+                    blue_code=blue_code,
+                    green_elapsed_us=green_elapsed,
+                    green_code=green_code,
                 )
             )
             index += 1
@@ -1004,7 +1074,8 @@ def parse_drift_capture_transcript(lines: Iterable[str]) -> List[DriftCaptureBur
                 end_us=end_us,
                 step_us=step_us,
                 osr=osr,
-                wiper_code=wiper_code,
+                wiper_blue=wiper_blue,
+                wiper_green=wiper_green,
                 warning_mask=warning_mask,
                 combined_samples=samples,
             )
@@ -1117,13 +1188,13 @@ def _parse_osr_sweep_rows(section: _SummarySection) -> List[OsrSweepSummaryRow]:
             continue
 
         parts = data.split()
-        if len(parts) != 15:
+        if len(parts) < 19:
             raise ValueError(f"Invalid osr_sweep summary row: '{entry}'")
 
         label = parts[0]
         sample_count = _parse_int(parts[1])
-        metric_tokens = parts[2:14]
-        sweep_token = parts[14]
+        metric_tokens = parts[2:18]
+        sweep_token = parts[18]
 
         metrics = [_parse_float(token) for token in metric_tokens]
         sweep_duration = (
@@ -1149,18 +1220,22 @@ def _parse_osr_sweep_rows(section: _SummarySection) -> List[OsrSweepSummaryRow]:
                 label=label,
                 osr_value=osr_value,
                 sample_count=sample_count,
-                drain_mean=metrics[0],
-                drain_std=metrics[1],
-                drain_min=metrics[2],
-                drain_max=metrics[3],
-                led1_mean=metrics[4],
-                led1_std=metrics[5],
-                led1_min=metrics[6],
-                led1_max=metrics[7],
-                led2_mean=metrics[8],
-                led2_std=metrics[9],
-                led2_min=metrics[10],
-                led2_max=metrics[11],
+                drain_blue_mean=metrics[0],
+                drain_blue_std=metrics[1],
+                drain_blue_min=metrics[2],
+                drain_blue_max=metrics[3],
+                drain_green_mean=metrics[4],
+                drain_green_std=metrics[5],
+                drain_green_min=metrics[6],
+                drain_green_max=metrics[7],
+                blue_mean=metrics[8],
+                blue_std=metrics[9],
+                blue_min=metrics[10],
+                blue_max=metrics[11],
+                green_mean=metrics[12],
+                green_std=metrics[13],
+                green_min=metrics[14],
+                green_max=metrics[15],
                 sweep_duration_us=sweep_duration,
                 has_metrics=has_metrics,
             )
@@ -1179,24 +1254,24 @@ def _parse_pot_sweep_rows(section: _SummarySection) -> List[PotSweepSummaryRow]:
         if len(parts) != 5:
             raise ValueError(f"Invalid pot_sweep summary row: '{entry}'")
 
-        wiper_token, led1_token, led2_token, led1_sat, led2_sat = parts
+        wiper_token, blue_token, green_token, blue_sat, green_sat = parts
         try:
             wiper_code = int(wiper_token, 16)
         except ValueError as exc:
             raise ValueError(f"Invalid pot_sweep wiper code: '{wiper_token}'") from exc
 
-        led1_max_code = _parse_int(led1_token)
-        led2_max_code = _parse_int(led2_token)
-        led1_saturated = led1_sat.lower() == "yes"
-        led2_saturated = led2_sat.lower() == "yes"
+        blue_max_code = _parse_int(blue_token)
+        green_max_code = _parse_int(green_token)
+        blue_saturated = blue_sat.lower() == "yes"
+        green_saturated = green_sat.lower() == "yes"
 
         parsed.append(
             PotSweepSummaryRow(
                 wiper_code=wiper_code,
-                led1_max_code=led1_max_code,
-                led2_max_code=led2_max_code,
-                led1_saturated=led1_saturated,
-                led2_saturated=led2_saturated,
+                blue_max_code=blue_max_code,
+                green_max_code=green_max_code,
+                blue_saturated=blue_saturated,
+                green_saturated=green_saturated,
             )
         )
     return parsed
@@ -1210,16 +1285,40 @@ def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryR
             continue
 
         parts = data.split()
-        if len(parts) != 10:
+        if len(parts) < 16:
             raise ValueError(f"Invalid dwell_sweep summary row: '{entry}'")
 
         dwell_us = _parse_int(parts[0])
         sweeps_completed = _parse_int(parts[1])
-        metric_tokens = parts[2:8]
-        duration_token = parts[8]
-        warning_token = parts[9]
+        drain_blue_mean = _parse_float(parts[2])
+        drain_blue_std = _parse_float(parts[3])
+        drain_blue_slope = _parse_float(parts[4])
+        drain_green_mean = _parse_float(parts[5])
+        drain_green_std = _parse_float(parts[6])
+        drain_green_slope = _parse_float(parts[7])
+        blue_mean = _parse_float(parts[8])
+        blue_std = _parse_float(parts[9])
+        blue_slope = _parse_float(parts[10])
+        green_mean = _parse_float(parts[11])
+        green_std = _parse_float(parts[12])
+        green_slope = _parse_float(parts[13])
+        duration_token = parts[14]
+        warning_token = parts[15]
 
-        metrics = [_parse_float(token) for token in metric_tokens]
+        metrics = [
+            drain_blue_mean,
+            drain_blue_std,
+            drain_blue_slope,
+            drain_green_mean,
+            drain_green_std,
+            drain_green_slope,
+            blue_mean,
+            blue_std,
+            blue_slope,
+            green_mean,
+            green_std,
+            green_slope,
+        ]
         has_metrics = all(value is not None for value in metrics)
 
         duration_us: int | None
@@ -1238,18 +1337,22 @@ def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryR
                 f"Invalid dwell_sweep warning mask: '{warning_token}'"
             ) from exc
 
-        drain_mean, drain_std, led1_mean, led1_std, led2_mean, led2_std = metrics
-
         parsed.append(
             DwellSweepSummaryRow(
                 dwell_us=dwell_us,
                 sweeps_completed=sweeps_completed,
-                drain_mean=drain_mean,
-                drain_std=drain_std,
-                led1_mean=led1_mean,
-                led1_std=led1_std,
-                led2_mean=led2_mean,
-                led2_std=led2_std,
+                drain_blue_mean=drain_blue_mean,
+                drain_blue_std=drain_blue_std,
+                drain_blue_slope=drain_blue_slope,
+                drain_green_mean=drain_green_mean,
+                drain_green_std=drain_green_std,
+                drain_green_slope=drain_green_slope,
+                blue_mean=blue_mean,
+                blue_std=blue_std,
+                blue_slope=blue_slope,
+                green_mean=green_mean,
+                green_std=green_std,
+                green_slope=green_slope,
                 duration_us=duration_us,
                 warning_mask=warning_mask,
                 has_metrics=has_metrics,
@@ -1259,11 +1362,29 @@ def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryR
 
 
 def _max_std(row: DwellSweepSummaryRow) -> float | None:
-    values = [row.drain_std, row.led1_std, row.led2_std]
+    values = [
+        row.drain_blue_std,
+        row.drain_green_std,
+        row.blue_std,
+        row.green_std,
+    ]
     metrics = [value for value in values if value is not None]
     if not metrics:
         return None
     return max(metrics)
+
+
+def _max_std_with_label(row: DwellSweepSummaryRow) -> tuple[str, float] | None:
+    labelled = [
+        ("Drain blue σ", row.drain_blue_std),
+        ("Drain green σ", row.drain_green_std),
+        ("Blue σ", row.blue_std),
+        ("Green σ", row.green_std),
+    ]
+    candidates = [(label, value) for label, value in labelled if value is not None]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[1])
 
 
 def _compute_dwell_recommendations(
@@ -1308,7 +1429,11 @@ def _decode_dwell_warning_mask(mask: int) -> str:
 
 def _parse_summary_row(line: str) -> SummaryRow:
     padded = line.ljust(
-        LABEL_WIDTH + SAMPLES_WIDTH + 8 * CHANNEL_WIDTH + MAP_WIDTH + WARNING_WIDTH
+        LABEL_WIDTH
+        + SAMPLES_WIDTH
+        + CHANNEL_COLUMN_COUNT * CHANNEL_WIDTH
+        + MAP_WIDTH
+        + WARNING_WIDTH
     )
     cursor = 0
 
@@ -1322,24 +1447,49 @@ def _parse_summary_row(line: str) -> SummaryRow:
     label = slice_field(LABEL_WIDTH)
     sample_count = _parse_int(slice_field(SAMPLES_WIDTH))
 
-    channel_values = [slice_field(CHANNEL_WIDTH) for _ in range(8)]
+    channel_values = [slice_field(CHANNEL_WIDTH) for _ in range(CHANNEL_COLUMN_COUNT)]
     alignment = slice_field(MAP_WIDTH)
     warning_field = slice_field(WARNING_WIDTH)
 
     floats = [_parse_float(value) for value in channel_values]
-    mean_a, std_a, min_a, max_a, mean_b, std_b, min_b, max_b = floats
+    (
+        mean_a,
+        std_a,
+        slope_a,
+        min_a,
+        max_a,
+        mean_b,
+        std_b,
+        slope_b,
+        min_b,
+        max_b,
+    ) = floats
 
-    has_channel_metrics = mean_a is not None and mean_b is not None
+    metric_fields = [
+        mean_a,
+        std_a,
+        slope_a,
+        min_a,
+        max_a,
+        mean_b,
+        std_b,
+        slope_b,
+        min_b,
+        max_b,
+    ]
+    has_channel_metrics = all(value is not None for value in metric_fields)
 
     return SummaryRow(
         label=label,
         sample_count=sample_count,
         mean_channel_a=mean_a,
         std_channel_a=std_a,
+        slope_channel_a=slope_a,
         min_channel_a=min_a,
         max_channel_a=max_a,
         mean_channel_b=mean_b,
         std_channel_b=std_b,
+        slope_channel_b=slope_b,
         min_channel_b=min_b,
         max_channel_b=max_b,
         channel_alignment=alignment if alignment else None,
@@ -1390,6 +1540,12 @@ def _format_optional_int(value: int | None) -> str:
     if value is None:
         return "--"
     return str(value)
+
+
+def _format_optional_signed_int(value: int | None) -> str:
+    if value is None:
+        return "--"
+    return f"{value:+d}"
 
 
 def _format_optional_text(value: str | None) -> str:
@@ -1575,6 +1731,39 @@ def _render_osr_sweep_plots(
     return [stddev_path, duration_path]
 
 
+def _offset_twin_axis(axis: plt.Axes, offset: float) -> None:
+    axis.spines["right"].set_position(("axes", offset))
+    axis.set_frame_on(True)
+    axis.patch.set_visible(False)
+
+
+def _attach_series_axis(
+    base_axis: plt.Axes,
+    series_index: int,
+    label: str,
+    color: str,
+    marker: str,
+    points: List[tuple[float, float]],
+) -> tuple[plt.Axes, object | None]:
+    if series_index == 0:
+        axis = base_axis
+    else:
+        axis = base_axis.twinx()
+        _offset_twin_axis(axis, 1.0 + 0.15 * (series_index - 1))
+
+    if points:
+        x_vals, y_vals = zip(*points)
+        (line,) = axis.plot(x_vals, y_vals, marker=marker, color=color, label=label)
+        axis.set_ylabel(label, color=color)
+        axis.tick_params(axis="y", colors=color)
+        return axis, line
+
+    axis.set_ylabel(f"{label} (n/a)", color=color)
+    axis.tick_params(axis="y", colors=color)
+    axis.set_yticks([])
+    return axis, None
+
+
 def _sort_osr_rows(rows: List[OsrSweepSummaryRow]) -> List[OsrSweepSummaryRow]:
     return sorted(
         rows,
@@ -1586,94 +1775,64 @@ def _render_osr_standard_deviation_plot(
     rows: List[OsrSweepSummaryRow], output_path: Path
 ) -> None:
     sorted_rows = [row for row in _sort_osr_rows(rows) if row.osr_value is not None]
-    drain_points = [
-        (row.osr_value, row.drain_std)
+    drain_blue_points = [
+        (row.osr_value, row.drain_blue_std)
         for row in sorted_rows
-        if row.drain_std is not None
+        if row.drain_blue_std is not None
     ]
-    led1_points = [
-        (row.osr_value, row.led1_std) for row in sorted_rows if row.led1_std is not None
+    drain_green_points = [
+        (row.osr_value, row.drain_green_std)
+        for row in sorted_rows
+        if row.drain_green_std is not None
     ]
-    led2_points = [
-        (row.osr_value, row.led2_std) for row in sorted_rows if row.led2_std is not None
+    blue_points = [
+        (row.osr_value, row.blue_std) for row in sorted_rows if row.blue_std is not None
+    ]
+    green_points = [
+        (row.osr_value, row.green_std)
+        for row in sorted_rows
+        if row.green_std is not None
     ]
 
-    if not (drain_points or led1_points or led2_points):
+    if not (drain_blue_points or drain_green_points or blue_points or green_points):
         _render_placeholder_plot("No OSR sweep metrics available", output_path)
         return
 
-    fig, ax_drain = plt.subplots(figsize=(10, 6))
-    ax_led1 = ax_drain.twinx()
-    ax_led2 = ax_drain.twinx()
-    ax_led2.spines["right"].set_position(("axes", 1.15))
-    ax_led2.set_frame_on(True)
-    ax_led2.patch.set_visible(False)
+    fig, base_axis = plt.subplots(figsize=(10, 6))
 
-    handles = []
-    labels = []
+    series = [
+        ("Drain blue σ", "#4C72B0", "o", drain_blue_points),
+        ("Drain green σ", "#2E8B57", "d", drain_green_points),
+        ("Blue σ", "#55A868", "s", blue_points),
+        ("Green σ", "#C44E52", "^", green_points),
+    ]
 
-    if drain_points:
-        x_vals, y_vals = zip(*drain_points)
-        (line_drain,) = ax_drain.plot(
-            x_vals,
-            y_vals,
-            marker="o",
-            color="#4C72B0",
-            label="Drain σ",
+    handles: List[object] = []
+    labels: List[str] = []
+    axes_for_scale: List[plt.Axes] = []
+
+    for index, (label, color, marker, points) in enumerate(series):
+        axis, handle = _attach_series_axis(
+            base_axis,
+            index,
+            label,
+            color,
+            marker,
+            points,
         )
-        handles.append(line_drain)
-        labels.append("Drain σ")
-        ax_drain.set_ylabel("Drain σ", color="#4C72B0")
-        ax_drain.tick_params(axis="y", colors="#4C72B0")
-    else:
-        ax_drain.set_ylabel("Drain σ (n/a)", color="#4C72B0")
-        ax_drain.tick_params(axis="y", colors="#4C72B0")
-        ax_drain.set_yticks([])
-
-    if led1_points:
-        x_vals, y_vals = zip(*led1_points)
-        (line_led1,) = ax_led1.plot(
-            x_vals,
-            y_vals,
-            marker="s",
-            color="#55A868",
-            label="LED1 σ",
-        )
-        handles.append(line_led1)
-        labels.append("LED1 σ")
-        ax_led1.set_ylabel("LED1 σ", color="#55A868")
-        ax_led1.tick_params(axis="y", colors="#55A868")
-    else:
-        ax_led1.set_ylabel("LED1 σ (n/a)", color="#55A868")
-        ax_led1.tick_params(axis="y", colors="#55A868")
-        ax_led1.set_yticks([])
-
-    if led2_points:
-        x_vals, y_vals = zip(*led2_points)
-        (line_led2,) = ax_led2.plot(
-            x_vals,
-            y_vals,
-            marker="^",
-            color="#C44E52",
-            label="LED2 σ",
-        )
-        handles.append(line_led2)
-        labels.append("LED2 σ")
-        ax_led2.set_ylabel("LED2 σ", color="#C44E52")
-        ax_led2.tick_params(axis="y", colors="#C44E52")
-    else:
-        ax_led2.set_ylabel("LED2 σ (n/a)", color="#C44E52")
-        ax_led2.tick_params(axis="y", colors="#C44E52")
-        ax_led2.set_yticks([])
+        axes_for_scale.append(axis)
+        if handle is not None:
+            handles.append(handle)
+            labels.append(label)
 
     x_axis = [row.osr_value for row in sorted_rows if row.osr_value is not None]
-    ax_drain.set_xlabel("OSR setting")
-    _apply_osr_log_axis([ax_drain, ax_led1, ax_led2], x_axis)
-    ax_drain.set_title("OSR sweep standard deviation")
-    ax_drain.grid(axis="both", linestyle="--", alpha=0.4)
+    base_axis.set_xlabel("OSR setting")
+    _apply_osr_log_axis(axes_for_scale, x_axis)
+    base_axis.set_title("OSR sweep standard deviation")
+    base_axis.grid(axis="both", linestyle="--", alpha=0.4)
 
     if handles:
-        ax_drain.legend(handles, labels, loc="upper right")
+        base_axis.legend(handles, labels, loc="upper right")
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -1729,39 +1888,74 @@ def _write_cold_sweep_csv(rows: List[ColdSweepSampleRow], output_path: Path) -> 
 
 
 def _write_pot_sweep_csv(rows: List[PotSweepSummaryRow], output_path: Path) -> None:
-    header = "wiper_code,led1_max_code,led2_max_code,led1_saturated,led2_saturated"
+    header = "wiper_code,blue_max_code,green_max_code,blue_saturated,green_saturated"
     lines = [header]
     for row in rows:
         lines.append(
             ",".join(
                 [
                     str(row.wiper_code),
-                    str(row.led1_max_code),
-                    str(row.led2_max_code),
-                    "yes" if row.led1_saturated else "no",
-                    "yes" if row.led2_saturated else "no",
+                    str(row.blue_max_code),
+                    str(row.green_max_code),
+                    "yes" if row.blue_saturated else "no",
+                    "yes" if row.green_saturated else "no",
                 ]
             )
         )
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _write_channel_map_csv(rows: List[SummaryRow], output_path: Path) -> None:
+    header = (
+        "state,sample_count,mean_a,std_a,slope_a,min_a,max_a,"
+        "mean_b,std_b,slope_b,min_b,max_b,channel_alignment,warning_label"
+    )
+    lines = [header]
+    for row in rows:
+        values = [
+            row.label,
+            str(row.sample_count),
+            _format_optional_float(row.mean_channel_a),
+            _format_optional_float(row.std_channel_a),
+            _format_optional_float(row.slope_channel_a, digits=SLOPE_PRECISION),
+            _format_optional_float(row.min_channel_a),
+            _format_optional_float(row.max_channel_a),
+            _format_optional_float(row.mean_channel_b),
+            _format_optional_float(row.std_channel_b),
+            _format_optional_float(row.slope_channel_b, digits=SLOPE_PRECISION),
+            _format_optional_float(row.min_channel_b),
+            _format_optional_float(row.max_channel_b),
+            row.channel_alignment or "--",
+            row.warning_label or "--",
+        ]
+        lines.append(",".join(values))
+    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _write_dwell_sweep_csv(rows: List[DwellSweepSummaryRow], output_path: Path) -> None:
     header = (
-        "dwell_us,sweeps_completed,drain_mean,drain_std,"
-        "led1_mean,led1_std,led2_mean,led2_std,duration_us,warning_mask"
+        "dwell_us,sweeps_completed,drain_blue_mean,drain_blue_std,drain_blue_slope,"
+        "drain_green_mean,drain_green_std,drain_green_slope,"
+        "blue_mean,blue_std,blue_slope,green_mean,green_std,green_slope,"
+        "duration_us,warning_mask"
     )
     lines = [header]
     for row in rows:
         values = [
             str(row.dwell_us),
             str(row.sweeps_completed),
-            _format_optional_float(row.drain_mean),
-            _format_optional_float(row.drain_std),
-            _format_optional_float(row.led1_mean),
-            _format_optional_float(row.led1_std),
-            _format_optional_float(row.led2_mean),
-            _format_optional_float(row.led2_std),
+            _format_optional_float(row.drain_blue_mean),
+            _format_optional_float(row.drain_blue_std),
+            _format_optional_float(row.drain_blue_slope),
+            _format_optional_float(row.drain_green_mean),
+            _format_optional_float(row.drain_green_std),
+            _format_optional_float(row.drain_green_slope),
+            _format_optional_float(row.blue_mean),
+            _format_optional_float(row.blue_std),
+            _format_optional_float(row.blue_slope),
+            _format_optional_float(row.green_mean),
+            _format_optional_float(row.green_std),
+            _format_optional_float(row.green_slope),
             _format_optional_int(row.duration_us),
             f"0x{row.warning_mask:02X}",
         ]
@@ -1776,24 +1970,24 @@ def _write_drift_capture_json(burst: DriftCaptureBurst, output_path: Path) -> No
         "metadata": burst.metadata,
         "warning_mask": burst.warning_mask,
         "warnings": burst.warning_labels,
-        "led1_sample_count": burst.led1_sample_count,
-        "led2_sample_count": burst.led2_sample_count,
+        "blue_sample_count": burst.blue_sample_count,
+        "green_sample_count": burst.green_sample_count,
         "samples": [row.to_dict() for row in burst.combined_samples],
     }
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _write_drift_capture_csv(burst: DriftCaptureBurst, output_path: Path) -> None:
-    header = "led1_elapsed_us,led1_code,led2_elapsed_us,led2_code"
+    header = "blue_elapsed_us,blue_code,green_elapsed_us,green_code"
     lines = [header]
     for sample in burst.combined_samples:
         lines.append(
             ",".join(
                 [
-                    _format_drift_optional(sample.led1_elapsed_us),
-                    _format_drift_optional(sample.led1_code),
-                    _format_drift_optional(sample.led2_elapsed_us),
-                    _format_drift_optional(sample.led2_code),
+                    _format_drift_optional(sample.blue_elapsed_us),
+                    _format_drift_optional(sample.blue_code),
+                    _format_drift_optional(sample.green_elapsed_us),
+                    _format_drift_optional(sample.green_code),
                 ]
             )
         )
@@ -1801,62 +1995,62 @@ def _write_drift_capture_csv(burst: DriftCaptureBurst, output_path: Path) -> Non
 
 
 def _render_drift_capture_plot(burst: DriftCaptureBurst, output_path: Path) -> None:
-    led1_points = [
-        (row.led1_elapsed_us, row.led1_code)
+    blue_points = [
+        (row.blue_elapsed_us, row.blue_code)
         for row in burst.combined_samples
-        if row.led1_elapsed_us is not None and row.led1_code is not None
+        if row.blue_elapsed_us is not None and row.blue_code is not None
     ]
-    led2_points = [
-        (row.led2_elapsed_us, row.led2_code)
+    green_points = [
+        (row.green_elapsed_us, row.green_code)
         for row in burst.combined_samples
-        if row.led2_elapsed_us is not None and row.led2_code is not None
+        if row.green_elapsed_us is not None and row.green_code is not None
     ]
 
-    if not led1_points and not led2_points:
+    if not blue_points and not green_points:
         _render_placeholder_plot("No drift capture samples recorded", output_path)
         return
 
     fig, ax_primary = plt.subplots(figsize=(10, 5))
     legend_handles = []
 
-    if led1_points:
-        x_vals_led1, y_vals_led1 = zip(*led1_points)
-        (line_led1,) = ax_primary.plot(
-            x_vals_led1,
-            y_vals_led1,
+    if blue_points:
+        x_vals_blue, y_vals_blue = zip(*blue_points)
+        (line_blue,) = ax_primary.plot(
+            x_vals_blue,
+            y_vals_blue,
             color="#4C72B0",
-            label="LED1",
+            label="Blue",
         )
-        legend_handles.append(line_led1)
-        ax_primary.set_ylabel("LED1 ADC code")
+        legend_handles.append(line_blue)
+        ax_primary.set_ylabel("Blue ADC code")
     else:
         ax_primary.set_ylabel("ADC code")
 
     secondary_axis = None
-    if led2_points:
-        x_vals_led2, y_vals_led2 = zip(*led2_points)
-        if led1_points:
+    if green_points:
+        x_vals_green, y_vals_green = zip(*green_points)
+        if blue_points:
             secondary_axis = ax_primary.twinx()
-            secondary_axis.set_ylabel("LED2 ADC code")
-            (line_led2,) = secondary_axis.plot(
-                x_vals_led2,
-                y_vals_led2,
+            secondary_axis.set_ylabel("Green ADC code")
+            (line_green,) = secondary_axis.plot(
+                x_vals_green,
+                y_vals_green,
                 color="#55A868",
-                label="LED2",
+                label="Green",
             )
         else:
-            (line_led2,) = ax_primary.plot(
-                x_vals_led2,
-                y_vals_led2,
+            (line_green,) = ax_primary.plot(
+                x_vals_green,
+                y_vals_green,
                 color="#55A868",
-                label="LED2",
+                label="Green",
             )
-            ax_primary.set_ylabel("LED2 ADC code")
-        legend_handles.append(line_led2)
+            ax_primary.set_ylabel("Green ADC code")
+        legend_handles.append(line_green)
 
     ax_primary.set_xlabel("Elapsed (us)")
     ax_primary.set_title(
-        f"Drift capture burst {burst.index} (wiper {burst.wiper_code})"
+        f"Drift capture burst {burst.index} (wipers {burst.wiper_blue}/{burst.wiper_green})"
     )
     ax_primary.grid(axis="both", linestyle="--", alpha=0.4)
 
@@ -1927,24 +2121,71 @@ def _render_pot_sweep_plot(
         return
 
     sorted_rows = sorted(rows, key=lambda row: row.wiper_code)
-    wipers = [row.wiper_code for row in sorted_rows]
-    led1_codes = [row.led1_max_code for row in sorted_rows]
-    led2_codes = [row.led2_max_code for row in sorted_rows]
+    blue_points = [(row.wiper_code, row.blue_max_code) for row in sorted_rows]
+    green_points = [(row.wiper_code, row.green_max_code) for row in sorted_rows]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(wipers, led1_codes, marker="o", color="#4C72B0", label="LED1 max")
-    ax.plot(wipers, led2_codes, marker="s", color="#55A868", label="LED2 max")
-    ax.axhline(
-        saturation_threshold,
-        color="#C44E52",
-        linestyle="--",
-        label="Saturation threshold",
+    fig, base_axis = plt.subplots(figsize=(10, 6))
+
+    handles: List[object] = []
+    labels: List[str] = []
+
+    axis_blue, handle_blue = _attach_series_axis(
+        base_axis,
+        0,
+        "Blue max",
+        "#4C72B0",
+        "o",
+        blue_points,
     )
-    ax.set_xlabel("Wiper code")
-    ax.set_ylabel("ADC code")
-    ax.set_title("Potentiometer sweep LED headroom")
-    ax.grid(axis="both", linestyle="--", alpha=0.4)
-    ax.legend()
+    if handle_blue is not None:
+        handles.append(handle_blue)
+        labels.append("Blue max")
+
+    axis_green, handle_green = _attach_series_axis(
+        base_axis,
+        1,
+        "Green max",
+        "#55A868",
+        "s",
+        green_points,
+    )
+    if handle_green is not None:
+        handles.append(handle_green)
+        labels.append("Green max")
+
+    threshold_line = None
+    for axis in [axis_blue, axis_green]:
+        if axis.lines:
+            threshold_line = axis.axhline(
+                saturation_threshold,
+                color="#C44E52",
+                linestyle="--",
+                label="Saturation threshold",
+            )
+            break
+    if threshold_line is None:
+        threshold_line = base_axis.axhline(
+            saturation_threshold,
+            color="#C44E52",
+            linestyle="--",
+            label="Saturation threshold",
+        )
+    handles.append(threshold_line)
+    labels.append("Saturation threshold")
+
+    other_axis = axis_green if threshold_line.axes is axis_blue else axis_blue
+    if other_axis is not threshold_line.axes:
+        other_axis.axhline(
+            saturation_threshold,
+            color="#C44E52",
+            linestyle="--",
+        )
+
+    base_axis.set_xlabel("Wiper code")
+    base_axis.set_title("Potentiometer sweep LED headroom")
+    base_axis.grid(axis="both", linestyle="--", alpha=0.4)
+    if handles:
+        base_axis.legend(handles, labels, loc="best")
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -1959,82 +2200,156 @@ def _render_dwell_variance_plot(
         _render_placeholder_plot("No dwell sweep metrics available", output_path)
         return
 
-    drain_points = [
-        (row.dwell_us, row.drain_std)
+    drain_blue_points = [
+        (row.dwell_us, row.drain_blue_std)
         for row in metric_rows
-        if row.drain_std is not None
+        if row.drain_blue_std is not None
     ]
-    led1_points = [
-        (row.dwell_us, row.led1_std) for row in metric_rows if row.led1_std is not None
+    drain_green_points = [
+        (row.dwell_us, row.drain_green_std)
+        for row in metric_rows
+        if row.drain_green_std is not None
     ]
-    led2_points = [
-        (row.dwell_us, row.led2_std) for row in metric_rows if row.led2_std is not None
+    blue_points = [
+        (row.dwell_us, row.blue_std) for row in metric_rows if row.blue_std is not None
+    ]
+    green_points = [
+        (row.dwell_us, row.green_std)
+        for row in metric_rows
+        if row.green_std is not None
     ]
 
-    if not (drain_points or led1_points or led2_points):
+    if not (drain_blue_points or drain_green_points or blue_points or green_points):
         _render_placeholder_plot("No dwell sweep metrics available", output_path)
         return
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, base_axis = plt.subplots(figsize=(10, 6))
 
-    handles = []
-    labels = []
+    series = [
+        ("Drain blue σ", "#4C72B0", "o", drain_blue_points),
+        ("Drain green σ", "#2E8B57", "d", drain_green_points),
+        ("Blue σ", "#55A868", "s", blue_points),
+        ("Green σ", "#C44E52", "^", green_points),
+    ]
 
-    if drain_points:
-        x_vals, y_vals = zip(*drain_points)
-        (line_drain,) = ax.plot(
-            x_vals, y_vals, marker="o", color="#4C72B0", label="Drain σ"
+    handles: List[object] = []
+    labels: List[str] = []
+    axis_lookup: Dict[str, plt.Axes] = {}
+
+    for index, (label, color, marker, points) in enumerate(series):
+        axis, handle = _attach_series_axis(
+            base_axis,
+            index,
+            label,
+            color,
+            marker,
+            points,
         )
-        handles.append(line_drain)
-        labels.append("Drain σ")
+        axis_lookup[label] = axis
+        if handle is not None:
+            handles.append(handle)
+            labels.append(label)
 
-    if led1_points:
-        x_vals, y_vals = zip(*led1_points)
-        (line_led1,) = ax.plot(
-            x_vals, y_vals, marker="s", color="#55A868", label="LED1 σ"
-        )
-        handles.append(line_led1)
-        labels.append("LED1 σ")
+    threshold_axis = None
+    for label in [item[0] for item in series]:
+        candidate = axis_lookup.get(label)
+        if candidate and candidate.lines:
+            threshold_axis = candidate
+            break
+    if threshold_axis is None:
+        threshold_axis = base_axis
 
-    if led2_points:
-        x_vals, y_vals = zip(*led2_points)
-        (line_led2,) = ax.plot(
-            x_vals, y_vals, marker="^", color="#C44E52", label="LED2 σ"
-        )
-        handles.append(line_led2)
-        labels.append("LED2 σ")
-
-    ax.axhline(
+    threshold_line = threshold_axis.axhline(
         threshold,
         color="#8172B3",
         linestyle="--",
         linewidth=1.0,
         label=f"σ threshold ({threshold:.2f})",
     )
+    handles.append(threshold_line)
+    labels.append(f"σ threshold ({threshold:.2f})")
 
     warning_rows = [
         row for row in metric_rows if (row.warning_mask & DWELL_SATURATION_MASK) != 0
     ]
-    warning_points = [
-        (row.dwell_us, _max_std(row))
-        for row in warning_rows
-        if _max_std(row) is not None
-    ]
-    if warning_points:
-        x_vals, y_vals = zip(*warning_points)
-        scatter = ax.scatter(
-            x_vals, y_vals, color="#DD8452", marker="x", label="saturation warning"
+    warnings_by_label: Dict[str, List[tuple[float, float]]] = {}
+    for row in warning_rows:
+        labelled_value = _max_std_with_label(row)
+        if labelled_value is None:
+            continue
+        warning_label, warning_value = labelled_value
+        warnings_by_label.setdefault(warning_label, []).append(
+            (row.dwell_us, warning_value)
         )
-        handles.append(scatter)
-        labels.append("saturation warning")
 
-    ax.set_xlabel("Dwell (µs)")
-    ax.set_ylabel("Standard deviation")
-    ax.set_title("Dwell sweep variance by channel")
-    ax.grid(axis="both", linestyle="--", alpha=0.4)
+    warning_handle_added = False
+    for label, points in warnings_by_label.items():
+        axis = axis_lookup.get(label)
+        if axis is None or not points:
+            continue
+        x_vals, y_vals = zip(*points)
+        scatter = axis.scatter(
+            x_vals,
+            y_vals,
+            color="#DD8452",
+            marker="x",
+            label="saturation warning",
+        )
+        if not warning_handle_added:
+            handles.append(scatter)
+            labels.append("saturation warning")
+            warning_handle_added = True
+
+    base_axis.set_xlabel("Dwell (µs)")
+    base_axis.set_title("Dwell sweep variance by channel")
+    base_axis.grid(axis="both", linestyle="--", alpha=0.4)
     if handles:
-        ax.legend(handles, labels, loc="best")
+        base_axis.legend(handles, labels, loc="best")
 
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def _render_dwell_slope_plot(
+    rows: List[DwellSweepSummaryRow], output_path: Path
+) -> None:
+    metric_rows = [row for row in rows if row.has_metrics]
+    if not metric_rows:
+        _render_placeholder_plot("No dwell sweep slope data", output_path)
+        return
+
+    dwell_values = [row.dwell_us for row in metric_rows]
+    drain_blue_slopes = [row.drain_blue_slope for row in metric_rows]
+    drain_green_slopes = [row.drain_green_slope for row in metric_rows]
+    blue_slopes = [row.blue_slope for row in metric_rows]
+    green_slopes = [row.green_slope for row in metric_rows]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(
+        dwell_values,
+        drain_blue_slopes,
+        marker="o",
+        color="#4C72B0",
+        label="Drain blue slope",
+    )
+    ax.plot(
+        dwell_values,
+        drain_green_slopes,
+        marker="d",
+        color="#2E8B57",
+        label="Drain green slope",
+    )
+    ax.plot(dwell_values, blue_slopes, marker="s", color="#55A868", label="Blue slope")
+    ax.plot(
+        dwell_values, green_slopes, marker="^", color="#C44E52", label="Green slope"
+    )
+    ax.axhline(0.0, color="#999999", linestyle="--", linewidth=1.0)
+    ax.set_xlabel("Dwell (µs)")
+    ax.set_ylabel("Slope (codes/sweep)")
+    ax.set_title("Dwell sweep drift slopes by channel")
+    ax.grid(axis="both", linestyle="--", alpha=0.4)
+    ax.legend(loc="best")
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
@@ -2079,10 +2394,15 @@ def _render_dwell_duration_plot(
     plt.close(fig)
 
 
-def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
+def _build_cold_sweep_table(
+    rows: List[ParsedSummary],
+    drift_by_channel: Dict[str, int] | None = None,
+) -> List[str]:
     cold_rows = [row for row in rows if isinstance(row, ColdSweepSummaryRow)]
     if not cold_rows:
         return []
+
+    drift_lookup = drift_by_channel or {}
 
     headers = [
         "Channel",
@@ -2091,6 +2411,7 @@ def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
         "StdDev",
         "Min",
         "Max",
+        "Drift (Δ)",
         "Saturated",
     ]
     table = [
@@ -2099,6 +2420,7 @@ def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     ]
 
     for row in cold_rows:
+        drift_value = drift_lookup.get(row.channel)
         values = [
             row.channel,
             str(row.sample_count),
@@ -2106,6 +2428,7 @@ def _build_cold_sweep_table(rows: List[ParsedSummary]) -> List[str]:
             _format_optional_float(row.stddev),
             _format_optional_int(row.min_code),
             _format_optional_int(row.max_code),
+            _format_optional_signed_int(drift_value),
             "yes" if row.saturated else "no",
         ]
         table.append("| " + " | ".join(values) + " |")
@@ -2123,10 +2446,12 @@ def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
         "Samples",
         "Mean A",
         "Std A",
+        "Slope A",
         "Min A",
         "Max A",
         "Mean B",
         "Std B",
+        "Slope B",
         "Min B",
         "Max B",
         "Channel map",
@@ -2143,10 +2468,12 @@ def _build_channel_map_table(rows: List[ParsedSummary]) -> List[str]:
             str(row.sample_count),
             _format_optional_float(row.mean_channel_a),
             _format_optional_float(row.std_channel_a),
+            _format_optional_float(row.slope_channel_a, digits=SLOPE_PRECISION),
             _format_optional_float(row.min_channel_a),
             _format_optional_float(row.max_channel_a),
             _format_optional_float(row.mean_channel_b),
             _format_optional_float(row.std_channel_b),
+            _format_optional_float(row.slope_channel_b, digits=SLOPE_PRECISION),
             _format_optional_float(row.min_channel_b),
             _format_optional_float(row.max_channel_b),
             _format_optional_text(row.channel_alignment),
@@ -2189,18 +2516,22 @@ def _build_osr_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     headers = [
         "OSR",
         "Samples",
-        "Drain mean",
-        "Drain std",
-        "Drain min",
-        "Drain max",
-        "LED1 mean",
-        "LED1 std",
-        "LED1 min",
-        "LED1 max",
-        "LED2 mean",
-        "LED2 std",
-        "LED2 min",
-        "LED2 max",
+        "Drain blue mean",
+        "Drain blue std",
+        "Drain blue min",
+        "Drain blue max",
+        "Drain green mean",
+        "Drain green std",
+        "Drain green min",
+        "Drain green max",
+        "Blue mean",
+        "Blue std",
+        "Blue min",
+        "Blue max",
+        "Green mean",
+        "Green std",
+        "Green min",
+        "Green max",
         "Sweep (us)",
     ]
     table = [
@@ -2213,18 +2544,22 @@ def _build_osr_sweep_table(rows: List[ParsedSummary]) -> List[str]:
         values = [
             osr_label,
             str(row.sample_count),
-            _format_optional_float(row.drain_mean),
-            _format_optional_float(row.drain_std),
-            _format_optional_float(row.drain_min),
-            _format_optional_float(row.drain_max),
-            _format_optional_float(row.led1_mean),
-            _format_optional_float(row.led1_std),
-            _format_optional_float(row.led1_min),
-            _format_optional_float(row.led1_max),
-            _format_optional_float(row.led2_mean),
-            _format_optional_float(row.led2_std),
-            _format_optional_float(row.led2_min),
-            _format_optional_float(row.led2_max),
+            _format_optional_float(row.drain_blue_mean),
+            _format_optional_float(row.drain_blue_std),
+            _format_optional_float(row.drain_blue_min),
+            _format_optional_float(row.drain_blue_max),
+            _format_optional_float(row.drain_green_mean),
+            _format_optional_float(row.drain_green_std),
+            _format_optional_float(row.drain_green_min),
+            _format_optional_float(row.drain_green_max),
+            _format_optional_float(row.blue_mean),
+            _format_optional_float(row.blue_std),
+            _format_optional_float(row.blue_min),
+            _format_optional_float(row.blue_max),
+            _format_optional_float(row.green_mean),
+            _format_optional_float(row.green_std),
+            _format_optional_float(row.green_min),
+            _format_optional_float(row.green_max),
             _format_optional_int(row.sweep_duration_us),
         ]
         table.append("| " + " | ".join(values) + " |")
@@ -2239,10 +2574,10 @@ def _build_pot_sweep_table(rows: List[ParsedSummary]) -> List[str]:
 
     headers = [
         "Wiper",
-        "LED1 max code",
-        "LED2 max code",
-        "LED1 saturated",
-        "LED2 saturated",
+        "Blue max code",
+        "Green max code",
+        "Blue saturated",
+        "Green saturated",
     ]
     table = [
         "| " + " | ".join(headers) + " |",
@@ -2252,10 +2587,10 @@ def _build_pot_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     for row in pot_rows:
         values = [
             f"0x{row.wiper_code:02X}",
-            str(row.led1_max_code),
-            str(row.led2_max_code),
-            "yes" if row.led1_saturated else "no",
-            "yes" if row.led2_saturated else "no",
+            str(row.blue_max_code),
+            str(row.green_max_code),
+            "yes" if row.blue_saturated else "no",
+            "yes" if row.green_saturated else "no",
         ]
         table.append("| " + " | ".join(values) + " |")
 
@@ -2270,9 +2605,18 @@ def _build_dwell_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     headers = [
         "Dwell (µs)",
         "Sweeps",
-        "Drain std",
-        "LED1 std",
-        "LED2 std",
+        "Drain blue mean",
+        "Drain blue std",
+        "Drain blue slope",
+        "Drain green mean",
+        "Drain green std",
+        "Drain green slope",
+        "Blue mean",
+        "Blue std",
+        "Blue slope",
+        "Green mean",
+        "Green std",
+        "Green slope",
         "Duration (µs)",
         "Warnings",
     ]
@@ -2286,9 +2630,18 @@ def _build_dwell_sweep_table(rows: List[ParsedSummary]) -> List[str]:
         values = [
             str(row.dwell_us),
             str(row.sweeps_completed),
-            _format_optional_float(row.drain_std),
-            _format_optional_float(row.led1_std),
-            _format_optional_float(row.led2_std),
+            _format_optional_float(row.drain_blue_mean),
+            _format_optional_float(row.drain_blue_std),
+            _format_optional_float(row.drain_blue_slope),
+            _format_optional_float(row.drain_green_mean),
+            _format_optional_float(row.drain_green_std),
+            _format_optional_float(row.drain_green_slope),
+            _format_optional_float(row.blue_mean),
+            _format_optional_float(row.blue_std),
+            _format_optional_float(row.blue_slope),
+            _format_optional_float(row.green_mean),
+            _format_optional_float(row.green_std),
+            _format_optional_float(row.green_slope),
             _format_optional_int(row.duration_us),
             warnings,
         ]
@@ -2332,6 +2685,7 @@ def _render_cold_sweep_section(
     warning = extras.get("warning") if isinstance(extras, dict) else "none"
     run_metadata = extras.get("run_metadata") if isinstance(extras, dict) else {}
     saturated = extras.get("saturated_channels") if isinstance(extras, dict) else []
+    drift_codes = extras.get("drift_codes") if isinstance(extras, dict) else {}
 
     detail_tokens = []
     if captured is not None:
@@ -2362,7 +2716,9 @@ def _render_cold_sweep_section(
         lines.append(f"_Saturated channels_: {channels}")
         lines.append("")
 
-    table_lines = _build_cold_sweep_table(rows)
+    table_lines = _build_cold_sweep_table(
+        rows, drift_by_channel=drift_codes if isinstance(drift_codes, dict) else None
+    )
     if table_lines:
         lines.extend(table_lines)
     else:
@@ -2398,7 +2754,8 @@ def _render_pot_sweep_section(
         lines.append("| LED | Recommended Wiper |")
         lines.append("| --- | --- |")
         for led, wiper in sorted(recommendations.items()):
-            lines.append(f"| {led.upper()} | {wiper} |")
+            led_label = led.capitalize()
+            lines.append(f"| {led_label} | {wiper} |")
     else:
         lines.append("_No recommendations recorded._")
     lines.append("")
@@ -2407,20 +2764,16 @@ def _render_pot_sweep_section(
     lines.append(f"_Warnings_: {warning_label}")
     lines.append("")
 
-    lines.append("<details>")
-    lines.append("<summary>Full potentiometer sweep results</summary>")
-    lines.append("")
     table_lines = _build_pot_sweep_table(rows)
-    if table_lines:
-        lines.extend(table_lines)
-    else:
-        lines.append("_(no pot sweep metrics)_")
-    lines.append("")
     if csv_paths:
         csv_link = csv_paths[0].as_posix()
         lines.append(f"[Download CSV]({csv_link})")
         lines.append("")
-    lines.append("</details>")
+        lines.append("_Full sweep results available via CSV download._")
+    elif table_lines:
+        lines.extend(table_lines)
+    else:
+        lines.append("_(no pot sweep metrics)_")
     lines.append("")
 
     if plot_paths:
@@ -2541,6 +2894,11 @@ def _render_markdown_report(
                 lines.append(section.header)
                 lines.extend(section.rows)
                 lines.append("```")
+            csv_entries = csv_paths.get(section.scenario, [])
+            if csv_entries:
+                for index, csv_entry in enumerate(csv_entries, start=1):
+                    suffix = f" #{index}" if len(csv_entries) > 1 else ""
+                    lines.append(f"[Download CSV{suffix}]({csv_entry.as_posix()})")
             lines.append("")
             if section.scenario in plot_paths:
                 for index, path in enumerate(plot_paths[section.scenario], start=1):
@@ -2559,24 +2917,25 @@ def _render_markdown_report(
         lines.append("## Drift Capture")
         lines.append("")
         lines.append(
-            "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper | LED1 Samples | LED2 Samples | Warnings |"
+            "| Burst | Start (us) | End (us) | Step (us) | OSR | Wiper (blue) | Wiper (green) | Blue Samples | Green Samples | Warnings |"
         )
-        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+        lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
         for entry in drift_entries:
             burst = entry.burst
             warning_label = (
                 ", ".join(burst.warning_labels) if burst.warning_labels else "none"
             )
             lines.append(
-                "| {index} | {start} | {end} | {step} | {osr} | {wiper} | {led1} | {led2} | {warnings} |".format(
+                "| {index} | {start} | {end} | {step} | {osr} | {wiper_blue} | {wiper_green} | {blue} | {green} | {warnings} |".format(
                     index=burst.index,
                     start=burst.start_us,
                     end=burst.end_us,
                     step=burst.step_us,
                     osr=burst.osr,
-                    wiper=burst.wiper_code,
-                    led1=burst.led1_sample_count,
-                    led2=burst.led2_sample_count,
+                    wiper_blue=burst.wiper_blue,
+                    wiper_green=burst.wiper_green,
+                    blue=burst.blue_sample_count,
+                    green=burst.green_sample_count,
                     warnings=warning_label,
                 )
             )
@@ -2593,24 +2952,5 @@ def _render_markdown_report(
                 f"[JSON]({entry.json.as_posix()})",
             ]
             lines.append("Artifacts: " + " · ".join(artifact_links))
-            lines.append("")
-            lines.append("<details>")
-            lines.append(f"<summary>Burst {burst.index} samples</summary>")
-            lines.append("")
-            lines.append(
-                "| Elapsed LED1 (us) | Code LED1 | Elapsed LED2 (us) | Code LED2 |"
-            )
-            lines.append("| --- | --- | --- | --- |")
-            for sample in burst.combined_samples:
-                lines.append(
-                    "| {led1_elapsed} | {led1_code} | {led2_elapsed} | {led2_code} |".format(
-                        led1_elapsed=_format_drift_optional(sample.led1_elapsed_us),
-                        led1_code=_format_drift_optional(sample.led1_code),
-                        led2_elapsed=_format_drift_optional(sample.led2_elapsed_us),
-                        led2_code=_format_drift_optional(sample.led2_code),
-                    )
-                )
-            lines.append("")
-            lines.append("</details>")
             lines.append("")
     return "\n".join(lines)

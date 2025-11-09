@@ -14,10 +14,10 @@ constexpr std::size_t k_phoenix_benchmark_pot_sweep_summary_buffer_bytes = 160u;
  */
 struct PhoenixBenchmarkPotSweepSummaryRowValues {
   uint8_t wiper_code;
-  int32_t led1_max_code;
-  int32_t led2_max_code;
-  bool    led1_saturated;
-  bool    led2_saturated;
+  int32_t blue_max_code;
+  int32_t green_max_code;
+  bool    blue_saturated;
+  bool    green_saturated;
 };
 
 /**
