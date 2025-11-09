@@ -178,10 +178,14 @@ class OsrSweepSummaryRow:
     label: str
     osr_value: int | None
     sample_count: int
-    drain_mean: float | None
-    drain_std: float | None
-    drain_min: float | None
-    drain_max: float | None
+    drain_blue_mean: float | None
+    drain_blue_std: float | None
+    drain_blue_min: float | None
+    drain_blue_max: float | None
+    drain_green_mean: float | None
+    drain_green_std: float | None
+    drain_green_min: float | None
+    drain_green_max: float | None
     blue_mean: float | None
     blue_std: float | None
     blue_min: float | None
@@ -198,10 +202,14 @@ class OsrSweepSummaryRow:
             "label": self.label,
             "osr_value": self.osr_value,
             "sample_count": self.sample_count,
-            "drain_mean": self.drain_mean,
-            "drain_std": self.drain_std,
-            "drain_min": self.drain_min,
-            "drain_max": self.drain_max,
+            "drain_blue_mean": self.drain_blue_mean,
+            "drain_blue_std": self.drain_blue_std,
+            "drain_blue_min": self.drain_blue_min,
+            "drain_blue_max": self.drain_blue_max,
+            "drain_green_mean": self.drain_green_mean,
+            "drain_green_std": self.drain_green_std,
+            "drain_green_min": self.drain_green_min,
+            "drain_green_max": self.drain_green_max,
             "blue_mean": self.blue_mean,
             "blue_std": self.blue_std,
             "blue_min": self.blue_min,
@@ -237,9 +245,12 @@ class PotSweepSummaryRow:
 class DwellSweepSummaryRow:
     dwell_us: int
     sweeps_completed: int
-    drain_mean: float | None
-    drain_std: float | None
-    drain_slope: float | None
+    drain_blue_mean: float | None
+    drain_blue_std: float | None
+    drain_blue_slope: float | None
+    drain_green_mean: float | None
+    drain_green_std: float | None
+    drain_green_slope: float | None
     blue_mean: float | None
     blue_std: float | None
     blue_slope: float | None
@@ -254,9 +265,12 @@ class DwellSweepSummaryRow:
         return {
             "dwell_us": self.dwell_us,
             "sweeps_completed": self.sweeps_completed,
-            "drain_mean": self.drain_mean,
-            "drain_std": self.drain_std,
-            "drain_slope": self.drain_slope,
+            "drain_blue_mean": self.drain_blue_mean,
+            "drain_blue_std": self.drain_blue_std,
+            "drain_blue_slope": self.drain_blue_slope,
+            "drain_green_mean": self.drain_green_mean,
+            "drain_green_std": self.drain_green_std,
+            "drain_green_slope": self.drain_green_slope,
             "blue_mean": self.blue_mean,
             "blue_std": self.blue_std,
             "blue_slope": self.blue_slope,
@@ -498,21 +512,22 @@ def _parse_cold_sweep_samples(lines: List[str]) -> List[ColdSweepSampleRow]:
             if stripped.startswith("#"):
                 break
 
-            parts = row_line.split()
+            parts = stripped.split()
             if len(parts) < 6:
-                raise ValueError(f"Invalid cold_sweep sample row: '{row_line.strip()}'")
-
-            saturation_token = " ".join(parts[5:]) if len(parts) > 6 else parts[5]
-            samples.append(
-                ColdSweepSampleRow(
-                    index=int(parts[0]),
-                    drain_blue_code=int(parts[1]),
-                    drain_green_code=int(parts[2]),
-                    blue_code=int(parts[3]),
-                    green_code=int(parts[4]),
-                    saturation=saturation_token.strip(),
+                raise ValueError(
+                    f"Invalid cold_sweep sample row: '{row_line.rstrip()}'"
                 )
+
+            saturation_token = " ".join(parts[5:]) if len(parts) > 5 else parts[5]
+            sample = ColdSweepSampleRow(
+                index=_parse_int(parts[0]),
+                drain_blue_code=_parse_int(parts[1]),
+                drain_green_code=_parse_int(parts[2]),
+                blue_code=_parse_int(parts[3]),
+                green_code=_parse_int(parts[4]),
+                saturation=saturation_token,
             )
+            samples.append(sample)
             index += 1
         break
 
@@ -1173,13 +1188,13 @@ def _parse_osr_sweep_rows(section: _SummarySection) -> List[OsrSweepSummaryRow]:
             continue
 
         parts = data.split()
-        if len(parts) != 15:
+        if len(parts) < 19:
             raise ValueError(f"Invalid osr_sweep summary row: '{entry}'")
 
         label = parts[0]
         sample_count = _parse_int(parts[1])
-        metric_tokens = parts[2:14]
-        sweep_token = parts[14]
+        metric_tokens = parts[2:18]
+        sweep_token = parts[18]
 
         metrics = [_parse_float(token) for token in metric_tokens]
         sweep_duration = (
@@ -1205,18 +1220,22 @@ def _parse_osr_sweep_rows(section: _SummarySection) -> List[OsrSweepSummaryRow]:
                 label=label,
                 osr_value=osr_value,
                 sample_count=sample_count,
-                drain_mean=metrics[0],
-                drain_std=metrics[1],
-                drain_min=metrics[2],
-                drain_max=metrics[3],
-                blue_mean=metrics[4],
-                blue_std=metrics[5],
-                blue_min=metrics[6],
-                blue_max=metrics[7],
-                green_mean=metrics[8],
-                green_std=metrics[9],
-                green_min=metrics[10],
-                green_max=metrics[11],
+                drain_blue_mean=metrics[0],
+                drain_blue_std=metrics[1],
+                drain_blue_min=metrics[2],
+                drain_blue_max=metrics[3],
+                drain_green_mean=metrics[4],
+                drain_green_std=metrics[5],
+                drain_green_min=metrics[6],
+                drain_green_max=metrics[7],
+                blue_mean=metrics[8],
+                blue_std=metrics[9],
+                blue_min=metrics[10],
+                blue_max=metrics[11],
+                green_mean=metrics[12],
+                green_std=metrics[13],
+                green_min=metrics[14],
+                green_max=metrics[15],
                 sweep_duration_us=sweep_duration,
                 has_metrics=has_metrics,
             )
@@ -1266,27 +1285,33 @@ def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryR
             continue
 
         parts = data.split()
-        if len(parts) != 13:
+        if len(parts) < 16:
             raise ValueError(f"Invalid dwell_sweep summary row: '{entry}'")
 
         dwell_us = _parse_int(parts[0])
         sweeps_completed = _parse_int(parts[1])
-        drain_mean = _parse_float(parts[2])
-        drain_std = _parse_float(parts[3])
-        drain_slope = _parse_float(parts[4])
-        blue_mean = _parse_float(parts[5])
-        blue_std = _parse_float(parts[6])
-        blue_slope = _parse_float(parts[7])
-        green_mean = _parse_float(parts[8])
-        green_std = _parse_float(parts[9])
-        green_slope = _parse_float(parts[10])
-        duration_token = parts[11]
-        warning_token = parts[12]
+        drain_blue_mean = _parse_float(parts[2])
+        drain_blue_std = _parse_float(parts[3])
+        drain_blue_slope = _parse_float(parts[4])
+        drain_green_mean = _parse_float(parts[5])
+        drain_green_std = _parse_float(parts[6])
+        drain_green_slope = _parse_float(parts[7])
+        blue_mean = _parse_float(parts[8])
+        blue_std = _parse_float(parts[9])
+        blue_slope = _parse_float(parts[10])
+        green_mean = _parse_float(parts[11])
+        green_std = _parse_float(parts[12])
+        green_slope = _parse_float(parts[13])
+        duration_token = parts[14]
+        warning_token = parts[15]
 
         metrics = [
-            drain_mean,
-            drain_std,
-            drain_slope,
+            drain_blue_mean,
+            drain_blue_std,
+            drain_blue_slope,
+            drain_green_mean,
+            drain_green_std,
+            drain_green_slope,
             blue_mean,
             blue_std,
             blue_slope,
@@ -1316,9 +1341,12 @@ def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryR
             DwellSweepSummaryRow(
                 dwell_us=dwell_us,
                 sweeps_completed=sweeps_completed,
-                drain_mean=drain_mean,
-                drain_std=drain_std,
-                drain_slope=drain_slope,
+                drain_blue_mean=drain_blue_mean,
+                drain_blue_std=drain_blue_std,
+                drain_blue_slope=drain_blue_slope,
+                drain_green_mean=drain_green_mean,
+                drain_green_std=drain_green_std,
+                drain_green_slope=drain_green_slope,
                 blue_mean=blue_mean,
                 blue_std=blue_std,
                 blue_slope=blue_slope,
@@ -1334,7 +1362,12 @@ def _parse_dwell_sweep_rows(section: _SummarySection) -> List[DwellSweepSummaryR
 
 
 def _max_std(row: DwellSweepSummaryRow) -> float | None:
-    values = [row.drain_std, row.blue_std, row.green_std]
+    values = [
+        row.drain_blue_std,
+        row.drain_green_std,
+        row.blue_std,
+        row.green_std,
+    ]
     metrics = [value for value in values if value is not None]
     if not metrics:
         return None
@@ -1696,10 +1729,15 @@ def _render_osr_standard_deviation_plot(
     rows: List[OsrSweepSummaryRow], output_path: Path
 ) -> None:
     sorted_rows = [row for row in _sort_osr_rows(rows) if row.osr_value is not None]
-    drain_points = [
-        (row.osr_value, row.drain_std)
+    drain_blue_points = [
+        (row.osr_value, row.drain_blue_std)
         for row in sorted_rows
-        if row.drain_std is not None
+        if row.drain_blue_std is not None
+    ]
+    drain_green_points = [
+        (row.osr_value, row.drain_green_std)
+        for row in sorted_rows
+        if row.drain_green_std is not None
     ]
     blue_points = [
         (row.osr_value, row.blue_std) for row in sorted_rows if row.blue_std is not None
@@ -1710,7 +1748,7 @@ def _render_osr_standard_deviation_plot(
         if row.green_std is not None
     ]
 
-    if not (drain_points or blue_points or green_points):
+    if not (drain_blue_points or drain_green_points or blue_points or green_points):
         _render_placeholder_plot("No OSR sweep metrics available", output_path)
         return
 
@@ -1724,22 +1762,34 @@ def _render_osr_standard_deviation_plot(
     handles = []
     labels = []
 
-    if drain_points:
-        x_vals, y_vals = zip(*drain_points)
-        (line_drain,) = ax_drain.plot(
+    if drain_blue_points:
+        x_vals, y_vals = zip(*drain_blue_points)
+        (line_drain_blue,) = ax_drain.plot(
             x_vals,
             y_vals,
             marker="o",
             color="#4C72B0",
-            label="Drain σ",
+            label="Drain blue σ",
         )
-        handles.append(line_drain)
-        labels.append("Drain σ")
-        ax_drain.set_ylabel("Drain σ", color="#4C72B0")
-        ax_drain.tick_params(axis="y", colors="#4C72B0")
+        handles.append(line_drain_blue)
+        labels.append("Drain blue σ")
+
+    if drain_green_points:
+        x_vals, y_vals = zip(*drain_green_points)
+        (line_drain_green,) = ax_drain.plot(
+            x_vals,
+            y_vals,
+            marker="d",
+            color="#2E8B57",
+            label="Drain green σ",
+        )
+        handles.append(line_drain_green)
+        labels.append("Drain green σ")
+
+    if drain_blue_points or drain_green_points:
+        ax_drain.set_ylabel("Drain σ")
     else:
-        ax_drain.set_ylabel("Drain σ (n/a)", color="#4C72B0")
-        ax_drain.tick_params(axis="y", colors="#4C72B0")
+        ax_drain.set_ylabel("Drain σ (n/a)")
         ax_drain.set_yticks([])
 
     if blue_points:
@@ -1887,7 +1937,8 @@ def _write_channel_map_csv(rows: List[SummaryRow], output_path: Path) -> None:
 
 def _write_dwell_sweep_csv(rows: List[DwellSweepSummaryRow], output_path: Path) -> None:
     header = (
-        "dwell_us,sweeps_completed,drain_mean,drain_std,drain_slope,"
+        "dwell_us,sweeps_completed,drain_blue_mean,drain_blue_std,drain_blue_slope,"
+        "drain_green_mean,drain_green_std,drain_green_slope,"
         "blue_mean,blue_std,blue_slope,green_mean,green_std,green_slope,"
         "duration_us,warning_mask"
     )
@@ -1896,9 +1947,12 @@ def _write_dwell_sweep_csv(rows: List[DwellSweepSummaryRow], output_path: Path) 
         values = [
             str(row.dwell_us),
             str(row.sweeps_completed),
-            _format_optional_float(row.drain_mean),
-            _format_optional_float(row.drain_std),
-            _format_optional_float(row.drain_slope),
+            _format_optional_float(row.drain_blue_mean),
+            _format_optional_float(row.drain_blue_std),
+            _format_optional_float(row.drain_blue_slope),
+            _format_optional_float(row.drain_green_mean),
+            _format_optional_float(row.drain_green_std),
+            _format_optional_float(row.drain_green_slope),
             _format_optional_float(row.blue_mean),
             _format_optional_float(row.blue_std),
             _format_optional_float(row.blue_slope),
@@ -2102,10 +2156,15 @@ def _render_dwell_variance_plot(
         _render_placeholder_plot("No dwell sweep metrics available", output_path)
         return
 
-    drain_points = [
-        (row.dwell_us, row.drain_std)
+    drain_blue_points = [
+        (row.dwell_us, row.drain_blue_std)
         for row in metric_rows
-        if row.drain_std is not None
+        if row.drain_blue_std is not None
+    ]
+    drain_green_points = [
+        (row.dwell_us, row.drain_green_std)
+        for row in metric_rows
+        if row.drain_green_std is not None
     ]
     blue_points = [
         (row.dwell_us, row.blue_std) for row in metric_rows if row.blue_std is not None
@@ -2116,7 +2175,7 @@ def _render_dwell_variance_plot(
         if row.green_std is not None
     ]
 
-    if not (drain_points or blue_points or green_points):
+    if not (drain_blue_points or drain_green_points or blue_points or green_points):
         _render_placeholder_plot("No dwell sweep metrics available", output_path)
         return
 
@@ -2125,13 +2184,21 @@ def _render_dwell_variance_plot(
     handles = []
     labels = []
 
-    if drain_points:
-        x_vals, y_vals = zip(*drain_points)
-        (line_drain,) = ax.plot(
-            x_vals, y_vals, marker="o", color="#4C72B0", label="Drain σ"
+    if drain_blue_points:
+        x_vals, y_vals = zip(*drain_blue_points)
+        (line_drain_blue,) = ax.plot(
+            x_vals, y_vals, marker="o", color="#4C72B0", label="Drain blue σ"
         )
-        handles.append(line_drain)
-        labels.append("Drain σ")
+        handles.append(line_drain_blue)
+        labels.append("Drain blue σ")
+
+    if drain_green_points:
+        x_vals, y_vals = zip(*drain_green_points)
+        (line_drain_green,) = ax.plot(
+            x_vals, y_vals, marker="d", color="#2E8B57", label="Drain green σ"
+        )
+        handles.append(line_drain_green)
+        labels.append("Drain green σ")
 
     if blue_points:
         x_vals, y_vals = zip(*blue_points)
@@ -2194,13 +2261,25 @@ def _render_dwell_slope_plot(
         return
 
     dwell_values = [row.dwell_us for row in metric_rows]
-    drain_slopes = [row.drain_slope for row in metric_rows]
+    drain_blue_slopes = [row.drain_blue_slope for row in metric_rows]
+    drain_green_slopes = [row.drain_green_slope for row in metric_rows]
     blue_slopes = [row.blue_slope for row in metric_rows]
     green_slopes = [row.green_slope for row in metric_rows]
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(
-        dwell_values, drain_slopes, marker="o", color="#4C72B0", label="Drain slope"
+        dwell_values,
+        drain_blue_slopes,
+        marker="o",
+        color="#4C72B0",
+        label="Drain blue slope",
+    )
+    ax.plot(
+        dwell_values,
+        drain_green_slopes,
+        marker="d",
+        color="#2E8B57",
+        label="Drain green slope",
     )
     ax.plot(dwell_values, blue_slopes, marker="s", color="#55A868", label="Blue slope")
     ax.plot(
@@ -2378,10 +2457,14 @@ def _build_osr_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     headers = [
         "OSR",
         "Samples",
-        "Drain mean",
-        "Drain std",
-        "Drain min",
-        "Drain max",
+        "Drain blue mean",
+        "Drain blue std",
+        "Drain blue min",
+        "Drain blue max",
+        "Drain green mean",
+        "Drain green std",
+        "Drain green min",
+        "Drain green max",
         "Blue mean",
         "Blue std",
         "Blue min",
@@ -2402,10 +2485,14 @@ def _build_osr_sweep_table(rows: List[ParsedSummary]) -> List[str]:
         values = [
             osr_label,
             str(row.sample_count),
-            _format_optional_float(row.drain_mean),
-            _format_optional_float(row.drain_std),
-            _format_optional_float(row.drain_min),
-            _format_optional_float(row.drain_max),
+            _format_optional_float(row.drain_blue_mean),
+            _format_optional_float(row.drain_blue_std),
+            _format_optional_float(row.drain_blue_min),
+            _format_optional_float(row.drain_blue_max),
+            _format_optional_float(row.drain_green_mean),
+            _format_optional_float(row.drain_green_std),
+            _format_optional_float(row.drain_green_min),
+            _format_optional_float(row.drain_green_max),
             _format_optional_float(row.blue_mean),
             _format_optional_float(row.blue_std),
             _format_optional_float(row.blue_min),
@@ -2459,9 +2546,12 @@ def _build_dwell_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     headers = [
         "Dwell (µs)",
         "Sweeps",
-        "Drain mean",
-        "Drain std",
-        "Drain slope",
+        "Drain blue mean",
+        "Drain blue std",
+        "Drain blue slope",
+        "Drain green mean",
+        "Drain green std",
+        "Drain green slope",
         "Blue mean",
         "Blue std",
         "Blue slope",
@@ -2481,9 +2571,12 @@ def _build_dwell_sweep_table(rows: List[ParsedSummary]) -> List[str]:
         values = [
             str(row.dwell_us),
             str(row.sweeps_completed),
-            _format_optional_float(row.drain_mean),
-            _format_optional_float(row.drain_std),
-            _format_optional_float(row.drain_slope),
+            _format_optional_float(row.drain_blue_mean),
+            _format_optional_float(row.drain_blue_std),
+            _format_optional_float(row.drain_blue_slope),
+            _format_optional_float(row.drain_green_mean),
+            _format_optional_float(row.drain_green_std),
+            _format_optional_float(row.drain_green_slope),
             _format_optional_float(row.blue_mean),
             _format_optional_float(row.blue_std),
             _format_optional_float(row.blue_slope),

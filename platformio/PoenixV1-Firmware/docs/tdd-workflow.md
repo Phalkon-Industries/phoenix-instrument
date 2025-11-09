@@ -17,6 +17,10 @@ Every firmware or host change in this repository follows a test-first loop. Use 
   ```powershell
   pio test -e main -vv -f *led_router*
   ```
+- For host-side benchmark work, run only the Phoenix benchmark Python suite:
+  ```powershell
+  conda run -n phoenix-python pytest -q python/tests/phoenix_benchmark
+  ```
 - Confirm the new tests fail. This “red” baseline protects the feedback loop.
 
 ## 4. Pause and review

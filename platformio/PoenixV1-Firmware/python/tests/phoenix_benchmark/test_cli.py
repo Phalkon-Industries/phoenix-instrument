@@ -154,10 +154,14 @@ class OsrSweepSerial(DummySerial):
             label = "OSR32"
             sweeps = 12
             values = {
-                "drain_mean": 1.234,
-                "drain_std": 0.456,
-                "drain_min": 1.111,
-                "drain_max": 1.888,
+                "drain_blue_mean": 1.234,
+                "drain_blue_std": 0.456,
+                "drain_blue_min": 1.111,
+                "drain_blue_max": 1.888,
+                "drain_green_mean": 1.444,
+                "drain_green_std": 0.354,
+                "drain_green_min": 1.222,
+                "drain_green_max": 1.999,
                 "blue_mean": 2.345,
                 "blue_std": 0.567,
                 "blue_min": 2.123,
@@ -170,8 +174,10 @@ class OsrSweepSerial(DummySerial):
             }
             return (
                 f"{label:<10}{sweeps:>9}  "
-                f"{values['drain_mean']:>10.3f}  {values['drain_std']:>10.3f}  "
-                f"{values['drain_min']:>10.3f}  {values['drain_max']:>10.3f}  "
+                f"{values['drain_blue_mean']:>15.3f}  {values['drain_blue_std']:>15.3f}  "
+                f"{values['drain_blue_min']:>15.3f}  {values['drain_blue_max']:>15.3f}  "
+                f"{values['drain_green_mean']:>15.3f}  {values['drain_green_std']:>15.3f}  "
+                f"{values['drain_green_min']:>15.3f}  {values['drain_green_max']:>15.3f}  "
                 f"{values['blue_mean']:>10.3f}  {values['blue_std']:>10.3f}  "
                 f"{values['blue_min']:>10.3f}  {values['blue_max']:>10.3f}  "
                 f"{values['green_mean']:>10.3f}  {values['green_std']:>10.3f}  "
@@ -181,9 +187,9 @@ class OsrSweepSerial(DummySerial):
 
         row = format_row().encode("utf-8") + b"\n"
         header = (
-            "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  "
-            "Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  "
-            "Green_Min  Green_Max  Sweep_us"
+            "Value      Samples  Drain_Blue_Mean  Drain_Blue_Std  Drain_Blue_Min  Drain_Blue_Max  "
+            "Drain_Green_Mean  Drain_Green_Std  Drain_Green_Min  Drain_Green_Max  "
+            "Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  Green_Min  Green_Max  Sweep_us"
         ).encode("utf-8") + b"\n"
         self._line_queue = [
             b"# phoenix benchmark ready\n",
@@ -224,12 +230,18 @@ class DwellSweepSerial(DummySerial):
         def format_row(
             dwell: int,
             sweeps: int,
-            drain_mean: float | None,
-            drain_std: float | None,
+            drain_blue_mean: float | None,
+            drain_blue_std: float | None,
+            drain_blue_slope: float | None,
+            drain_green_mean: float | None,
+            drain_green_std: float | None,
+            drain_green_slope: float | None,
             blue_mean: float | None,
             blue_std: float | None,
+            blue_slope: float | None,
             green_mean: float | None,
             green_std: float | None,
+            green_slope: float | None,
             duration: int,
             warning_mask: int,
         ) -> bytes:
@@ -241,30 +253,82 @@ class DwellSweepSerial(DummySerial):
             segments = [
                 f"{dwell:>8d}",
                 f"{sweeps:>6d}",
-                render_metric(drain_mean, 10),
-                render_metric(drain_std, 9),
+                render_metric(drain_blue_mean, 15),
+                render_metric(drain_blue_std, 15),
+                render_metric(drain_blue_slope, 17),
+                render_metric(drain_green_mean, 16),
+                render_metric(drain_green_std, 15),
+                render_metric(drain_green_slope, 17),
                 render_metric(blue_mean, 10),
                 render_metric(blue_std, 8),
+                render_metric(blue_slope, 10),
                 render_metric(green_mean, 10),
                 render_metric(green_std, 8),
+                render_metric(green_slope, 11),
                 f"{duration:>12d}",
                 f"0x{warning_mask:02X}",
             ]
             return ("  ".join(segments) + "\n").encode("utf-8")
 
         header = (
-            "Dwell_us  Sweeps  Drain_Mean  Drain_Std  Blue_Mean  Blue_Std  "
-            "Green_Mean  Green_Std  Duration_us  Warning_Mask\n"
+            "Dwell_us  Sweeps  Drain_Blue_Mean  Drain_Blue_Std  Drain_Blue_Slope  "
+            "Drain_Green_Mean  Drain_Green_Std  Drain_Green_Slope  Blue_Mean  Blue_Std  Blue_Slope  "
+            "Green_Mean  Green_Std  Green_Slope  Duration_us  Warning_Mask\n"
         ).encode("utf-8")
 
         row_stable = format_row(
-            100, 4, 1.234, 0.111, 2.345, 0.222, 3.456, 0.333, 50_000, 0x00
+            100,
+            4,
+            1.234,
+            0.111,
+            -0.123,
+            1.445,
+            0.095,
+            0.210,
+            2.345,
+            0.222,
+            1.050,
+            3.456,
+            0.333,
+            -0.900,
+            50_000,
+            0x00,
         )
         row_saturation = format_row(
-            200, 4, 1.400, 0.250, 2.500, 0.350, 3.600, 0.450, 60_000, 0x01
+            200,
+            4,
+            1.400,
+            0.250,
+            0.125,
+            1.600,
+            0.180,
+            -0.045,
+            2.500,
+            0.350,
+            -0.640,
+            3.600,
+            0.450,
+            0.315,
+            60_000,
+            0x01,
         )
         row_incomplete = format_row(
-            300, 2, None, None, None, None, None, None, 30_000, 0x00
+            300,
+            2,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            30_000,
+            0x00,
         )
 
         self._line_queue = [

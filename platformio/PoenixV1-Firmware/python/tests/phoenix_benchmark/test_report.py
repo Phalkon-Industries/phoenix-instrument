@@ -478,9 +478,9 @@ def _osr_sweep_summary_lines() -> List[str]:
         "# phoenix benchmark ready",
         "# running,scenario=osr_sweep,pot=85,dwell_us=250,sweeps=12",
         "# summary_table",
-        "Value      Samples  Drain_Mean  Drain_Std  Drain_Min  Drain_Max  Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  Green_Min  Green_Max  Sweep_us",
-        "OSR32            12       1.234       0.456       1.111       1.888       2.345       0.567       2.123       2.789       3.456       0.678       3.210       3.890      12345",
-        "OSR64            12       1.500       0.400       1.200       1.900       2.800       0.600       2.400       3.000       3.900       0.700       3.500       4.100      15000",
+        "Value      Samples  Drain_Blue_Mean  Drain_Blue_Std  Drain_Blue_Min  Drain_Blue_Max  Drain_Green_Mean  Drain_Green_Std  Drain_Green_Min  Drain_Green_Max  Blue_Mean  Blue_Std  Blue_Min  Blue_Max  Green_Mean  Green_Std  Green_Min  Green_Max  Sweep_us",
+        "OSR32            12       1.234       0.456       1.111       1.888       1.444       0.354       1.222       1.999       2.345       0.567       2.123       2.789       3.456       0.678       3.210       3.890      12345",
+        "OSR64            12       1.500       0.400       1.200       1.900       1.650       0.305       1.320       1.980       2.800       0.600       2.400       3.000       3.900       0.700       3.500       4.100      15000",
         "",
         "# benchmark_complete",
         "# ready",
@@ -499,7 +499,8 @@ def test_parse_summary_table_handles_osr_sweep() -> None:
     assert first.label == "OSR32"
     assert first.osr_value == 32
     assert first.sample_count == 12
-    assert pytest.approx(first.drain_std, rel=1e-6) == 0.456
+    assert pytest.approx(first.drain_blue_std, rel=1e-6) == 0.456
+    assert pytest.approx(first.drain_green_mean, rel=1e-6) == 1.444
     assert pytest.approx(first.green_mean, rel=1e-6) == 3.456
     assert first.has_metrics is True
 
@@ -529,14 +530,15 @@ def test_create_report_handles_osr_sweep(tmp_path: Path) -> None:
     assert summary_data[0]["scenario"] == "osr_sweep"
     first_row = summary_data[0]["rows"][0]
     assert first_row["osr_value"] == 32
-    assert pytest.approx(first_row["drain_std"], rel=1e-6) == 0.456
+    assert pytest.approx(first_row["drain_blue_std"], rel=1e-6) == 0.456
+    assert pytest.approx(first_row["drain_green_mean"], rel=1e-6) == 1.444
     assert first_row["sweep_duration_us"] == 12345
 
     report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
     assert "_stddev.png)" in report_text
     assert "_duration.png)" in report_text
-    assert "| OSR | Samples |" in report_text
-    assert "| 32 | 12 | 1.234 |" in report_text
+    assert "| OSR | Samples | Drain blue mean |" in report_text
+    assert "| 32 | 12 | 1.234 | 0.456 | 1.111 | 1.888 | 1.444 | 0.354 |" in report_text
 
 
 def _pot_sweep_summary_lines() -> List[str]:
@@ -617,10 +619,10 @@ def _dwell_sweep_summary_lines() -> List[str]:
         "# phoenix benchmark ready",
         "# running,scenario=dwell_sweep,sweeps_per_dwell=4,start_us=100,end_us=300,step_us=100,steps=3",
         "# summary_table",
-        "Dwell_us  Sweeps  Drain_Mean  Drain_Std  Drain_Slope  Blue_Mean  Blue_Std  Blue_Slope  Green_Mean  Green_Std  Green_Slope  Duration_us  Warning_Mask",
-        "     100       4        1.234      0.111      -0.123        2.345      0.222       1.050        3.456      0.333      -0.900        50000  0x00",
-        "     200       4        1.500      0.450       0.250        2.650      0.520      -0.640        3.700      0.610       0.315        60000  0x01",
-        "     300       2           --        --         --           --        --         --           --        --         --        30000  0x00",
+        "Dwell_us  Sweeps  Drain_Blue_Mean  Drain_Blue_Std  Drain_Blue_Slope  Drain_Green_Mean  Drain_Green_Std  Drain_Green_Slope  Blue_Mean  Blue_Std  Blue_Slope  Green_Mean  Green_Std  Green_Slope  Duration_us  Warning_Mask",
+        "     100       4        1.234      0.111      -0.123        1.445      0.095       0.210        2.345      0.222       1.050        3.456      0.333      -0.900        50000  0x00",
+        "     200       4        1.500      0.450       0.250        1.610      0.180      -0.045        2.650      0.520      -0.640        3.700      0.610       0.315        60000  0x01",
+        "     300       2           --        --         --           --        --         --           --        --         --           --        --         --        30000  0x00",
         "",
         "# dwell_sweep_warnings,reason=saturation",
         "# benchmark_complete",
@@ -639,8 +641,8 @@ def test_parse_summary_table_handles_dwell_sweep() -> None:
     assert isinstance(first, DwellSweepSummaryRow)
     assert first.dwell_us == 100
     assert first.sweeps_completed == 4
-    assert pytest.approx(first.drain_std, rel=1e-6) == 0.111
-    assert pytest.approx(first.drain_slope, rel=1e-6) == -0.123
+    assert pytest.approx(first.drain_blue_std, rel=1e-6) == 0.111
+    assert pytest.approx(first.drain_green_slope, rel=1e-6) == 0.21
     assert pytest.approx(first.blue_slope, rel=1e-6) == 1.05
     assert pytest.approx(first.green_slope, rel=1e-6) == -0.9
     assert first.warning_mask == 0
@@ -676,7 +678,7 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
     assert len(csv_files) == 1
     csv_text = csv_files[0].read_text(encoding="utf-8")
     assert "dwell_us,sweeps_completed" in csv_text
-    assert "drain_slope" in csv_text
+    assert "drain_blue_slope" in csv_text
     assert "200,4" in csv_text
 
     recommendations = artifacts.dwell_sweep_recommendations
@@ -691,7 +693,8 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
     assert len(dwell_entry["rows"]) == 3
     assert dwell_entry["rows"][0]["dwell_us"] == 100
     assert dwell_entry["rows"][1]["warning_mask"] == 1
-    assert pytest.approx(dwell_entry["rows"][0]["drain_slope"], rel=1e-6) == -0.123
+    assert pytest.approx(dwell_entry["rows"][0]["drain_blue_slope"], rel=1e-6) == -0.123
+    assert pytest.approx(dwell_entry["rows"][0]["drain_green_mean"], rel=1e-6) == 1.445
     assert pytest.approx(dwell_entry["rows"][0]["blue_slope"], rel=1e-6) == 1.05
     assert pytest.approx(dwell_entry["rows"][0]["green_slope"], rel=1e-6) == -0.9
 
@@ -700,11 +703,11 @@ def test_create_report_handles_dwell_sweep(tmp_path: Path) -> None:
     assert "Recommended dwell" in report_text
     assert "saturation" in report_text
     assert (
-        "| Dwell (µs) | Sweeps | Drain mean | Drain std | Drain slope | Blue mean | Blue std | Blue slope | Green mean | Green std | Green slope | Duration (µs) | Warnings |"
+        "| Dwell (µs) | Sweeps | Drain blue mean | Drain blue std | Drain blue slope | Drain green mean | Drain green std | Drain green slope | Blue mean | Blue std | Blue slope | Green mean | Green std | Green slope | Duration (µs) | Warnings |"
         in report_text
     )
     assert (
-        "| 100 | 4 | 1.234 | 0.111 | -0.123 | 2.345 | 0.222 | 1.050 | 3.456 | 0.333 | -0.900 | 50000 | none |"
+        "| 100 | 4 | 1.234 | 0.111 | -0.123 | 1.445 | 0.095 | 0.210 | 2.345 | 0.222 | 1.050 | 3.456 | 0.333 | -0.900 | 50000 | none |"
         in report_text
     )
     assert "![dwell_sweep plot #2]" in report_text
