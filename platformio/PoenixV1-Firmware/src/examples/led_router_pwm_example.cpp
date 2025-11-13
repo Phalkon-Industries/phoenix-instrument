@@ -7,17 +7,19 @@ extern const uint32_t g_ADigitalPinMap[];
 
 namespace {
 
-constexpr uint16_t         k_pwm_top_value            = 1600u;  // 10 kHz when using the 16 MHz base clock.
-constexpr uint16_t         k_pwm_high_count           = 800u;   // 50% duty cycle.
+constexpr uint16_t         k_pwm_top_value            = 3332u;  // ~300 Hz when using the 1 MHz base clock.
+constexpr uint16_t         k_pwm_in1_high_count       = 833u;   // 25% duty cycle for IN1.
+constexpr uint16_t         k_pwm_in2_base_count       = 2499u;  // 75% duty cycle before polarity invert.
 constexpr uint16_t         k_pwm_polarity_invert_mask = 0x8000u;
 constexpr uint32_t         k_pwm_pin_in1              = TS5A3359_IN1;
 constexpr uint32_t         k_pwm_pin_in2              = TS5A3359_IN2;
 constexpr uint32_t         k_pwm_pin_not_used         = NRF_PWM_PIN_NOT_CONNECTED;
 nrf_pwm_values_wave_form_t g_pwm_waveforms[]          = {
-    {k_pwm_high_count, static_cast<uint16_t>(k_pwm_polarity_invert_mask | k_pwm_high_count), 0u, k_pwm_top_value},
+    {k_pwm_in1_high_count, static_cast<uint16_t>(k_pwm_polarity_invert_mask | k_pwm_in2_base_count), 0u,
+              k_pwm_top_value},
 };
 
-NRF_PWM_Type* const k_pwm_instance = NRF_PWM0;
+NRF_PWM_Type* const k_pwm_instance = NRF_PWM3;
 
 void configure_pwm_pins(void) {
   // Step 1: Map the Arduino pins to the encoded NRF port/pin values expected by the PWM peripheral.
@@ -35,8 +37,8 @@ void configure_pwm_core(void) {
   // Step 1: Disable the PWM instance while registers are being updated.
   k_pwm_instance->ENABLE = (PWM_ENABLE_ENABLE_Disabled << PWM_ENABLE_ENABLE_Pos);
 
-  // Step 2: Route the PWM counter to the 16 MHz base clock in edge-aligned mode.
-  k_pwm_instance->PRESCALER  = PWM_PRESCALER_PRESCALER_DIV_1;
+  // Step 2: Route the PWM counter to the 1 MHz base clock in edge-aligned mode.
+  k_pwm_instance->PRESCALER  = PWM_PRESCALER_PRESCALER_DIV_16;
   k_pwm_instance->MODE       = PWM_MODE_UPDOWN_Up;
   k_pwm_instance->COUNTERTOP = k_pwm_top_value;
 
@@ -49,7 +51,7 @@ void configure_pwm_core(void) {
 }
 
 void configure_pwm_sequence(void) {
-  // Step 1: Present the inverted-pair waveform to the PWM peripheral.
+  // Step 1: Present the mixed-duty waveform to the PWM peripheral.
   k_pwm_instance->SEQ[0].PTR      = reinterpret_cast<uint32_t>(&g_pwm_waveforms[0]);
   k_pwm_instance->SEQ[0].CNT      = NRF_PWM_VALUES_LENGTH(g_pwm_waveforms);
   k_pwm_instance->SEQ[0].REFRESH  = 0u;
@@ -76,7 +78,7 @@ void setup() {
   // Step 1: Ensure the device wiring is initialised so the switch control pins are configured for output.
   device_setup_initialize();
 
-  // Step 2: Set up the PWM peripheral so the blue and green paths share the cycle equally.
+  // Step 2: Set up the PWM peripheral so IN1 is 50% duty and IN2 is 75% duty.
   configure_pwm_pins();
   configure_pwm_core();
   configure_pwm_sequence();
