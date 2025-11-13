@@ -5411,22 +5411,16 @@
 		(uuid "243ab76b-254d-475b-a152-0af985a5428a")
 	)
 	(junction
-		(at 44.45 233.68)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "28b48b6c-a6e3-441a-91f1-c6900ff963fb")
-	)
-	(junction
-		(at 54.61 231.14)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "2ae2d252-bb82-46e4-910c-b6b1759ebe05")
-	)
-	(junction
 		(at 321.31 119.38)
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "2bb65dbf-2674-453f-840f-3d9607caf22d")
+	)
+	(junction
+		(at 59.69 229.87)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "2d3c64a0-f365-4d73-b505-c259da1f02c1")
 	)
 	(junction
 		(at 156.21 170.18)
@@ -5451,12 +5445,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "3e850498-1ef2-48d6-aec8-78d6433e0c9d")
-	)
-	(junction
-		(at 57.15 231.14)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "43bb498e-7e00-483d-a9a5-358b97b9dad2")
 	)
 	(junction
 		(at 317.5 60.96)
@@ -5499,6 +5487,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "5e0dc137-2192-4a24-b8f3-4a208db078c2")
+	)
+	(junction
+		(at 44.45 229.87)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "60864e63-e75c-4f94-ac52-c80b3e93e13f")
 	)
 	(junction
 		(at 342.9 120.65)
@@ -5565,6 +5559,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "9e1d9c0a-5210-4a08-bf66-e5eb5e12e255")
+	)
+	(junction
+		(at 52.07 229.87)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "9f330e86-98bd-4e32-85a9-8c28b44b89d1")
 	)
 	(junction
 		(at 349.25 100.33)
@@ -5663,12 +5663,6 @@
 		(uuid "d694ed1f-a25e-4fe4-9c78-d81a8b95999d")
 	)
 	(junction
-		(at 52.07 233.68)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "d94096b7-657e-4f07-9986-f65f3952de8d")
-	)
-	(junction
 		(at 67.31 130.81)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -5691,6 +5685,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "e648c606-7860-438b-a81f-7ac0418ffe8d")
+	)
+	(junction
+		(at 54.61 229.87)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "efac0519-059c-4198-9a62-59bf73c3736d")
 	)
 	(junction
 		(at 186.69 257.81)
@@ -5824,16 +5824,6 @@
 	)
 	(wire
 		(pts
-			(xy 52.07 233.68) (xy 52.07 234.95)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "09dad37d-d719-40a9-9503-d976450e5e2b")
-	)
-	(wire
-		(pts
 			(xy 95.25 246.38) (xy 95.25 247.65)
 		)
 		(stroke
@@ -5934,7 +5924,7 @@
 	)
 	(wire
 		(pts
-			(xy 52.07 233.68) (xy 44.45 233.68)
+			(xy 52.07 229.87) (xy 44.45 229.87)
 		)
 		(stroke
 			(width 0)
@@ -6494,16 +6484,6 @@
 	)
 	(wire
 		(pts
-			(xy 44.45 233.68) (xy 44.45 234.95)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5fb0c9ad-f7b8-406e-90a7-425784956dbf")
-	)
-	(wire
-		(pts
 			(xy 151.13 170.18) (xy 151.13 171.45)
 		)
 		(stroke
@@ -6524,7 +6504,7 @@
 	)
 	(wire
 		(pts
-			(xy 44.45 232.41) (xy 36.83 232.41)
+			(xy 44.45 229.87) (xy 36.83 229.87)
 		)
 		(stroke
 			(width 0)
@@ -6534,7 +6514,7 @@
 	)
 	(wire
 		(pts
-			(xy 54.61 228.6) (xy 54.61 231.14)
+			(xy 54.61 228.6) (xy 54.61 229.87)
 		)
 		(stroke
 			(width 0)
@@ -6581,16 +6561,6 @@
 			(type default)
 		)
 		(uuid "67c5ca2e-4ba4-4e16-a3bd-3a0f1bc2efe8")
-	)
-	(wire
-		(pts
-			(xy 54.61 233.68) (xy 54.61 231.14)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "68264b8f-891d-4fc6-9ed0-f10b3f8e7a28")
 	)
 	(wire
 		(pts
@@ -6784,7 +6754,7 @@
 	)
 	(wire
 		(pts
-			(xy 60.96 224.79) (xy 60.96 231.14)
+			(xy 60.96 224.79) (xy 60.96 229.87)
 		)
 		(stroke
 			(width 0)
@@ -7134,7 +7104,7 @@
 	)
 	(wire
 		(pts
-			(xy 36.83 232.41) (xy 36.83 234.95)
+			(xy 36.83 229.87) (xy 36.83 234.95)
 		)
 		(stroke
 			(width 0)
@@ -7224,16 +7194,6 @@
 	)
 	(wire
 		(pts
-			(xy 44.45 232.41) (xy 44.45 233.68)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "99ef36d8-bcc7-4f26-9566-9b891a7741c4")
-	)
-	(wire
-		(pts
 			(xy 322.58 167.64) (xy 347.98 167.64)
 		)
 		(stroke
@@ -7294,7 +7254,7 @@
 	)
 	(wire
 		(pts
-			(xy 57.15 231.14) (xy 54.61 231.14)
+			(xy 54.61 229.87) (xy 59.69 229.87)
 		)
 		(stroke
 			(width 0)
@@ -7614,7 +7574,7 @@
 	)
 	(wire
 		(pts
-			(xy 44.45 246.38) (xy 44.45 242.57)
+			(xy 44.45 246.38) (xy 44.45 245.11)
 		)
 		(stroke
 			(width 0)
@@ -7644,6 +7604,16 @@
 	)
 	(wire
 		(pts
+			(xy 53.34 242.57) (xy 57.15 242.57)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c73b3cfd-7e44-4fce-b696-4daaedaf1694")
+	)
+	(wire
+		(pts
 			(xy 191.77 250.19) (xy 191.77 252.73)
 		)
 		(stroke
@@ -7664,7 +7634,7 @@
 	)
 	(wire
 		(pts
-			(xy 52.07 242.57) (xy 57.15 242.57)
+			(xy 52.07 245.11) (xy 53.34 245.11)
 		)
 		(stroke
 			(width 0)
@@ -7724,7 +7694,7 @@
 	)
 	(wire
 		(pts
-			(xy 60.96 231.14) (xy 57.15 231.14)
+			(xy 60.96 229.87) (xy 59.69 229.87)
 		)
 		(stroke
 			(width 0)
@@ -7804,7 +7774,7 @@
 	)
 	(wire
 		(pts
-			(xy 52.07 233.68) (xy 54.61 233.68)
+			(xy 52.07 229.87) (xy 54.61 229.87)
 		)
 		(stroke
 			(width 0)
@@ -7841,6 +7811,16 @@
 			(type default)
 		)
 		(uuid "dc2f73ce-d3e2-41f9-a0da-aaa3f51de7ea")
+	)
+	(wire
+		(pts
+			(xy 53.34 245.11) (xy 53.34 242.57)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "de1a3143-d604-4ac3-a09f-87aabfaf67dd")
 	)
 	(wire
 		(pts
@@ -8011,6 +7991,16 @@
 			(type default)
 		)
 		(uuid "f35f77eb-eb70-42fc-996e-1306c3f7caa3")
+	)
+	(wire
+		(pts
+			(xy 59.69 229.87) (xy 59.69 231.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f40ec463-1725-4a01-94a1-76eff44218f0")
 	)
 	(wire
 		(pts
@@ -8851,7 +8841,7 @@
 		(uuid "ef30de23-f826-4fda-9623-45faccf651e7")
 	)
 	(label "CSOURCE"
-		(at 60.96 231.14 0)
+		(at 60.96 229.87 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -8890,7 +8880,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "0020f2de-aa68-4294-9306-5d1840d77bd1")
-		(property "Reference" "#PWR040"
+		(property "Reference" "#PWR09"
 			(at 55.88 191.77 0)
 			(effects
 				(font
@@ -8940,7 +8930,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR040")
+					(reference "#PWR09")
 					(unit 1)
 				)
 			)
@@ -8956,7 +8946,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "020eb248-28f8-49ad-9708-e6d83fb35ff2")
-		(property "Reference" "#PWR052"
+		(property "Reference" "#PWR033"
 			(at 246.38 261.62 0)
 			(effects
 				(font
@@ -9006,7 +8996,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR052")
+					(reference "#PWR033")
 					(unit 1)
 				)
 			)
@@ -9089,7 +9079,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "0565efad-e3e3-41bb-a9d3-9a39290f1327")
-		(property "Reference" "C27"
+		(property "Reference" "C11"
 			(at 153.67 172.7262 0)
 			(effects
 				(font
@@ -9143,7 +9133,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C27")
+					(reference "C11")
 					(unit 1)
 				)
 			)
@@ -9158,7 +9148,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "09c36c65-a648-425f-9dec-3c62869db41c")
-		(property "Reference" "#PWR053"
+		(property "Reference" "#PWR07"
 			(at 49.53 208.28 0)
 			(effects
 				(font
@@ -9208,7 +9198,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR053")
+					(reference "#PWR07")
 					(unit 1)
 				)
 			)
@@ -9223,7 +9213,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "0a634f62-5ba7-4885-91d2-7c691e866ac1")
-		(property "Reference" "#PWR037"
+		(property "Reference" "#PWR010"
 			(at 57.15 127 0)
 			(effects
 				(font
@@ -9273,7 +9263,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR037")
+					(reference "#PWR010")
 					(unit 1)
 				)
 			)
@@ -9354,7 +9344,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "10be4f5d-177d-46f7-bcdd-b854fbf23422")
-		(property "Reference" "TP15"
+		(property "Reference" "TP5"
 			(at 34.036 80.01 0)
 			(effects
 				(font
@@ -9406,7 +9396,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP15")
+					(reference "TP5")
 					(unit 1)
 				)
 			)
@@ -9421,7 +9411,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "11ecc4a2-ca6b-4308-84a1-f65ad9dd013b")
-		(property "Reference" "U6"
+		(property "Reference" "U3"
 			(at 55.372 168.402 0)
 			(effects
 				(font
@@ -9485,7 +9475,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "U6")
+					(reference "U3")
 					(unit 1)
 				)
 			)
@@ -9500,7 +9490,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "123d11a6-57c0-49b0-b473-e0c571c65cbc")
-		(property "Reference" "#PWR038"
+		(property "Reference" "#PWR02"
 			(at 33.02 171.45 0)
 			(effects
 				(font
@@ -9550,7 +9540,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR038")
+					(reference "#PWR02")
 					(unit 1)
 				)
 			)
@@ -9566,7 +9556,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "15d0fd16-8272-483e-9f99-286daf8022e7")
-		(property "Reference" "#PWR043"
+		(property "Reference" "#PWR021"
 			(at 128.27 187.96 0)
 			(effects
 				(font
@@ -9616,7 +9606,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR043")
+					(reference "#PWR021")
 					(unit 1)
 				)
 			)
@@ -9632,7 +9622,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "15d1b9b8-8452-4d70-be14-7413cbc38d4b")
-		(property "Reference" "U9"
+		(property "Reference" "U8"
 			(at 233.426 215.392 0)
 			(effects
 				(font
@@ -9726,7 +9716,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "U9")
+					(reference "U8")
 					(unit 1)
 				)
 			)
@@ -9741,7 +9731,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "180ad2e4-af86-4324-9bc4-dd1749c49cc0")
-		(property "Reference" "R7"
+		(property "Reference" "R8"
 			(at 288.29 86.36 90)
 			(effects
 				(font
@@ -9795,7 +9785,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R7")
+					(reference "R8")
 					(unit 1)
 				)
 			)
@@ -9889,6 +9879,75 @@
 	)
 	(symbol
 		(lib_id "Device:R")
+		(at 44.45 233.68 180)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "1f3cb9c4-d90b-4daa-af9b-8c703e9d48f8")
+		(property "Reference" "R2"
+			(at 45.466 232.664 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "0"
+			(at 44.45 234.188 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 46.228 233.68 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 44.45 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 44.45 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "21a69324-d77c-44b1-87fa-e52d5ddbed89")
+		)
+		(pin "1"
+			(uuid "2a207cdf-00ef-413d-b64f-42b792a769c9")
+		)
+		(instances
+			(project "phoenix-main-board"
+				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
+					(reference "R2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
 		(at 322.58 175.26 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -9896,7 +9955,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2054aaac-746a-45c1-9c57-1f183210ac22")
-		(property "Reference" "R21"
+		(property "Reference" "R17"
 			(at 318.516 171.704 0)
 			(effects
 				(font
@@ -9950,7 +10009,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R21")
+					(reference "R17")
 					(unit 1)
 				)
 			)
@@ -9965,7 +10024,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "20927ba8-2d6a-4e2b-a47e-85f88b54d3e8")
-		(property "Reference" "TP33"
+		(property "Reference" "TP17"
 			(at 85.852 82.804 0)
 			(effects
 				(font
@@ -10017,7 +10076,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP33")
+					(reference "TP17")
 					(unit 1)
 				)
 			)
@@ -10032,7 +10091,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "211c96f1-ddb2-4f1f-be06-7e0776c33d38")
-		(property "Reference" "C21"
+		(property "Reference" "C6"
 			(at 63.5 116.8462 0)
 			(effects
 				(font
@@ -10086,7 +10145,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C21")
+					(reference "C6")
 					(unit 1)
 				)
 			)
@@ -10101,7 +10160,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "252ca718-8576-49b3-a833-c6117270c9fe")
-		(property "Reference" "R3"
+		(property "Reference" "R1"
 			(at 37.846 237.744 0)
 			(effects
 				(font
@@ -10110,7 +10169,7 @@
 				(justify right)
 			)
 		)
-		(property "Value" "175"
+		(property "Value" "182"
 			(at 37.084 240.792 90)
 			(effects
 				(font
@@ -10155,7 +10214,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R3")
+					(reference "R1")
 					(unit 1)
 				)
 			)
@@ -10170,7 +10229,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2b4ac60d-d540-4bb1-9827-0ed96cdbf0dd")
-		(property "Reference" "C5"
+		(property "Reference" "C16"
 			(at 335.28 62.2362 0)
 			(effects
 				(font
@@ -10224,7 +10283,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C5")
+					(reference "C16")
 					(unit 1)
 				)
 			)
@@ -10239,7 +10298,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2d26ee2a-a6bd-48ca-859d-45f3bb1256ab")
-		(property "Reference" "TP4"
+		(property "Reference" "TP28"
 			(at 351.282 90.17 0)
 			(effects
 				(font
@@ -10291,7 +10350,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP4")
+					(reference "TP28")
 					(unit 1)
 				)
 			)
@@ -10306,7 +10365,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2d3b751c-0fde-49ca-94cd-ef1affc10e28")
-		(property "Reference" "#PWR026"
+		(property "Reference" "#PWR046"
 			(at 364.49 109.22 0)
 			(effects
 				(font
@@ -10356,7 +10415,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR026")
+					(reference "#PWR046")
 					(unit 1)
 				)
 			)
@@ -10371,7 +10430,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "2dcb9107-7008-4ecd-babb-1169af72dd98")
-		(property "Reference" "RFB6"
+		(property "Reference" "RFB2"
 			(at 198.628 248.412 90)
 			(effects
 				(font
@@ -10423,7 +10482,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "RFB6")
+					(reference "RFB2")
 					(unit 1)
 				)
 			)
@@ -10526,7 +10585,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "2f27d3fa-c054-46b6-9363-60add200c457")
-		(property "Reference" "TP24"
+		(property "Reference" "TP13"
 			(at 78.74 40.6399 0)
 			(effects
 				(font
@@ -10578,7 +10637,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP24")
+					(reference "TP13")
 					(unit 1)
 				)
 			)
@@ -10593,7 +10652,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "30956a6d-ee3e-4335-8898-9d5f52b96ab9")
-		(property "Reference" "R1"
+		(property "Reference" "R4"
 			(at 183.388 242.824 0)
 			(effects
 				(font
@@ -10647,7 +10706,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R1")
+					(reference "R4")
 					(unit 1)
 				)
 			)
@@ -10663,7 +10722,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "311eeb23-c4e2-42c6-ba16-ce4904ab26e6")
-		(property "Reference" "#PWR042"
+		(property "Reference" "#PWR016"
 			(at 76.2 176.53 0)
 			(effects
 				(font
@@ -10713,7 +10772,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR042")
+					(reference "#PWR016")
 					(unit 1)
 				)
 			)
@@ -10728,7 +10787,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "317177b0-6e4a-466e-95ad-b5ce16048c62")
-		(property "Reference" "C6"
+		(property "Reference" "C14"
 			(at 326.39 113.0362 0)
 			(effects
 				(font
@@ -10782,7 +10841,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C6")
+					(reference "C14")
 					(unit 1)
 				)
 			)
@@ -10797,7 +10856,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "356c558e-c06a-4c3e-be5d-e7bc54330e9b")
-		(property "Reference" "R22"
+		(property "Reference" "R18"
 			(at 343.916 170.18 0)
 			(effects
 				(font
@@ -10851,7 +10910,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R22")
+					(reference "R18")
 					(unit 1)
 				)
 			)
@@ -10867,7 +10926,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "36659ef5-017b-4ad9-9e61-fe5e9430be1d")
-		(property "Reference" "#PWR035"
+		(property "Reference" "#PWR011"
 			(at 58.42 152.4 0)
 			(effects
 				(font
@@ -10917,7 +10976,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR035")
+					(reference "#PWR011")
 					(unit 1)
 				)
 			)
@@ -10932,7 +10991,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "380e2ff3-5a6d-4e6a-83e6-85ffeb6d3ab7")
-		(property "Reference" "#PWR016"
+		(property "Reference" "#PWR032"
 			(at 186.69 260.35 0)
 			(effects
 				(font
@@ -10982,7 +11041,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR016")
+					(reference "#PWR032")
 					(unit 1)
 				)
 			)
@@ -10998,7 +11057,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "39d916f2-820d-4708-a762-c741e48ccaa1")
-		(property "Reference" "#PWR045"
+		(property "Reference" "#PWR025"
 			(at 151.13 184.15 0)
 			(effects
 				(font
@@ -11048,7 +11107,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR045")
+					(reference "#PWR025")
 					(unit 1)
 				)
 			)
@@ -11064,7 +11123,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "3dbd1853-0bb9-4fcd-a6b0-9dc6240f8682")
-		(property "Reference" "#PWR047"
+		(property "Reference" "#PWR042"
 			(at 322.58 201.93 0)
 			(effects
 				(font
@@ -11114,7 +11173,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR047")
+					(reference "#PWR042")
 					(unit 1)
 				)
 			)
@@ -11130,7 +11189,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "3f59d155-6415-4d6b-902e-8adcc49c2038")
-		(property "Reference" "TP27"
+		(property "Reference" "TP22"
 			(at 152.4 177.7999 0)
 			(effects
 				(font
@@ -11182,7 +11241,7 @@
 		(instances
 			(project "phoenix-main-board"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP27")
+					(reference "TP22")
 					(unit 1)
 				)
 			)
@@ -11198,7 +11257,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "4223b4ab-1554-4542-b3ff-cfd210c3a977")
-		(property "Reference" "TP16"
+		(property "Reference" "TP15"
 			(at 82.55 130.8099 0)
 			(effects
 				(font
@@ -11250,7 +11309,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP16")
+					(reference "TP15")
 					(unit 1)
 				)
 			)
@@ -11404,7 +11463,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "4e4a657f-57b0-4b40-837e-2a5ec3fc5bed")
-		(property "Reference" "TP10"
+		(property "Reference" "TP2"
 			(at 36.83 45.7199 0)
 			(effects
 				(font
@@ -11456,7 +11515,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP10")
+					(reference "TP2")
 					(unit 1)
 				)
 			)
@@ -11471,7 +11530,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "4f384e74-656c-4c00-a044-9ec06b28abbd")
-		(property "Reference" "TP20"
+		(property "Reference" "TP8"
 			(at 55.118 249.174 0)
 			(effects
 				(font
@@ -11523,7 +11582,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP20")
+					(reference "TP8")
 					(unit 1)
 				)
 			)
@@ -11538,7 +11597,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "4f7d5d19-c135-489f-94b9-1d3b7454a2e7")
-		(property "Reference" "R23"
+		(property "Reference" "R14"
 			(at 296.926 172.974 0)
 			(effects
 				(font
@@ -11592,7 +11651,7 @@
 		(instances
 			(project "phoenix-main-board"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R23")
+					(reference "R14")
 					(unit 1)
 				)
 			)
@@ -11608,7 +11667,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "52148bca-8901-4662-84d1-9c3fcd676df0")
-		(property "Reference" "TP17"
+		(property "Reference" "TP12"
 			(at 77.47 175.2599 0)
 			(effects
 				(font
@@ -11660,7 +11719,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP17")
+					(reference "TP12")
 					(unit 1)
 				)
 			)
@@ -11675,7 +11734,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "5237bf35-c0c7-4135-9628-e014cb243a2d")
-		(property "Reference" "R5"
+		(property "Reference" "R13"
 			(at 285.75 56.642 0)
 			(effects
 				(font
@@ -11729,7 +11788,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R5")
+					(reference "R13")
 					(unit 1)
 				)
 			)
@@ -11744,7 +11803,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "5333c591-e75d-4471-b77b-29700c51c198")
-		(property "Reference" "C22"
+		(property "Reference" "C9"
 			(at 75.184 134.112 0)
 			(effects
 				(font
@@ -11798,7 +11857,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C22")
+					(reference "C9")
 					(unit 1)
 				)
 			)
@@ -11813,7 +11872,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "548a83e9-4b96-4632-9139-74faecf103ec")
-		(property "Reference" "R11"
+		(property "Reference" "R12"
 			(at 288.544 101.346 90)
 			(effects
 				(font
@@ -11867,7 +11926,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R11")
+					(reference "R12")
 					(unit 1)
 				)
 			)
@@ -11883,7 +11942,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "55db04a2-a99f-4e26-aff6-5168335b26a9")
-		(property "Reference" "#PWR022"
+		(property "Reference" "#PWR036"
 			(at 278.13 77.47 0)
 			(effects
 				(font
@@ -11933,7 +11992,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR022")
+					(reference "#PWR036")
 					(unit 1)
 				)
 			)
@@ -11948,7 +12007,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "57bddbb1-ec86-4727-a7c1-ceaabe8b7bcf")
-		(property "Reference" "TP32"
+		(property "Reference" "TP16"
 			(at 85.598 78.74 0)
 			(effects
 				(font
@@ -12000,7 +12059,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP32")
+					(reference "TP16")
 					(unit 1)
 				)
 			)
@@ -12087,7 +12146,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "5cafc161-2011-4bd7-adae-a48d8da69c3c")
-		(property "Reference" "#PWR046"
+		(property "Reference" "#PWR028"
 			(at 156.21 172.72 0)
 			(effects
 				(font
@@ -12137,7 +12196,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR046")
+					(reference "#PWR028")
 					(unit 1)
 				)
 			)
@@ -12152,7 +12211,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "5dc71e7a-acc3-4ef7-81b7-c6d564174d07")
-		(property "Reference" "#PWR039"
+		(property "Reference" "#PWR03"
 			(at 33.02 186.69 0)
 			(effects
 				(font
@@ -12202,7 +12261,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR039")
+					(reference "#PWR03")
 					(unit 1)
 				)
 			)
@@ -12217,7 +12276,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "62424dd3-78e9-4923-aa1a-abfb7184e71b")
-		(property "Reference" "R4"
+		(property "Reference" "R16"
 			(at 313.69 55.372 0)
 			(effects
 				(font
@@ -12271,7 +12330,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R4")
+					(reference "R16")
 					(unit 1)
 				)
 			)
@@ -12288,7 +12347,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "62d4bbc4-2b0d-47b1-81c7-5732cb42c3dd")
-		(property "Reference" "TP25"
+		(property "Reference" "TP6"
 			(at 39.37 60.9599 0)
 			(effects
 				(font
@@ -12340,7 +12399,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP25")
+					(reference "TP6")
 					(unit 1)
 				)
 			)
@@ -12373,7 +12432,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "LED_THT:LED_D5.0mm_Horizontal_O1.27mm_Z3.0mm"
+		(property "Footprint" "-ProjectLibrary:PD_Vertical"
 			(at 140.97 242.57 0)
 			(effects
 				(font
@@ -12425,7 +12484,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "68372a3e-3088-4106-b87d-f60eea5ddf7c")
-		(property "Reference" "#PWR054"
+		(property "Reference" "#PWR039"
 			(at 300.99 203.2 0)
 			(effects
 				(font
@@ -12475,7 +12534,7 @@
 		(instances
 			(project "phoenix-main-board"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR054")
+					(reference "#PWR039")
 					(unit 1)
 				)
 			)
@@ -12508,7 +12567,7 @@
 				(justify right)
 			)
 		)
-		(property "Footprint" "LED_THT:LED_D5.0mm_Horizontal_O1.27mm_Z3.0mm"
+		(property "Footprint" "-ProjectLibrary:PD_Vertical"
 			(at 140.97 261.62 0)
 			(effects
 				(font
@@ -12559,7 +12618,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "69916433-c2b4-41b9-8c2c-b7e7cafaa3a7")
-		(property "Reference" "#PWR011"
+		(property "Reference" "#PWR022"
 			(at 140.97 242.57 0)
 			(effects
 				(font
@@ -12610,7 +12669,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR011")
+					(reference "#PWR022")
 					(unit 1)
 				)
 			)
@@ -12625,7 +12684,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "69af8cef-84d0-4373-9999-4c4f5cfc7d4e")
-		(property "Reference" "C25"
+		(property "Reference" "C1"
 			(at 23.622 173.482 0)
 			(effects
 				(font
@@ -12679,7 +12738,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C25")
+					(reference "C1")
 					(unit 1)
 				)
 			)
@@ -12695,7 +12754,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "6f83c6ed-f0e0-4522-b809-da4d600c46a3")
-		(property "Reference" "U3"
+		(property "Reference" "U4"
 			(at 62.865 24.13 0)
 			(effects
 				(font
@@ -12825,7 +12884,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "U3")
+					(reference "U4")
 					(unit 1)
 				)
 			)
@@ -12840,7 +12899,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "719ed342-926b-438a-a860-aefa62925d84")
-		(property "Reference" "#PWR027"
+		(property "Reference" "#PWR045"
 			(at 364.49 99.06 0)
 			(effects
 				(font
@@ -12890,7 +12949,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR027")
+					(reference "#PWR045")
 					(unit 1)
 				)
 			)
@@ -12905,7 +12964,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "723d150c-7625-498a-8a83-9eaa9c0c2b3e")
-		(property "Reference" "C8"
+		(property "Reference" "C12"
 			(at 272.542 65.786 0)
 			(effects
 				(font
@@ -12959,7 +13018,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C8")
+					(reference "C12")
 					(unit 1)
 				)
 			)
@@ -12975,7 +13034,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "746c7d17-6a3f-49cf-94d9-0f5843806b54")
-		(property "Reference" "C26"
+		(property "Reference" "C10"
 			(at 130.81 173.9962 0)
 			(effects
 				(font
@@ -13029,7 +13088,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C26")
+					(reference "C10")
 					(unit 1)
 				)
 			)
@@ -13044,7 +13103,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "76ad12cd-04e2-4305-a359-f596a7ebab73")
-		(property "Reference" "R15"
+		(property "Reference" "R20"
 			(at 363.728 98.298 90)
 			(effects
 				(font
@@ -13098,7 +13157,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R15")
+					(reference "R20")
 					(unit 1)
 				)
 			)
@@ -13113,7 +13172,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "7822d46e-1b70-4501-af33-0458c7ce7e10")
-		(property "Reference" "TP34"
+		(property "Reference" "TP20"
 			(at 94.996 59.69 0)
 			(effects
 				(font
@@ -13165,7 +13224,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP34")
+					(reference "TP20")
 					(unit 1)
 				)
 			)
@@ -13181,7 +13240,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "7ad1b120-2944-4a2f-887e-3d356e737d4b")
-		(property "Reference" "#PWR04"
+		(property "Reference" "#PWR020"
 			(at 128.27 171.45 0)
 			(effects
 				(font
@@ -13231,7 +13290,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR04")
+					(reference "#PWR020")
 					(unit 1)
 				)
 			)
@@ -13246,7 +13305,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "7b12d8e2-f3c0-4016-ba9b-e590bf2f1d4d")
-		(property "Reference" "TP3"
+		(property "Reference" "TP27"
 			(at 349.758 100.33 0)
 			(effects
 				(font
@@ -13298,7 +13357,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP3")
+					(reference "TP27")
 					(unit 1)
 				)
 			)
@@ -13306,15 +13365,15 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 44.45 238.76 90)
+		(at 44.45 241.3 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
 		(uuid "813b71d9-3ef5-4dfa-80c2-5bfbf05cddd1")
-		(property "Reference" "D2"
-			(at 44.704 236.22 90)
+		(property "Reference" "D1"
+			(at 44.704 238.76 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13323,7 +13382,7 @@
 			)
 		)
 		(property "Value" "BlueLED"
-			(at 42.164 235.204 0)
+			(at 42.164 237.744 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13332,7 +13391,7 @@
 			)
 		)
 		(property "Footprint" "LED_THT:LED_D5.0mm_Horizontal_O1.27mm_Z3.0mm"
-			(at 44.45 238.76 0)
+			(at 44.45 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13341,7 +13400,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 44.45 238.76 0)
+			(at 44.45 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13350,7 +13409,7 @@
 			)
 		)
 		(property "Description" "Light emitting diode"
-			(at 44.45 238.76 0)
+			(at 44.45 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13359,7 +13418,7 @@
 			)
 		)
 		(property "Sim.Pins" "1=K 2=A"
-			(at 44.45 238.76 0)
+			(at 44.45 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13376,7 +13435,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "D2")
+					(reference "D1")
 					(unit 1)
 				)
 			)
@@ -13391,7 +13450,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "83693f87-2960-4ad1-ba22-45981d86fb20")
-		(property "Reference" "TH2"
+		(property "Reference" "TH1"
 			(at 326.39 185.4199 0)
 			(effects
 				(font
@@ -13445,7 +13504,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TH2")
+					(reference "TH1")
 					(unit 1)
 				)
 			)
@@ -13460,7 +13519,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "84573e02-2a4c-4df3-92d3-9d6e7420ac97")
-		(property "Reference" "TP1"
+		(property "Reference" "TP24"
 			(at 342.138 130.81 0)
 			(effects
 				(font
@@ -13512,7 +13571,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP1")
+					(reference "TP24")
 					(unit 1)
 				)
 			)
@@ -13527,7 +13586,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "84d13ac2-ce5e-4274-a1df-a3bd3b2c2b1f")
-		(property "Reference" "C13"
+		(property "Reference" "C17"
 			(at 361.188 93.98 90)
 			(effects
 				(font
@@ -13581,7 +13640,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C13")
+					(reference "C17")
 					(unit 1)
 				)
 			)
@@ -13596,7 +13655,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "8528c31c-a9b7-47ac-8fc2-f16609567c41")
-		(property "Reference" "R2"
+		(property "Reference" "R5"
 			(at 184.912 262.89 90)
 			(effects
 				(font
@@ -13650,7 +13709,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R2")
+					(reference "R5")
 					(unit 1)
 				)
 			)
@@ -13667,7 +13726,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "8552f465-4bfa-43e6-aeb7-d12aea941e50")
-		(property "Reference" "TP26"
+		(property "Reference" "TP7"
 			(at 39.37 64.7699 0)
 			(effects
 				(font
@@ -13719,7 +13778,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP26")
+					(reference "TP7")
 					(unit 1)
 				)
 			)
@@ -13734,7 +13793,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "86fe8847-946a-452a-baa9-ac201e88e23e")
-		(property "Reference" "C19"
+		(property "Reference" "C7"
 			(at 67.564 134.112 0)
 			(effects
 				(font
@@ -13788,7 +13847,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C19")
+					(reference "C7")
 					(unit 1)
 				)
 			)
@@ -13804,7 +13863,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "87a7efe4-6421-4f48-81ef-41b304268624")
-		(property "Reference" "C24"
+		(property "Reference" "C8"
 			(at 73.66 176.5362 0)
 			(effects
 				(font
@@ -13858,7 +13917,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C24")
+					(reference "C8")
 					(unit 1)
 				)
 			)
@@ -13873,7 +13932,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "905e3b6a-0002-453b-a26a-55228aa8e8c0")
-		(property "Reference" "U2"
+		(property "Reference" "U1"
 			(at 50.8 125.222 0)
 			(effects
 				(font
@@ -13945,7 +14004,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "U2")
+					(reference "U1")
 					(unit 1)
 				)
 			)
@@ -13961,7 +14020,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "92d0cc76-0b70-4e65-b901-e5702ec5810c")
-		(property "Reference" "#PWR044"
+		(property "Reference" "#PWR024"
 			(at 143.51 190.5 0)
 			(effects
 				(font
@@ -14011,7 +14070,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR044")
+					(reference "#PWR024")
 					(unit 1)
 				)
 			)
@@ -14026,7 +14085,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "945c54bf-570d-4c3b-a56d-c0625603ca54")
-		(property "Reference" "#PWR033"
+		(property "Reference" "#PWR017"
 			(at 81.28 128.27 0)
 			(effects
 				(font
@@ -14076,7 +14135,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR033")
+					(reference "#PWR017")
 					(unit 1)
 				)
 			)
@@ -14084,15 +14143,15 @@
 	)
 	(symbol
 		(lib_id "Connector:TestPoint_Small")
-		(at 57.15 231.14 0)
+		(at 59.69 231.14 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
 		(uuid "95b2c430-d1ee-4d8e-b652-2f58d25b169e")
-		(property "Reference" "TP31"
-			(at 55.118 229.616 0)
+		(property "Reference" "TP11"
+			(at 60.198 232.156 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14101,7 +14160,7 @@
 			)
 		)
 		(property "Value" "TestPoint_Small"
-			(at 58.42 232.4099 0)
+			(at 60.96 232.4099 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14111,7 +14170,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Keystone_5000-5004_Miniature"
-			(at 62.23 231.14 0)
+			(at 64.77 231.14 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14120,7 +14179,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 62.23 231.14 0)
+			(at 64.77 231.14 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14129,7 +14188,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 57.15 231.14 0)
+			(at 59.69 231.14 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14143,7 +14202,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP31")
+					(reference "TP11")
 					(unit 1)
 				)
 			)
@@ -14158,7 +14217,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "96bcbb58-e5a1-4246-9ff7-51b829277a8a")
-		(property "Reference" "TP37"
+		(property "Reference" "TP18"
 			(at 91.186 67.31 0)
 			(effects
 				(font
@@ -14210,7 +14269,7 @@
 		(instances
 			(project "phoenix-main-board"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP37")
+					(reference "TP18")
 					(unit 1)
 				)
 			)
@@ -14226,7 +14285,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "983c8556-8c81-4198-92ea-b3094846048c")
-		(property "Reference" "#PWR09"
+		(property "Reference" "#PWR029"
 			(at 168.91 232.41 0)
 			(effects
 				(font
@@ -14276,7 +14335,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR09")
+					(reference "#PWR029")
 					(unit 1)
 				)
 			)
@@ -14291,7 +14350,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "9b6eaf8c-245e-4d1a-83c4-d736622e3e01")
-		(property "Reference" "RFB5"
+		(property "Reference" "RFB1"
 			(at 190.5 230.124 90)
 			(effects
 				(font
@@ -14343,7 +14402,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "RFB5")
+					(reference "RFB1")
 					(unit 1)
 				)
 			)
@@ -14358,7 +14417,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "9c75d871-d776-48b0-8224-06fe1f3d9466")
-		(property "Reference" "TP14"
+		(property "Reference" "TP4"
 			(at 34.036 76.2 0)
 			(effects
 				(font
@@ -14410,7 +14469,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP14")
+					(reference "TP4")
 					(unit 1)
 				)
 			)
@@ -14494,7 +14553,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "a3ad3c4f-17fa-42e5-9063-e31c29b1428f")
-		(property "Reference" "U8"
+		(property "Reference" "U6"
 			(at 142.24 162.56 0)
 			(effects
 				(font
@@ -14555,7 +14614,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "U8")
+					(reference "U6")
 					(unit 1)
 				)
 			)
@@ -14571,7 +14630,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "a3d2da53-a531-4472-822a-827d6a88c59b")
-		(property "Reference" "U1"
+		(property "Reference" "U2"
 			(at 50.8 215.5824 0)
 			(effects
 				(font
@@ -14649,7 +14708,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "U1")
+					(reference "U2")
 					(unit 1)
 				)
 			)
@@ -14665,7 +14724,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "a5ef44b0-499a-43be-b9d9-5c3f8fb42162")
-		(property "Reference" "TP9"
+		(property "Reference" "TP1"
 			(at 36.83 38.0999 0)
 			(effects
 				(font
@@ -14717,7 +14776,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP9")
+					(reference "TP1")
 					(unit 1)
 				)
 			)
@@ -14732,7 +14791,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "a5f50b7c-5d5d-428a-8fa0-4c72c400d034")
-		(property "Reference" "R8"
+		(property "Reference" "R9"
 			(at 288.036 89.916 90)
 			(effects
 				(font
@@ -14786,7 +14845,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R8")
+					(reference "R9")
 					(unit 1)
 				)
 			)
@@ -14801,7 +14860,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "a9ce36b4-7926-4010-94b7-a9b72f0e56d8")
-		(property "Reference" "R12"
+		(property "Reference" "R6"
 			(at 266.7 82.042 0)
 			(effects
 				(font
@@ -14855,7 +14914,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R12")
+					(reference "R6")
 					(unit 1)
 				)
 			)
@@ -14871,7 +14930,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ab25129a-bbf4-4a0a-a12f-ff166a010e37")
-		(property "Reference" "TP36"
+		(property "Reference" "TP14"
 			(at 78.74 48.2599 0)
 			(effects
 				(font
@@ -14923,7 +14982,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP36")
+					(reference "TP14")
 					(unit 1)
 				)
 			)
@@ -14939,7 +14998,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "aea1a535-3e4c-4987-9c3b-d0de3b29ca12")
-		(property "Reference" "#PWR017"
+		(property "Reference" "#PWR030"
 			(at 168.91 279.4 0)
 			(effects
 				(font
@@ -14989,7 +15048,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR017")
+					(reference "#PWR030")
 					(unit 1)
 				)
 			)
@@ -15004,7 +15063,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "af933f63-0213-4c99-b37f-25468caf892e")
-		(property "Reference" "C4"
+		(property "Reference" "C15"
 			(at 327.66 62.2362 0)
 			(effects
 				(font
@@ -15058,7 +15117,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C4")
+					(reference "C15")
 					(unit 1)
 				)
 			)
@@ -15074,7 +15133,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "b0cbf580-2529-42f9-9407-e0b5628ab4a5")
-		(property "Reference" "TH1"
+		(property "Reference" "TH2"
 			(at 351.79 185.4199 0)
 			(effects
 				(font
@@ -15128,7 +15187,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TH1")
+					(reference "TH2")
 					(unit 1)
 				)
 			)
@@ -15144,7 +15203,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "b72f83a1-7697-40e8-8af9-185d33099ab5")
-		(property "Reference" "#PWR013"
+		(property "Reference" "#PWR027"
 			(at 151.13 271.78 0)
 			(effects
 				(font
@@ -15194,7 +15253,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR013")
+					(reference "#PWR027")
 					(unit 1)
 				)
 			)
@@ -15209,7 +15268,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "b7b55489-809e-4e45-985f-5c27b9b36c6c")
-		(property "Reference" "C12"
+		(property "Reference" "C18"
 			(at 361.188 104.14 90)
 			(effects
 				(font
@@ -15263,7 +15322,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C12")
+					(reference "C18")
 					(unit 1)
 				)
 			)
@@ -15338,6 +15397,75 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R")
+		(at 52.07 233.68 180)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "be7c8ecb-c4dc-4a70-9c86-bb6d13720df7")
+		(property "Reference" "R3"
+			(at 53.086 232.664 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "75"
+			(at 52.324 235.712 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 53.848 233.68 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 52.07 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 52.07 233.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "6813785f-fa3a-497f-a622-68ba86fa3465")
+		)
+		(pin "1"
+			(uuid "b205ad3e-7169-4ecc-bab5-296ae2ed60ae")
+		)
+		(instances
+			(project "phoenix-main-board"
+				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
+					(reference "R3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:GND")
 		(at 48.26 146.05 0)
 		(unit 1)
@@ -15347,7 +15475,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "c1910d78-4e24-4b36-b548-80c64132cbca")
-		(property "Reference" "#PWR034"
+		(property "Reference" "#PWR06"
 			(at 48.26 152.4 0)
 			(effects
 				(font
@@ -15397,7 +15525,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR034")
+					(reference "#PWR06")
 					(unit 1)
 				)
 			)
@@ -15412,7 +15540,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "c382fe3e-6978-47b7-af32-6ff5bd9f16e5")
-		(property "Reference" "#PWR015"
+		(property "Reference" "#PWR031"
 			(at 186.69 242.57 0)
 			(effects
 				(font
@@ -15462,7 +15590,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR015")
+					(reference "#PWR031")
 					(unit 1)
 				)
 			)
@@ -15478,7 +15606,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "c3c21249-eb4e-455d-bbaa-0aaad277d3b8")
-		(property "Reference" "#PWR023"
+		(property "Reference" "#PWR035"
 			(at 271.78 83.82 0)
 			(effects
 				(font
@@ -15528,7 +15656,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR023")
+					(reference "#PWR035")
 					(unit 1)
 				)
 			)
@@ -15543,7 +15671,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "c58b49e8-3c73-429f-9e78-e0f070b886be")
-		(property "Reference" "#PWR010"
+		(property "Reference" "#PWR012"
 			(at 59.69 208.28 0)
 			(effects
 				(font
@@ -15593,7 +15721,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR010")
+					(reference "#PWR012")
 					(unit 1)
 				)
 			)
@@ -15601,15 +15729,15 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 52.07 238.76 90)
+		(at 52.07 241.3 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
 		(uuid "c5ba995a-6bba-42bf-b720-13fdfc71eadb")
-		(property "Reference" "D1"
-			(at 52.578 235.966 90)
+		(property "Reference" "D2"
+			(at 52.578 238.506 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15618,7 +15746,7 @@
 			)
 		)
 		(property "Value" "GreenLED"
-			(at 50.292 234.95 0)
+			(at 50.292 237.49 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15627,7 +15755,7 @@
 			)
 		)
 		(property "Footprint" "LED_THT:LED_D5.0mm_Horizontal_O1.27mm_Z3.0mm"
-			(at 52.07 238.76 0)
+			(at 52.07 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15636,7 +15764,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 52.07 238.76 0)
+			(at 52.07 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15645,7 +15773,7 @@
 			)
 		)
 		(property "Description" "Light emitting diode"
-			(at 52.07 238.76 0)
+			(at 52.07 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15654,7 +15782,7 @@
 			)
 		)
 		(property "Sim.Pins" "1=K 2=A"
-			(at 52.07 238.76 0)
+			(at 52.07 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15671,7 +15799,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "D1")
+					(reference "D2")
 					(unit 1)
 				)
 			)
@@ -15686,7 +15814,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "c604c3a4-6560-44ad-81d8-8553544ed538")
-		(property "Reference" "U4"
+		(property "Reference" "U9"
 			(at 303.784 62.992 0)
 			(effects
 				(font
@@ -15792,7 +15920,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "U4")
+					(reference "U9")
 					(unit 1)
 				)
 			)
@@ -15808,7 +15936,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "cbf34149-6b2f-4e93-97bd-1caa943e0c6a")
-		(property "Reference" "#PWR03"
+		(property "Reference" "#PWR037"
 			(at 289.56 58.42 0)
 			(effects
 				(font
@@ -15858,7 +15986,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR03")
+					(reference "#PWR037")
 					(unit 1)
 				)
 			)
@@ -15874,7 +16002,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ccaf1647-1dd1-43d7-86fc-1fadf937f2ad")
-		(property "Reference" "#PWR050"
+		(property "Reference" "#PWR05"
 			(at 35.56 53.34 0)
 			(effects
 				(font
@@ -15924,7 +16052,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR050")
+					(reference "#PWR05")
 					(unit 1)
 				)
 			)
@@ -15939,7 +16067,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "cdca5969-455e-486e-a5a4-63c1ebad7246")
-		(property "Reference" "TP13"
+		(property "Reference" "TP3"
 			(at 33.782 72.39 0)
 			(effects
 				(font
@@ -15991,7 +16119,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP13")
+					(reference "TP3")
 					(unit 1)
 				)
 			)
@@ -16006,7 +16134,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "ce680a1c-e142-41f4-91d8-74a2f68d17f5")
-		(property "Reference" "TP2"
+		(property "Reference" "TP25"
 			(at 343.408 120.396 0)
 			(effects
 				(font
@@ -16058,7 +16186,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP2")
+					(reference "TP25")
 					(unit 1)
 				)
 			)
@@ -16073,7 +16201,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "d14ad70d-e462-4c09-bf7e-7a318bda7c3f")
-		(property "Reference" "TP5"
+		(property "Reference" "TP26"
 			(at 348.488 110.49 0)
 			(effects
 				(font
@@ -16125,7 +16253,7 @@
 		(instances
 			(project "phoenix-main-board"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP5")
+					(reference "TP26")
 					(unit 1)
 				)
 			)
@@ -16140,7 +16268,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "d19dd1db-e9a2-4e51-8acb-c84f8abb223b")
-		(property "Reference" "C20"
+		(property "Reference" "C4"
 			(at 54.61 116.8462 0)
 			(effects
 				(font
@@ -16194,7 +16322,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C20")
+					(reference "C4")
 					(unit 1)
 				)
 			)
@@ -16210,7 +16338,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "d82c45e3-84ba-4f5b-92c4-066352ccb5be")
-		(property "Reference" "C9"
+		(property "Reference" "C2"
 			(at 31.75 137.1662 0)
 			(effects
 				(font
@@ -16264,7 +16392,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C9")
+					(reference "C2")
 					(unit 1)
 				)
 			)
@@ -16279,7 +16407,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "d9d2c3bd-9073-4109-afac-9f69ece29f9b")
-		(property "Reference" "C18"
+		(property "Reference" "C5"
 			(at 60.96 139.7062 0)
 			(effects
 				(font
@@ -16333,7 +16461,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C18")
+					(reference "C5")
 					(unit 1)
 				)
 			)
@@ -16348,7 +16476,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "db0829f9-f247-4f5d-a319-c08c279b64e3")
-		(property "Reference" "TP11"
+		(property "Reference" "TP21"
 			(at 96.266 55.88 0)
 			(effects
 				(font
@@ -16400,7 +16528,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP11")
+					(reference "TP21")
 					(unit 1)
 				)
 			)
@@ -16416,7 +16544,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "db1585e2-add8-4a41-9862-28af2028a72b")
-		(property "Reference" "#PWR02"
+		(property "Reference" "#PWR08"
 			(at 53.34 265.43 0)
 			(effects
 				(font
@@ -16466,7 +16594,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR02")
+					(reference "#PWR08")
 					(unit 1)
 				)
 			)
@@ -16481,7 +16609,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "dc3bfb0d-6209-4659-bafa-bf3da29f22dd")
-		(property "Reference" "#PWR012"
+		(property "Reference" "#PWR023"
 			(at 140.97 261.62 0)
 			(effects
 				(font
@@ -16532,7 +16660,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR012")
+					(reference "#PWR023")
 					(unit 1)
 				)
 			)
@@ -16548,7 +16676,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "dc9d719a-d1de-44af-818d-e598452c6d0d")
-		(property "Reference" "#PWR019"
+		(property "Reference" "#PWR041"
 			(at 321.31 129.54 0)
 			(effects
 				(font
@@ -16598,7 +16726,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR019")
+					(reference "#PWR041")
 					(unit 1)
 				)
 			)
@@ -16613,7 +16741,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "df86571f-fdf1-49aa-a644-6d9e66656209")
-		(property "Reference" "#PWR049"
+		(property "Reference" "#PWR04"
 			(at 35.56 38.1 0)
 			(effects
 				(font
@@ -16663,7 +16791,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR049")
+					(reference "#PWR04")
 					(unit 1)
 				)
 			)
@@ -16678,7 +16806,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "e300d05d-5859-4020-b604-94d3df52e9f6")
-		(property "Reference" "C7"
+		(property "Reference" "C13"
 			(at 280.924 65.786 0)
 			(effects
 				(font
@@ -16732,7 +16860,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C7")
+					(reference "C13")
 					(unit 1)
 				)
 			)
@@ -16747,7 +16875,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "e4a0a187-4146-4638-9745-86a81f0c971b")
-		(property "Reference" "C23"
+		(property "Reference" "C3"
 			(at 34.036 173.99 0)
 			(effects
 				(font
@@ -16801,7 +16929,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "C23")
+					(reference "C3")
 					(unit 1)
 				)
 			)
@@ -16816,7 +16944,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "e51aa1b6-dfc3-4b34-993b-c571882f4873")
-		(property "Reference" "R9"
+		(property "Reference" "R10"
 			(at 287.782 93.98 90)
 			(effects
 				(font
@@ -16870,7 +16998,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R9")
+					(reference "R10")
 					(unit 1)
 				)
 			)
@@ -16885,7 +17013,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "e5c132c2-4423-4c45-bf1d-de2d39fdb04e")
-		(property "Reference" "#PWR05"
+		(property "Reference" "#PWR01"
 			(at 25.4 137.16 0)
 			(effects
 				(font
@@ -16935,7 +17063,7 @@
 		(instances
 			(project "phoenix-main-board"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR05")
+					(reference "#PWR01")
 					(unit 1)
 				)
 			)
@@ -16951,7 +17079,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "e7166529-abe8-42b3-aa8b-3f4224d902bb")
-		(property "Reference" "#PWR036"
+		(property "Reference" "#PWR014"
 			(at 71.12 151.13 0)
 			(effects
 				(font
@@ -17001,7 +17129,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR036")
+					(reference "#PWR014")
 					(unit 1)
 				)
 			)
@@ -17017,7 +17145,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "e774c6b6-39cc-4287-a09f-ba4523a59d05")
-		(property "Reference" "#PWR048"
+		(property "Reference" "#PWR044"
 			(at 347.98 201.93 0)
 			(effects
 				(font
@@ -17067,7 +17195,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR048")
+					(reference "#PWR044")
 					(unit 1)
 				)
 			)
@@ -17083,7 +17211,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "e845fcc5-09ad-4e79-8cf8-6cc1bc287669")
-		(property "Reference" "#PWR051"
+		(property "Reference" "#PWR034"
 			(at 247.65 222.25 0)
 			(effects
 				(font
@@ -17133,7 +17261,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR051")
+					(reference "#PWR034")
 					(unit 1)
 				)
 			)
@@ -17148,7 +17276,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "e93f94aa-f98b-4672-84e8-489aec84e815")
-		(property "Reference" "TP19"
+		(property "Reference" "TP10"
 			(at 55.118 245.364 0)
 			(effects
 				(font
@@ -17200,7 +17328,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP19")
+					(reference "TP10")
 					(unit 1)
 				)
 			)
@@ -17216,7 +17344,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ea650dcd-b88e-4ba6-8cb1-b7b4aa97edc7")
-		(property "Reference" "#PWR01"
+		(property "Reference" "#PWR040"
 			(at 317.5 57.15 0)
 			(effects
 				(font
@@ -17266,7 +17394,7 @@
 		(instances
 			(project ""
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR01")
+					(reference "#PWR040")
 					(unit 1)
 				)
 			)
@@ -17281,7 +17409,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "ecd073d4-0707-4373-821b-9a9e5a78a05d")
-		(property "Reference" "#PWR021"
+		(property "Reference" "#PWR043"
 			(at 328.93 72.39 0)
 			(effects
 				(font
@@ -17331,7 +17459,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR021")
+					(reference "#PWR043")
 					(unit 1)
 				)
 			)
@@ -17347,7 +17475,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ed7c6f75-c259-4a07-a9e1-bdb63b45dbb2")
-		(property "Reference" "#PWR014"
+		(property "Reference" "#PWR026"
 			(at 151.13 251.46 0)
 			(effects
 				(font
@@ -17397,7 +17525,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR014")
+					(reference "#PWR026")
 					(unit 1)
 				)
 			)
@@ -17413,7 +17541,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ee333a49-c731-418b-8e49-7217178d7109")
-		(property "Reference" "#PWR020"
+		(property "Reference" "#PWR038"
 			(at 289.56 127 0)
 			(effects
 				(font
@@ -17463,7 +17591,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR020")
+					(reference "#PWR038")
 					(unit 1)
 				)
 			)
@@ -17478,7 +17606,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "ee6571f7-8c71-4185-bc4c-cb917ccd9eb9")
-		(property "Reference" "R16"
+		(property "Reference" "R19"
 			(at 363.728 88.138 90)
 			(effects
 				(font
@@ -17532,7 +17660,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R16")
+					(reference "R19")
 					(unit 1)
 				)
 			)
@@ -17547,7 +17675,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f1882e86-b424-4582-8c41-f5e8d4c71957")
-		(property "Reference" "R10"
+		(property "Reference" "R11"
 			(at 288.544 97.536 90)
 			(effects
 				(font
@@ -17601,7 +17729,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R10")
+					(reference "R11")
 					(unit 1)
 				)
 			)
@@ -17616,7 +17744,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f26bc715-6db1-4eb2-9aa8-ce147058ccc1")
-		(property "Reference" "TP12"
+		(property "Reference" "TP19"
 			(at 92.456 52.07 0)
 			(effects
 				(font
@@ -17668,7 +17796,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP12")
+					(reference "TP19")
 					(unit 1)
 				)
 			)
@@ -17683,7 +17811,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f39e9760-d263-47f3-9a52-7ff2e505f316")
-		(property "Reference" "TP18"
+		(property "Reference" "TP9"
 			(at 55.372 241.554 0)
 			(effects
 				(font
@@ -17735,7 +17863,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "TP18")
+					(reference "TP9")
 					(unit 1)
 				)
 			)
@@ -17750,7 +17878,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f7c70e9b-7e1f-4c7f-864e-c4cea71f9aac")
-		(property "Reference" "R24"
+		(property "Reference" "R15"
 			(at 296.926 184.404 0)
 			(effects
 				(font
@@ -17804,7 +17932,7 @@
 		(instances
 			(project "phoenix-main-board"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R24")
+					(reference "R15")
 					(unit 1)
 				)
 			)
@@ -17820,7 +17948,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "f82de965-0fb0-4504-ac52-6547a267de72")
-		(property "Reference" "#PWR08"
+		(property "Reference" "#PWR019"
 			(at 95.25 254 0)
 			(effects
 				(font
@@ -17870,7 +17998,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR08")
+					(reference "#PWR019")
 					(unit 1)
 				)
 			)
@@ -17885,7 +18013,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f8b083c1-1830-4d48-8a0b-953bda040fc6")
-		(property "Reference" "#PWR032"
+		(property "Reference" "#PWR013"
 			(at 67.31 116.84 0)
 			(effects
 				(font
@@ -17935,7 +18063,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR032")
+					(reference "#PWR013")
 					(unit 1)
 				)
 			)
@@ -17950,7 +18078,7 @@
 		(on_board yes)
 		(dnp no)
 		(uuid "f9162b2c-4a65-4387-a242-a3e79bb6c4bd")
-		(property "Reference" "R6"
+		(property "Reference" "R7"
 			(at 288.036 82.042 90)
 			(effects
 				(font
@@ -18004,7 +18132,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "R6")
+					(reference "R7")
 					(unit 1)
 				)
 			)
@@ -18020,7 +18148,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "f9653a3c-945a-4081-b9cb-8b549f4ed0ce")
-		(property "Reference" "#PWR041"
+		(property "Reference" "#PWR015"
 			(at 71.12 189.23 0)
 			(effects
 				(font
@@ -18070,7 +18198,7 @@
 		(instances
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR041")
+					(reference "#PWR015")
 					(unit 1)
 				)
 			)
