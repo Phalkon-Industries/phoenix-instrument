@@ -796,3 +796,33 @@ void mcp356x_test_reset_diagnostics(void) {
 uint32_t mcp356x_test_last_raw_word(void) {
   return g_last_raw_word;
 }
+
+uint32_t mcp356x_estimate_conversion_delay(mcp356x_osr osr, mcp356x_sampling_mode mode) {
+  struct ConversionLatencyEntry {
+    mcp356x_osr osr;
+    uint32_t    blocking_latency_us;
+    uint32_t    irq_latency_us;
+  };
+
+  static const ConversionLatencyEntry k_conversion_latency_table[] = {
+      {mcp356x_osr::osr_32, 10u, 8u},       {mcp356x_osr::osr_64, 20u, 16u},      {mcp356x_osr::osr_128, 30u, 24u},
+      {mcp356x_osr::osr_256, 40u, 32u},     {mcp356x_osr::osr_512, 50u, 40u},     {mcp356x_osr::osr_1024, 60u, 48u},
+      {mcp356x_osr::osr_2048, 70u, 56u},    {mcp356x_osr::osr_4096, 80u, 64u},    {mcp356x_osr::osr_8192, 90u, 72u},
+      {mcp356x_osr::osr_16384, 100u, 80u},  {mcp356x_osr::osr_20480, 110u, 88u},  {mcp356x_osr::osr_24576, 120u, 96u},
+      {mcp356x_osr::osr_40960, 130u, 104u}, {mcp356x_osr::osr_49152, 140u, 112u}, {mcp356x_osr::osr_81920, 150u, 120u},
+      {mcp356x_osr::osr_98304, 160u, 128u},
+  };
+
+  for (size_t index = 0u; index < (sizeof(k_conversion_latency_table) / sizeof(k_conversion_latency_table[0]));
+       ++index) {
+    if (k_conversion_latency_table[index].osr == osr) {
+      // Step 1: Return the placeholder latency that mirrors the Unity coverage
+      // until Step 6 replaces these entries with measured figures.
+      return (mode == mcp356x_sampling_mode::blocking) ? k_conversion_latency_table[index].blocking_latency_us :
+                                                         k_conversion_latency_table[index].irq_latency_us;
+    }
+  }
+
+  // Step 2: Guardrail for unexpected OSR enums; zero signals a missing table entry.
+  return 0u;
+}

@@ -10,6 +10,9 @@
 #include "dwell_sweep/dwell_sweep.hpp"
 #include "light_readings.hpp"
 #include "main.hpp"
+#include "osr_latency/osr_latency.hpp"
+#include "osr_latency/osr_latency_command_parser.hpp"
+#include "osr_latency/osr_latency_formatter.hpp"
 #include "osr_sweep/osr_sweep.hpp"
 #include "osr_sweep/osr_sweep_formatter.hpp"
 #include "pot_sweep/pot_sweep.hpp"
@@ -18,6 +21,8 @@
 #include <Arduino.h>
 #include <cstring>
 #include <unity.h>
+
+extern void run_mcp356x_latency_lookup_tests(void);
 
 static void test_running_stats_accumulates_integer_values(void) {
   // Step 1: Create an empty integer stats tracker and verify it starts without samples.
@@ -1360,6 +1365,226 @@ static void test_pot_sweep_run_reports_light_readings_saturation(void) {
   }
 }
 
+static uint32_t g_osr_latency_blocking_call_count = 0u;
+static uint32_t g_osr_latency_irq_call_count      = 0u;
+static uint32_t g_osr_latency_summary_line_count  = 0u;
+
+static bool osr_latency_fake_blocking_sampler(mcp356x_osr osr, uint32_t warmup_count, uint32_t sample_count,
+                                              PhoenixBenchmarkRunningStats<uint32_t>* stats_out) {
+  (void) osr;
+  (void) warmup_count;
+
+  ++g_osr_latency_blocking_call_count;
+  if ((stats_out != NULL) && (sample_count > 0u)) {
+    // Step 1: Record a deterministic sample so future formatting can surface metrics.
+    stats_out->update(sample_count * 10u);
+    stats_out->update(sample_count * 12u);
+  }
+  return true;
+}
+
+static bool osr_latency_fake_irq_sampler(mcp356x_osr osr, uint32_t warmup_count, uint32_t sample_count,
+                                         PhoenixBenchmarkRunningStats<uint32_t>* stats_out) {
+  (void) osr;
+  (void) warmup_count;
+
+  ++g_osr_latency_irq_call_count;
+  if ((stats_out != NULL) && (sample_count > 0u)) {
+    // Step 1: Record a deterministic sample set for IRQ timing.
+    stats_out->update(sample_count * 8u);
+    stats_out->update(sample_count * 9u);
+  }
+  return true;
+}
+
+static void osr_latency_fake_summary_writer(const char* line) {
+  if (line != NULL) {
+    ++g_osr_latency_summary_line_count;
+  }
+}
+
+static void test_osr_latency_options_apply_defaults_inherit_initialised_values(void) {
+  // Step 1: Create options without overrides so defaults should populate each field.
+  PhoenixBenchmarkOsrLatencyOptions options = {};
+  options.sample_count                      = 0u;
+  options.warmup_count                      = 0u;
+  options.include_blocking                  = false;
+  options.include_irq                       = false;
+  options.has_sample_override               = false;
+  options.has_warmup_override               = false;
+  options.has_blocking_override             = false;
+  options.has_irq_override                  = false;
+
+  // Step 2: Provide defaults that the helper should apply to the options.
+  const PhoenixBenchmarkOsrLatencyDefaults defaults = {
+      .warmup_count     = 2u,
+      .sample_count     = 12u,
+      .include_blocking = true,
+      .include_irq      = false,
+  };
+
+  // Step 3: Apply default values and confirm each field inherited the defaults.
+  options.apply_defaults(defaults);
+
+  TEST_ASSERT_EQUAL_UINT32(defaults.sample_count, options.sample_count);
+  TEST_ASSERT_EQUAL_UINT32(defaults.warmup_count, options.warmup_count);
+  TEST_ASSERT_EQUAL(defaults.include_blocking, options.include_blocking);
+  TEST_ASSERT_EQUAL(defaults.include_irq, options.include_irq);
+}
+
+static void test_osr_latency_options_validate_rejects_zero_sample_count(void) {
+  // Step 1: Compose options with an invalid zero sample count.
+  PhoenixBenchmarkOsrLatencyOptions options = {
+      .warmup_count          = 1u,
+      .sample_count          = 0u,
+      .include_blocking      = true,
+      .include_irq           = true,
+      .has_warmup_override   = true,
+      .has_sample_override   = true,
+      .has_blocking_override = true,
+      .has_irq_override      = true,
+  };
+
+  // Step 2: Validate and expect the helper to reject the invalid configuration.
+  const char* error_message = NULL;
+  TEST_ASSERT_FALSE(options.validate(&error_message));
+  TEST_ASSERT_NOT_NULL(error_message);
+}
+
+static void test_osr_latency_parse_command_accepts_plain_payload(void) {
+  // Step 1: Seed the module with deterministic defaults.
+  phoenix_benchmark_osr_latency_reset_state();
+  const PhoenixBenchmarkOsrLatencyDefaults defaults = {
+      .warmup_count     = 3u,
+      .sample_count     = 10u,
+      .include_blocking = true,
+      .include_irq      = false,
+  };
+  phoenix_benchmark_osr_latency_initialise(defaults);
+
+  // Step 2: Parse a minimal JSON command and confirm defaults were applied.
+  const PhoenixBenchmarkOsrLatencyParseResult result =
+      phoenix_benchmark_osr_latency_parse_command("{\"command\":\"osr_latency\"}");
+
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_NULL(result.error_message);
+  TEST_ASSERT_EQUAL_UINT32(defaults.sample_count, result.options.sample_count);
+  TEST_ASSERT_EQUAL_UINT32(defaults.warmup_count, result.options.warmup_count);
+  TEST_ASSERT_EQUAL(defaults.include_blocking, result.options.include_blocking);
+  TEST_ASSERT_EQUAL(defaults.include_irq, result.options.include_irq);
+}
+
+static void test_osr_latency_parse_command_rejects_invalid_payload(void) {
+  // Step 1: Initialise defaults so validation can run after parsing.
+  phoenix_benchmark_osr_latency_reset_state();
+  phoenix_benchmark_osr_latency_initialise(
+      {.warmup_count = 1u, .sample_count = 8u, .include_blocking = true, .include_irq = true});
+
+  // Step 2: Provide a payload with an invalid sample override and expect failure.
+  const PhoenixBenchmarkOsrLatencyParseResult result =
+      phoenix_benchmark_osr_latency_parse_command("{\"command\":\"osr_latency\",\"parameters\":{\"samples\":0}}");
+
+  TEST_ASSERT_FALSE(result.success);
+  TEST_ASSERT_NOT_NULL(result.error_message);
+}
+
+static void test_osr_latency_format_summary_header_matches_expected_columns(void) {
+  // Step 1: Render the summary header and ensure the agreed column labels appear.
+  char buffer[k_phoenix_benchmark_osr_latency_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_osr_latency_format_summary_header(buffer, sizeof(buffer)));
+  TEST_ASSERT_EQUAL_STRING("OSR      Mode      Samples  Mean_us  StdDev_us  Min_us  Max_us", buffer);
+}
+
+static void test_osr_latency_format_summary_row_formats_metrics(void) {
+  // Step 1: Populate a row with representative metrics.
+  const PhoenixBenchmarkOsrLatencySummaryRowValues values = {
+      .osr_label    = "OSR4096",
+      .mode_label   = "blocking",
+      .sample_count = 12u,
+      .mean_us      = 123.456,
+      .stddev_us    = 3.21,
+      .min_us       = 111u,
+      .max_us       = 130u,
+      .has_metrics  = true,
+  };
+
+  // Step 2: Format the row and confirm each metric surfaced.
+  char buffer[k_phoenix_benchmark_osr_latency_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_osr_latency_format_summary_row(values, buffer, sizeof(buffer)));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "OSR4096"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "blocking"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "123.456"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "3.210"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "111"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "130"));
+}
+
+static void test_osr_latency_format_summary_row_uses_placeholders_without_metrics(void) {
+  // Step 1: Prepare a row that lacks metrics so placeholder handling can be asserted.
+  const PhoenixBenchmarkOsrLatencySummaryRowValues values = {
+      .osr_label    = "OSR8192",
+      .mode_label   = "irq",
+      .sample_count = 0u,
+      .mean_us      = 0.0,
+      .stddev_us    = 0.0,
+      .min_us       = 0u,
+      .max_us       = 0u,
+      .has_metrics  = false,
+  };
+
+  // Step 2: Format the row and confirm placeholders appear for missing data.
+  char buffer[k_phoenix_benchmark_osr_latency_summary_buffer_bytes] = {};
+  TEST_ASSERT_TRUE(phoenix_benchmark_osr_latency_format_summary_row(values, buffer, sizeof(buffer)));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "OSR8192"));
+  TEST_ASSERT_NOT_NULL(strstr(buffer, "--"));
+}
+
+static void test_osr_latency_run_invokes_registered_samplers(void) {
+  // Step 1: Reset module state and install deterministic sampler hooks.
+  phoenix_benchmark_osr_latency_reset_state();
+  const PhoenixBenchmarkOsrLatencyDefaults defaults = {
+      .warmup_count     = 1u,
+      .sample_count     = 4u,
+      .include_blocking = true,
+      .include_irq      = true,
+  };
+  phoenix_benchmark_osr_latency_initialise(defaults);
+
+  g_osr_latency_blocking_call_count = 0u;
+  g_osr_latency_irq_call_count      = 0u;
+  g_osr_latency_summary_line_count  = 0u;
+
+  phoenix_benchmark_osr_latency_set_blocking_sampler_for_test(osr_latency_fake_blocking_sampler);
+  phoenix_benchmark_osr_latency_set_irq_sampler_for_test(osr_latency_fake_irq_sampler);
+
+  PhoenixBenchmarkOsrLatencyOptions options = {
+      .warmup_count          = defaults.warmup_count,
+      .sample_count          = defaults.sample_count,
+      .include_blocking      = true,
+      .include_irq           = true,
+      .has_warmup_override   = true,
+      .has_sample_override   = true,
+      .has_blocking_override = true,
+      .has_irq_override      = true,
+  };
+
+  PhoenixBenchmarkOsrLatencyMeasurement           rows[k_phoenix_benchmark_osr_latency_row_capacity] = {};
+  const PhoenixBenchmarkOsrLatencyOutputCallbacks callbacks = {osr_latency_fake_summary_writer};
+
+  // Step 2: Execute the runner and expect it to invoke the configured hooks.
+  const PhoenixBenchmarkOsrLatencyExecutionStatus status =
+      phoenix_benchmark_osr_latency_run(options, rows, k_phoenix_benchmark_osr_latency_row_capacity, callbacks);
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_NOT_EQUAL(0u, status.rows_generated);
+  TEST_ASSERT_NOT_EQUAL(0u, g_osr_latency_blocking_call_count);
+  TEST_ASSERT_NOT_EQUAL(0u, g_osr_latency_irq_call_count);
+  TEST_ASSERT_NOT_EQUAL(0u, g_osr_latency_summary_line_count);
+
+  // Step 3: Clear hooks so subsequent tests start from the production configuration.
+  phoenix_benchmark_osr_latency_clear_test_hooks();
+}
+
 static void test_osr_sweep_parse_command_applies_initialised_defaults(void) {
   // Step 1: Seed OSR sweep defaults and parse a minimal command referencing the sweep.
   phoenix_benchmark_osr_sweep_reset_state();
@@ -1699,6 +1924,15 @@ void setup() {
   UNITY_SETUP_SERIAL_DEFAULT();
   // Step 2: Run the full Phoenix benchmark support test suite.
   UNITY_BEGIN();
+  run_mcp356x_latency_lookup_tests();
+  RUN_TEST(test_osr_latency_options_apply_defaults_inherit_initialised_values);
+  RUN_TEST(test_osr_latency_options_validate_rejects_zero_sample_count);
+  RUN_TEST(test_osr_latency_parse_command_accepts_plain_payload);
+  RUN_TEST(test_osr_latency_parse_command_rejects_invalid_payload);
+  RUN_TEST(test_osr_latency_format_summary_header_matches_expected_columns);
+  RUN_TEST(test_osr_latency_format_summary_row_formats_metrics);
+  RUN_TEST(test_osr_latency_format_summary_row_uses_placeholders_without_metrics);
+  RUN_TEST(test_osr_latency_run_invokes_registered_samplers);
   RUN_TEST(test_running_stats_accumulates_integer_values);
   RUN_TEST(test_running_stats_handles_single_sample_std_zero);
   RUN_TEST(test_state_accumulator_tracks_channel_metrics);

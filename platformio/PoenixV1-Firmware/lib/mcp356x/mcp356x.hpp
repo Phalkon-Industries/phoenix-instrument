@@ -208,6 +208,14 @@ enum class mcp356x_data_format : uint8_t {
   data32_signed_chid = 0b11,
 };
 
+// Sampling mode used when estimating conversion delays for the Phoenix
+// benchmarking suite. Blocking corresponds to the polling path used by
+// mcp356x_read_single_ended_channel while irq samples rely on the ADC HAL ISR.
+enum class mcp356x_sampling_mode : uint8_t {
+  blocking = 0u,
+  irq      = 1u,
+};
+
 // IRQ mode encodings map to IRQ_MODE[1:0] and select between IRQ/MDAT output
 // behaviour and inactive-state polarity.
 enum class mcp356x_irq_mode : uint8_t {
@@ -480,4 +488,18 @@ int mcp356x_full_reset(uint8_t* status_byte);
  * @return MCP356X_OK on success, MCP356X_ERR_TIMEOUT on timeout, or a negative error from underlying calls.
  */
 int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result);
+
+/**
+ * @brief Estimate the conversion latency for a given OSR and sampling mode.
+ *
+ * The helper surfaces empirically captured timings so higher-level modules can
+ * predict how long a conversion will take when scheduling measurement loops.
+ * Values returned here are placeholders until Step 6 of the benchmark plan
+ * populates the lookup table with hardware measurements.
+ *
+ * @param osr  Oversampling ratio applied to the ADC conversion.
+ * @param mode Sampling mode distinguishing between blocking and IRQ paths.
+ * @return Estimated conversion duration in microseconds.
+ */
+uint32_t mcp356x_estimate_conversion_delay(mcp356x_osr osr, mcp356x_sampling_mode mode);
 #endif  // MCP356X_HPP

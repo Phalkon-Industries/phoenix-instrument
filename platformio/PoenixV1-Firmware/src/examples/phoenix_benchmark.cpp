@@ -9,6 +9,7 @@
 #include "drift_capture/drift_capture.hpp"
 #include "dwell_sweep/dwell_sweep.hpp"
 #include "dwell_sweep/dwell_sweep_formatter.hpp"
+#include "osr_latency/osr_latency.hpp"
 #include "osr_sweep/osr_sweep.hpp"
 #include "osr_sweep/osr_sweep_formatter.hpp"
 #include "pot_sweep/pot_sweep.hpp"
@@ -55,6 +56,13 @@ const PhoenixBenchmarkAdcSpeedDefaults k_adc_speed_defaults = {
     .enable_irq      = true,
 };
 
+const PhoenixBenchmarkOsrLatencyDefaults k_osr_latency_defaults = {
+    .warmup_count     = 1u,
+    .sample_count     = 8u,
+    .include_blocking = true,
+    .include_irq      = true,
+};
+
 const PhoenixBenchmarkOsrSweepDefaults k_osr_sweep_defaults = {
     .sweep_count = 100u,
     .dwell_us    = 100u,
@@ -73,10 +81,11 @@ const PhoenixBenchmarkDwellSweepDefaults k_dwell_sweep_defaults = {
     .dwell_step_us    = 100u,
 };
 
-PhoenixBenchmarkStateAccumulator     g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
-PhoenixBenchmarkOsrSweepRowMetrics   g_osr_sweep_rows[k_phoenix_benchmark_osr_value_count];
-PhoenixBenchmarkPotSweepRowMetrics   g_pot_sweep_rows[k_phoenix_benchmark_pot_sweep_max_wiper_count];
-PhoenixBenchmarkDwellSweepRowMetrics g_dwell_sweep_rows[k_phoenix_benchmark_dwell_sweep_max_step_count];
+PhoenixBenchmarkStateAccumulator      g_state_accumulators[k_phoenix_benchmark_channel_map_state_descriptor_count];
+PhoenixBenchmarkOsrSweepRowMetrics    g_osr_sweep_rows[k_phoenix_benchmark_osr_value_count];
+PhoenixBenchmarkPotSweepRowMetrics    g_pot_sweep_rows[k_phoenix_benchmark_pot_sweep_max_wiper_count];
+PhoenixBenchmarkDwellSweepRowMetrics  g_dwell_sweep_rows[k_phoenix_benchmark_dwell_sweep_max_step_count];
+PhoenixBenchmarkOsrLatencyMeasurement g_osr_latency_rows[k_phoenix_benchmark_osr_latency_row_capacity];
 
 void reset_osr_sweep_rows(void) {
   for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_value_count; ++index) {
@@ -94,6 +103,13 @@ void reset_dwell_sweep_rows(void) {
   // Step 1: Clear every recorded dwell row so new sweeps start with clean buffers.
   for (std::size_t index = 0u; index < k_phoenix_benchmark_dwell_sweep_max_step_count; ++index) {
     g_dwell_sweep_rows[index] = PhoenixBenchmarkDwellSweepRowMetrics{};
+  }
+}
+
+void reset_osr_latency_rows(void) {
+  // Step 1: Clear cached latency measurements to avoid leaking previous results.
+  for (std::size_t index = 0u; index < k_phoenix_benchmark_osr_latency_row_capacity; ++index) {
+    g_osr_latency_rows[index] = PhoenixBenchmarkOsrLatencyMeasurement{};
   }
 }
 
@@ -1124,6 +1140,44 @@ bool execute_osr_sweep_command(const PhoenixBenchmarkOsrSweepOptions& options) {
   return true;
 }
 
+bool execute_osr_latency_command(const PhoenixBenchmarkOsrLatencyOptions& options) {
+  // Step 1: Log the invocation parameters for downstream tooling correlation.
+  Serial.print(F("# running,scenario=osr_latency,warmup="));
+  Serial.print(options.warmup_count);
+  Serial.print(F(",samples="));
+  Serial.print(options.sample_count);
+  Serial.print(F(",include_blocking="));
+  Serial.print(options.include_blocking ? "true" : "false");
+  Serial.print(F(",include_irq="));
+  Serial.println(options.include_irq ? "true" : "false");
+
+  // Step 2: Clear cached measurements and announce the summary section.
+  reset_osr_latency_rows();
+  Serial.println();
+  Serial.println(F("# osr_latency_summary"));
+
+  const PhoenixBenchmarkOsrLatencyOutputCallbacks callbacks = {serial_print_line};
+  const PhoenixBenchmarkOsrLatencyExecutionStatus status    = phoenix_benchmark_osr_latency_run(
+      options, g_osr_latency_rows, k_phoenix_benchmark_osr_latency_row_capacity, callbacks);
+
+  if (!status.success) {
+    Serial.print(F("# error,osr_latency_failed"));
+    if (status.message != nullptr) {
+      Serial.print(F(",reason="));
+      Serial.print(status.message);
+    }
+    Serial.println();
+    return false;
+  }
+
+  if (status.has_warnings) {
+    Serial.println(F("# osr_latency_warnings,reason=row_capacity_limit"));
+  }
+
+  Serial.println(F("# benchmark_complete"));
+  return true;
+}
+
 bool execute_drift_capture_command(const PhoenixBenchmarkDriftCaptureOptions& options) {
   Serial.print(F("# running,scenario=drift_capture,start_us="));
   Serial.print(options.start_time_us);
@@ -1363,6 +1417,21 @@ void handle_command_line(const char* line) {
 
     handled = execute_osr_sweep_command(parse_result.options);
   }
+  else if (std::strcmp(command_identifier, "osr_latency") == 0) {
+    const PhoenixBenchmarkOsrLatencyParseResult parse_result = phoenix_benchmark_osr_latency_parse_command(line);
+    if (!parse_result.success) {
+      Serial.print(F("# error,osr_latency_parse_failed"));
+      if (parse_result.error_message != nullptr) {
+        Serial.print(F(",reason="));
+        Serial.print(parse_result.error_message);
+      }
+      Serial.println();
+      Serial.println(F("# ready"));
+      return;
+    }
+
+    handled = execute_osr_latency_command(parse_result.options);
+  }
   else if (std::strcmp(command_identifier, "drift_capture") == 0) {
     const PhoenixBenchmarkDriftCaptureParseResult parse_result = phoenix_benchmark_drift_capture_parse_command(line);
     if (!parse_result.success) {
@@ -1432,6 +1501,8 @@ void setup() {
   phoenix_benchmark_channel_map_initialise(k_channel_map_defaults);
   phoenix_benchmark_adc_speed_reset_state();
   phoenix_benchmark_adc_speed_initialise(k_adc_speed_defaults);
+  phoenix_benchmark_osr_latency_reset_state();
+  phoenix_benchmark_osr_latency_initialise(k_osr_latency_defaults);
   phoenix_benchmark_osr_sweep_reset_state();
   phoenix_benchmark_osr_sweep_initialise(k_osr_sweep_defaults);
   phoenix_benchmark_dwell_sweep_reset_state();
