@@ -2,12 +2,23 @@
 #include "main.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
+#include <nrf_pwm.h>
 #include <stddef.h>
+#include <string.h>
 #include <unity.h>
 
 static const LedRouterConfig k_router_config = {
     TS5A3359_IN1,
     TS5A3359_IN2,
+    {false, nullptr},
+};
+
+static NRF_PWM_Type g_test_pwm_instance = {};
+
+static const LedRouterConfig k_pwm_router_config = {
+    TS5A3359_IN1,
+    TS5A3359_IN2,
+    {true, &g_test_pwm_instance},
 };
 
 static void reset_pin_modes_to_input(void) {
@@ -21,6 +32,8 @@ void setUp(void) {
   led_router_reset_for_test();
   // Step 2. Restore the MCU pins to a neutral mode before exercising the driver.
   reset_pin_modes_to_input();
+  // Step 3. Clear the fake PWM instance so register writes start from zero.
+  memset(&g_test_pwm_instance, 0, sizeof(g_test_pwm_instance));
 }
 
 void tearDown(void) {
@@ -39,6 +52,7 @@ static void test_led_router_initialize_rejects_duplicate_pins(void) {
   const LedRouterConfig invalid_config = {
       TS5A3359_IN1,
       TS5A3359_IN1,
+      {false, nullptr},
   };
 
   // Step 2. Confirm the driver rejects the duplicate wiring request.
@@ -133,6 +147,59 @@ static void test_led_router_get_state_requires_initialization(void) {
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_ERR_NOT_INITIALIZED, return_code);
 }
 
+static void test_led_router_pwm_configure_requires_initialization(void) {
+  // Step 1. Attempt to configure PWM without initialising the router.
+  const int return_code = led_router_pwm_configure(1000u);
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_ERR_NOT_INITIALIZED, return_code);
+}
+
+static void test_led_router_pwm_configure_rejects_disabled_configuration(void) {
+  // Step 1. Initialise with a configuration that leaves PWM disabled.
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_router_config));
+
+  // Step 2. Confirm PWM configuration rejects the request.
+  const int return_code = led_router_pwm_configure(1000u);
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_ERR_INVALID_ARG, return_code);
+}
+
+static void test_led_router_pwm_configure_programs_inverted_waveform(void) {
+  // Step 1. Bring up the router with PWM enabled and a fake instance for inspection.
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_pwm_router_config));
+
+  // Step 2. Configure PWM with a minimum period and expect success.
+  const uint32_t minimum_period_us = 3000u;
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_configure(minimum_period_us));
+
+  // Step 3. Capture diagnostic values and validate duty cycle ratios.
+  LedRouterPwmTestSnapshot snapshot = {};
+  led_router_get_pwm_test_snapshot(&snapshot);
+  TEST_ASSERT_TRUE(snapshot.pwm_configured);
+  TEST_ASSERT_GREATER_THAN_UINT16(0u, snapshot.countertop);
+  TEST_ASSERT_EQUAL_UINT16(snapshot.countertop / 2u, snapshot.channel0_level);
+  TEST_ASSERT_EQUAL_UINT16(snapshot.countertop / 4u, snapshot.channel1_level);
+  TEST_ASSERT_TRUE(snapshot.channel1_is_inverted);
+
+  // Step 4. Ensure the programmed period honours the minimum request.
+  const uint64_t required_ticks =
+      ((static_cast<uint64_t>(snapshot.base_frequency_hz) * minimum_period_us) + 999999u) / 1000000u;
+  TEST_ASSERT_TRUE(snapshot.countertop >= required_ticks);
+}
+
+static void test_led_router_pwm_stop_releases_pwm_resources(void) {
+  // Step 1. Initialise and configure PWM so the stop API has work to do.
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_pwm_router_config));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_configure(2000u));
+
+  // Step 2. Request PWM stop and gather diagnostics.
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_stop());
+  LedRouterPwmTestSnapshot snapshot = {};
+  led_router_get_pwm_test_snapshot(&snapshot);
+
+  // Step 3. Confirm PWM is no longer configured.
+  TEST_ASSERT_FALSE(snapshot.pwm_configured);
+  TEST_ASSERT_EQUAL_UINT16(0u, snapshot.countertop);
+}
+
 void setup() {
   // Step 1. Prepare the Unity serial interface for log output.
   UNITY_SETUP_SERIAL_DEFAULT();
@@ -149,6 +216,10 @@ void setup() {
   RUN_TEST(test_led_router_get_state_rejects_null_pointer);
   RUN_TEST(test_led_router_get_state_rejects_null_pointer_after_init);
   RUN_TEST(test_led_router_get_state_requires_initialization);
+  RUN_TEST(test_led_router_pwm_configure_requires_initialization);
+  RUN_TEST(test_led_router_pwm_configure_rejects_disabled_configuration);
+  RUN_TEST(test_led_router_pwm_configure_programs_inverted_waveform);
+  RUN_TEST(test_led_router_pwm_stop_releases_pwm_resources);
   // Step 3. Finalise Unity so the firmware can idle in loop().
   UNITY_END();
 }

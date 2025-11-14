@@ -2,6 +2,7 @@
 #define LED_ROUTER_HPP
 
 #include "phoenix_guard.hpp"
+#include <nrf_pwm.h>
 #include <stdint.h>
 
 // Return codes for the LED router helper.
@@ -23,9 +24,24 @@ enum class LedRouterState : uint8_t {
 /**
  * @brief Runtime configuration details for the LED router helper.
  */
+struct LedRouterPwmConfig {
+  bool          pwm_enabled;
+  NRF_PWM_Type* pwm_instance;
+};
+
+struct LedRouterPwmTestSnapshot {
+  bool     pwm_configured;
+  uint16_t countertop;
+  uint16_t channel0_level;
+  uint16_t channel1_level;
+  bool     channel1_is_inverted;
+  uint32_t base_frequency_hz;
+};
+
 struct LedRouterConfig {
-  int switch_in1_pin;
-  int switch_in2_pin;
+  int                switch_in1_pin;
+  int                switch_in2_pin;
+  LedRouterPwmConfig pwm_config;
 };
 
 /**
@@ -71,5 +87,11 @@ int led_router_shutdown(void);
  * @brief Reset internal state tracking. Intended for unit tests only.
  */
 void led_router_reset_for_test(void);
+
+int led_router_pwm_configure(uint32_t minimum_period_us);
+
+int led_router_pwm_stop(void);
+
+void led_router_get_pwm_test_snapshot(LedRouterPwmTestSnapshot* snapshot_out);
 
 #endif  // LED_ROUTER_HPP
