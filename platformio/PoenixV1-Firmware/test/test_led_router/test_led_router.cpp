@@ -149,7 +149,7 @@ static void test_led_router_get_state_requires_initialization(void) {
 
 static void test_led_router_pwm_configure_requires_initialization(void) {
   // Step 1. Attempt to configure PWM without initialising the router.
-  const int return_code = led_router_pwm_configure(1000u);
+  const int return_code = led_router_pwm_start(1000u);
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_ERR_NOT_INITIALIZED, return_code);
 }
 
@@ -158,7 +158,7 @@ static void test_led_router_pwm_configure_rejects_disabled_configuration(void) {
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_router_config));
 
   // Step 2. Confirm PWM configuration rejects the request.
-  const int return_code = led_router_pwm_configure(1000u);
+  const int return_code = led_router_pwm_start(1000u);
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_ERR_INVALID_ARG, return_code);
 }
 
@@ -168,7 +168,7 @@ static void test_led_router_pwm_configure_programs_inverted_waveform(void) {
 
   // Step 2. Configure PWM with a minimum period and expect success.
   const uint32_t minimum_period_us = 3000u;
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_configure(minimum_period_us));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_start(minimum_period_us));
 
   // Step 3. Capture diagnostic values and validate duty cycle ratios.
   LedRouterPwmTestSnapshot snapshot = {};
@@ -188,7 +188,7 @@ static void test_led_router_pwm_configure_programs_inverted_waveform(void) {
 static void test_led_router_pwm_stop_releases_pwm_resources(void) {
   // Step 1. Initialise and configure PWM so the stop API has work to do.
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_pwm_router_config));
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_configure(2000u));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_start(2000u));
 
   // Step 2. Request PWM stop and gather diagnostics.
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_stop());

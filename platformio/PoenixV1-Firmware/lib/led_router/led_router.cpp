@@ -182,7 +182,7 @@ void led_router_reset_for_test(void) {
   memset(&g_pwm_waveforms[0], 0, sizeof(g_pwm_waveforms));
 }
 
-int led_router_pwm_configure(uint32_t minimum_period_us) {
+int led_router_pwm_start(uint32_t minimum_period_us) {
   // Step 1: Confirm the router and PWM back-end are ready for configuration.
   GUARD_INITIALIZED(g_is_initialized);
 

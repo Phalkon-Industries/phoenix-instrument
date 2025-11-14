@@ -17,7 +17,7 @@ void setup() {
   (void) led_router_set_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
 
   // Step 3: Start PWM playback; the hardware now owns the switch lines.
-  (void) led_router_pwm_configure(k_pwm_minimum_period_us);
+  (void) led_router_pwm_start(k_pwm_minimum_period_us);
 }
 
 void loop() {
