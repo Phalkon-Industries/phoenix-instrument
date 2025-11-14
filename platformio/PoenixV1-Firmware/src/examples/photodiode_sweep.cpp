@@ -33,6 +33,7 @@ static const size_t k_led_sweep_count = sizeof(k_led_sweep_sequence) / sizeof(k_
 static const LedRouterConfig k_led_router_config = {
     TS5A3359_IN1,
     TS5A3359_IN2,
+    {false, nullptr},
 };
 
 static const AdcHalConfig k_adc_hal_config = {

@@ -3,6 +3,7 @@
 const LedRouterConfig g_device_led_router_config = {
     TS5A3359_IN1,
     TS5A3359_IN2,
+    {false, nullptr},
 };
 
 const AdcHalConfig g_device_adc_hal_config = {

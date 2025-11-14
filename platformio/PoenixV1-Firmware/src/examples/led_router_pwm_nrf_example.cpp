@@ -1,5 +1,4 @@
 #include "device_setup.hpp"
-#include "led_router.hpp"
 #include <Arduino.h>
 #include <nrf_pwm.h>
 
@@ -16,7 +15,7 @@ constexpr uint32_t         k_pwm_pin_in2              = TS5A3359_IN2;
 constexpr uint32_t         k_pwm_pin_not_used         = NRF_PWM_PIN_NOT_CONNECTED;
 nrf_pwm_values_wave_form_t g_pwm_waveforms[]          = {
     {k_pwm_in1_high_count, static_cast<uint16_t>(k_pwm_polarity_invert_mask | k_pwm_in2_base_count), 0u,
-              k_pwm_top_value},
+     k_pwm_top_value},
 };
 
 NRF_PWM_Type* const k_pwm_instance = NRF_PWM3;
