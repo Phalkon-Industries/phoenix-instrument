@@ -250,9 +250,16 @@ int led_router_pwm_configure(uint32_t minimum_period_us) {
   pwm_instance->LOOP   = 0u;
   pwm_instance->SHORTS = PWM_SHORTS_LOOPSDONE_SEQSTART0_Msk;
 
-  // Step 6: Build the inverted-duty waveform so IN1 is 50% and IN2 is 75% high.
-  const uint16_t channel0_level = static_cast<uint16_t>(countertop / 2u);
-  const uint16_t channel1_level = static_cast<uint16_t>(countertop / 4u);
+  // Step 6: Build the inverted-duty waveform so IN1 is 25% and IN2 is 75% high.
+  uint16_t channel0_level = static_cast<uint16_t>(countertop / 4u);
+  if (channel0_level == 0u) {
+    channel0_level = 1u;
+  }
+
+  uint16_t channel1_level = static_cast<uint16_t>((countertop * 3u) / 4u);
+  if (channel1_level >= countertop) {
+    channel1_level = static_cast<uint16_t>(countertop - 1u);
+  }
 
   g_pwm_waveforms[0].channel_0   = channel0_level;
   g_pwm_waveforms[0].channel_1   = static_cast<uint16_t>(channel1_level | k_pwm_polarity_invert_mask);

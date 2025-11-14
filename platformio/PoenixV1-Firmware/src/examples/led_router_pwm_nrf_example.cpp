@@ -77,7 +77,7 @@ void setup() {
   // Step 1: Ensure the device wiring is initialised so the switch control pins are configured for output.
   device_setup_initialize();
 
-  // Step 2: Set up the PWM peripheral so IN1 is 50% duty and IN2 is 75% duty.
+  // Step 2: Set up the PWM peripheral so IN1 is 25% duty and IN2 is 75% duty.
   configure_pwm_pins();
   configure_pwm_core();
   configure_pwm_sequence();

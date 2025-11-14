@@ -1,9 +1,15 @@
 #include "device_setup.hpp"
 
+#include <nrf_pwm.h>
+
+const LedRouterPwmConfig g_device_led_router_pwm_backend = {
+    true,
+    NRF_PWM3,
+};
 const LedRouterConfig g_device_led_router_config = {
     TS5A3359_IN1,
     TS5A3359_IN2,
-    {false, nullptr},
+    g_device_led_router_pwm_backend,
 };
 
 const AdcHalConfig g_device_adc_hal_config = {

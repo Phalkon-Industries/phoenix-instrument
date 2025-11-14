@@ -43,6 +43,7 @@ H   H   NO2(Drain)
 */
 
 extern const LedRouterConfig     g_device_led_router_config;
+extern const LedRouterPwmConfig  g_device_led_router_pwm_backend;
 extern const AdcHalConfig        g_device_adc_hal_config;
 extern const LightReadingsConfig g_device_light_readings_config;
 extern const PowerControlConfig  g_device_power_control_config;

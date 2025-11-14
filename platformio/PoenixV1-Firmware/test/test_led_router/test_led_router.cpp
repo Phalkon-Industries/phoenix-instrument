@@ -175,8 +175,8 @@ static void test_led_router_pwm_configure_programs_inverted_waveform(void) {
   led_router_get_pwm_test_snapshot(&snapshot);
   TEST_ASSERT_TRUE(snapshot.pwm_configured);
   TEST_ASSERT_GREATER_THAN_UINT16(0u, snapshot.countertop);
-  TEST_ASSERT_EQUAL_UINT16(snapshot.countertop / 2u, snapshot.channel0_level);
-  TEST_ASSERT_EQUAL_UINT16(snapshot.countertop / 4u, snapshot.channel1_level);
+  TEST_ASSERT_EQUAL_UINT16(snapshot.countertop / 4u, snapshot.channel0_level);
+  TEST_ASSERT_EQUAL_UINT16((snapshot.countertop * 3u) / 4u, snapshot.channel1_level);
   TEST_ASSERT_TRUE(snapshot.channel1_is_inverted);
 
   // Step 4. Ensure the programmed period honours the minimum request.
