@@ -203,6 +203,59 @@ class OsrSweepSerial(DummySerial):
         ]
 
 
+class OsrLatencySerial(DummySerial):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        header = b"OSR      Mode      Samples  Mean_us  StdDev_us  Min_us  Max_us\n"
+        blocking = (
+            b"OSR32    blocking         8   512.000      10.000     500     524\n"
+        )
+        irq = b"OSR32    irq              8   256.000       5.000     250     262\n"
+        self._line_queue = [
+            b"# phoenix benchmark ready\n",
+            b"# running,scenario=osr_latency,warmup=1,samples=8,include_blocking=true,include_irq=true\n",
+            b"\n",
+            b"# osr_latency_summary\n",
+            header,
+            blocking,
+            irq,
+            b"\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+        ]
+
+
+class OsrLatencyDualSerial(DummySerial):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        header = b"OSR      Mode      Samples  Mean_us  StdDev_us  Min_us  Max_us\n"
+        first_blocking = (
+            b"OSR32    blocking         8   512.000      10.000     500     524\n"
+        )
+        second_blocking = (
+            b"OSR32    blocking        16   520.000       8.000     508     534\n"
+        )
+        self._line_queue = [
+            b"# phoenix benchmark ready\n",
+            b"# running,scenario=osr_latency,warmup=1,samples=8,include_blocking=true,include_irq=false\n",
+            b"\n",
+            b"# osr_latency_summary\n",
+            header,
+            first_blocking,
+            b"\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+            b"# running,scenario=osr_latency,warmup=1,samples=16,include_blocking=true,include_irq=false\n",
+            b"\n",
+            b"# osr_latency_summary\n",
+            header,
+            second_blocking,
+            b"\n",
+            b"# benchmark_complete\n",
+            b"# ready\n",
+        ]
+
+
 class PotSweepSerial(DummySerial):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -813,6 +866,158 @@ def test_cli_streams_osr_sweep_command(
     assert any(
         "osr_sweep_pot85_dwell_us250_sweeps12_duration" in plot.name for plot in plots
     )
+
+
+def test_cli_streams_osr_latency_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "osr_latency",
+                        "parameters": {
+                            "warmup_count": 1,
+                            "sample_count": 8,
+                            "include_blocking": True,
+                            "include_irq": True,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", OsrLatencySerial)
+
+    captured: Dict[str, object] = {}
+
+    class DummyArtifacts:
+        def __init__(self, directory: Path) -> None:
+            self.output_dir = directory
+            self.transcript_path = directory / "transcript_osr_latency.txt"
+            self.summary_json_path = directory / "summary_osr_latency.json"
+            self.plot_path = directory / "osr_latency.png"
+            self.plot_paths = {}
+            self.csv_paths: Dict[str, List[Path]] = {}
+            self.report_markdown_path = directory / "report.md"
+            self.report_markdown_path.write_text("", encoding="utf-8")
+            self.scenarios = ["osr_latency"]
+            self.pot_sweep_recommendations = {}
+            self.pot_sweep_warning = None
+            self.dwell_sweep_recommendations = {}
+            self.dwell_sweep_warning = None
+
+    def fake_create_report(lines, plan_path, output_dir, drift_captures=None):  # type: ignore[no-untyped-def]
+        captured["lines"] = list(lines)
+        captured["plan"] = plan_path
+        captured["output"] = output_dir
+        return DummyArtifacts(output_dir)
+
+    monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
+
+    output_dir = tmp_path / "osr-latency-report"
+
+    exit_code = main([str(plan), "--port", "COM8", "--output", str(output_dir)])
+    assert exit_code == 0
+
+    stdout = capsys.readouterr().out
+    assert "# running,scenario=osr_latency" in stdout
+    assert "# osr_latency_summary" in stdout
+
+    instance = DummySerial.last_instance
+    assert instance is not None
+    assert any(b'"command":"osr_latency"' in payload for payload in instance.written)
+    assert any(b'"sample_count":8' in payload for payload in instance.written)
+
+    recorded_lines = captured.get("lines")
+    assert isinstance(recorded_lines, list)
+    assert any(line.startswith("# osr_latency_summary") for line in recorded_lines)
+
+
+def test_cli_streams_multiple_osr_latency_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "osr_latency",
+                        "parameters": {
+                            "sample_count": 8,
+                            "include_blocking": True,
+                            "include_irq": False,
+                        },
+                    },
+                    {
+                        "command": "osr_latency",
+                        "parameters": {
+                            "sample_count": 16,
+                            "include_blocking": True,
+                            "include_irq": False,
+                        },
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("phoenix_benchmark.cli.serial.Serial", OsrLatencyDualSerial)
+
+    captured: Dict[str, object] = {}
+
+    class DummyArtifacts:
+        def __init__(self, directory: Path) -> None:
+            self.output_dir = directory
+            self.transcript_path = directory / "transcript_osr_latency_dual.txt"
+            self.summary_json_path = directory / "summary_osr_latency_dual.json"
+            self.plot_path = directory / "osr_latency.png"
+            self.plot_paths = {}
+            self.csv_paths: Dict[str, List[Path]] = {}
+            self.report_markdown_path = directory / "report.md"
+            self.report_markdown_path.write_text("", encoding="utf-8")
+            self.scenarios = ["osr_latency"]
+            self.pot_sweep_recommendations = {}
+            self.pot_sweep_warning = None
+            self.dwell_sweep_recommendations = {}
+            self.dwell_sweep_warning = None
+
+    def fake_create_report(lines, plan_path, output_dir, drift_captures=None):  # type: ignore[no-untyped-def]
+        captured["lines"] = list(lines)
+        captured["plan"] = plan_path
+        captured["output"] = output_dir
+        return DummyArtifacts(output_dir)
+
+    monkeypatch.setattr("phoenix_benchmark.cli.create_report", fake_create_report)
+
+    output_dir = tmp_path / "osr-latency-multi-report"
+
+    exit_code = main([str(plan), "--port", "COM11", "--output", str(output_dir)])
+    assert exit_code == 0
+
+    stdout = capsys.readouterr().out
+    progress_lines = [
+        line for line in stdout.splitlines() if line.startswith("# progress")
+    ]
+    assert len(progress_lines) == 2
+    assert progress_lines[0].startswith("# progress,step=1,total=2,command=osr_latency")
+    assert progress_lines[1].startswith("# progress,step=2,total=2,command=osr_latency")
+
+    instance = DummySerial.last_instance
+    assert instance is not None
+    assert len(instance.written) >= 3
+    assert b'"sample_count":8' in instance.written[1]
+    assert b'"sample_count":16' in instance.written[2]
+
+    recorded_lines = captured.get("lines")
+    assert isinstance(recorded_lines, list)
+    assert recorded_lines.count("# osr_latency_summary") == 2
 
 
 def test_cli_streams_pot_sweep_command(

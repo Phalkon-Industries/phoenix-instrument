@@ -149,6 +149,28 @@ class ColdSweepCommand:
 
 
 @dataclass(frozen=True)
+class OsrLatencyCommand:
+    """Requests an OSR latency capture with optional overrides."""
+
+    warmup_count: int | None = None
+    sample_count: int | None = None
+    include_blocking: bool | None = None
+    include_irq: bool | None = None
+
+    def to_payload(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if self.warmup_count is not None:
+            payload["warmup_count"] = self.warmup_count
+        if self.sample_count is not None:
+            payload["sample_count"] = self.sample_count
+        if self.include_blocking is not None:
+            payload["include_blocking"] = self.include_blocking
+        if self.include_irq is not None:
+            payload["include_irq"] = self.include_irq
+        return payload
+
+
+@dataclass(frozen=True)
 class BenchmarkCommand:
     """Envelope describing a single host-to-firmware request."""
 
@@ -425,6 +447,57 @@ def _build_command(entry: Dict[str, Any]) -> BenchmarkCommand:
         command = ColdSweepCommand()
         return BenchmarkCommand(name=name, parameters=command.to_payload())
 
+    if name == "osr_latency":
+        allowed_keys = {
+            "warmup_count",
+            "sample_count",
+            "include_blocking",
+            "include_irq",
+        }
+        extra_keys = set(parameters.keys()) - allowed_keys
+        if extra_keys:
+            unexpected = ", ".join(sorted(extra_keys))
+            raise ValueError(
+                f"osr_latency received unsupported parameters: {unexpected}"
+            )
+
+        warmup_value = parameters.get("warmup_count")
+        if warmup_value is not None:
+            if not isinstance(warmup_value, int):
+                raise ValueError("osr_latency.warmup_count must be an integer")
+            if warmup_value < 0:
+                raise ValueError("osr_latency.warmup_count must be non-negative")
+
+        sample_value = parameters.get("sample_count")
+        if sample_value is not None:
+            if not isinstance(sample_value, int):
+                raise ValueError("osr_latency.sample_count must be an integer")
+            if sample_value <= 0:
+                raise ValueError("osr_latency.sample_count must be a positive integer")
+
+        include_blocking = parameters.get("include_blocking")
+        if include_blocking is not None and not isinstance(include_blocking, bool):
+            raise ValueError("osr_latency.include_blocking must be a boolean")
+
+        include_irq = parameters.get("include_irq")
+        if include_irq is not None and not isinstance(include_irq, bool):
+            raise ValueError("osr_latency.include_irq must be a boolean")
+
+        if (include_blocking is not None and include_irq is not None) and (
+            not include_blocking and not include_irq
+        ):
+            raise ValueError(
+                "osr_latency requires at least one sampling mode to be enabled"
+            )
+
+        command = OsrLatencyCommand(
+            warmup_count=warmup_value,
+            sample_count=sample_value,
+            include_blocking=include_blocking,
+            include_irq=include_irq,
+        )
+        return BenchmarkCommand(name=name, parameters=command.to_payload())
+
     # Unknown commands pass-through for future phases
     return BenchmarkCommand(name=name, parameters=parameters)
 
@@ -461,6 +534,7 @@ __all__ = [
     "BenchmarkCommand",
     "ChannelMapCommand",
     "ColdSweepCommand",
+    "OsrLatencyCommand",
     "DRIFT_CAPTURE_ALLOWED_OSR_VALUES",
     "DRIFT_CAPTURE_DEFAULT_END_US",
     "DRIFT_CAPTURE_DEFAULT_START_US",

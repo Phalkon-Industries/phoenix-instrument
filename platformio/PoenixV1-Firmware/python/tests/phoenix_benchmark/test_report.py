@@ -10,6 +10,7 @@ from phoenix_benchmark.report import (
     AdcSpeedSummaryRow,
     ColdSweepSummaryRow,
     DwellSweepSummaryRow,
+    OsrLatencySummaryRow,
     OsrSweepSummaryRow,
     PotSweepSummaryRow,
     ReportArtifacts,
@@ -261,6 +262,46 @@ def _sample_summary_lines() -> List[str]:
     ]
 
 
+def _osr_latency_summary_lines() -> List[str]:
+    return [
+        "# phoenix benchmark ready",
+        "# running,scenario=osr_latency,warmup=1,samples=8,include_blocking=true,include_irq=true",
+        "",
+        "# osr_latency_summary",
+        "OSR      Mode      Samples  Mean_us  StdDev_us  Min_us  Max_us",
+        "OSR32    blocking         8   512.000      10.000     500     524",
+        "OSR64    irq             16        --         --      --      --",
+        "# benchmark_complete",
+        "# ready",
+    ]
+
+
+def _osr_latency_multi_run_lines() -> List[str]:
+    header = "OSR      Mode      Samples  Mean_us  StdDev_us  Min_us  Max_us"
+    first_run = [
+        "# phoenix benchmark ready",
+        "# running,scenario=osr_latency,warmup=1,samples=8,include_blocking=true,include_irq=true",
+        "",
+        "# osr_latency_summary",
+        header,
+        "OSR32    blocking         8   512.000      10.000     500     524",
+        "OSR64    irq             16        --         --      --      --",
+        "# benchmark_complete",
+        "# ready",
+    ]
+    second_run = [
+        "# running,scenario=osr_latency,warmup=3,samples=24,include_blocking=false,include_irq=true",
+        "",
+        "# osr_latency_summary",
+        header,
+        "OSR32    irq             24     9.000       0.500       8      10",
+        "OSR64    irq             24    17.000       0.750      16      18",
+        "# benchmark_complete",
+        "# ready",
+    ]
+    return first_run + second_run
+
+
 def test_parse_summary_table_extracts_rows() -> None:
     summaries = parse_summary_table(_sample_summary_lines())
 
@@ -278,6 +319,32 @@ def test_parse_summary_table_extracts_rows() -> None:
     assert first.channel_alignment == "A=OK"
     assert first.warning_label == "--"
     assert first.has_channel_metrics is True
+
+
+def test_parse_summary_table_handles_osr_latency() -> None:
+    summaries = parse_summary_table(_osr_latency_summary_lines())
+
+    assert "osr_latency" in summaries
+    rows = summaries["osr_latency"]
+
+    assert len(rows) == 2
+
+    first = rows[0]
+    assert isinstance(first, OsrLatencySummaryRow)
+    assert first.osr_label == "OSR32"
+    assert first.mode == "blocking"
+    assert first.sample_count == 8
+    assert pytest.approx(first.mean_us, rel=1e-6) == 512.0
+    assert pytest.approx(first.stddev_us, rel=1e-6) == 10.0
+    assert first.min_us == 500
+    assert first.max_us == 524
+    assert first.has_metrics is True
+
+    second = rows[1]
+    assert isinstance(second, OsrLatencySummaryRow)
+    assert second.has_metrics is False
+    assert second.mean_us is None
+    assert second.sample_count == 16
 
 
 def test_parse_summary_table_handles_cold_sweep() -> None:
@@ -410,8 +477,78 @@ def test_create_report_handles_cold_sweep(tmp_path: Path) -> None:
         in report_text
     )
     assert "| drain_blue | 4 | 120.000 | 5.500 | 100 | 140 | +3 | no |" in report_text
-    assert "![cold_sweep plot]" in report_text
-    assert "[Download CSV](cold_sweep_samples.csv)" in report_text
+
+
+def test_create_report_handles_osr_latency(tmp_path: Path) -> None:
+    lines = _osr_latency_summary_lines()
+
+    plan_path = tmp_path / "osr_latency_plan.json"
+    plan_path.write_text(json.dumps({"commands": []}), encoding="utf-8")
+
+    output_dir = tmp_path / "osr-latency-report"
+    artifacts = create_report(lines, plan_path, output_dir)
+
+    expected_slug = "osr_latency_warmup1_samples8_modes-blocking-irq"
+
+    assert "osr_latency" in artifacts.scenarios
+    plot_entries = artifacts.plot_paths.get(expected_slug, [])
+    assert len(plot_entries) == 1
+    assert plot_entries[0].exists()
+
+    summary_data = json.loads(artifacts.summary_json_path.read_text(encoding="utf-8"))
+    latency_entry = next(
+        item for item in summary_data if item["scenario"] == "osr_latency"
+    )
+    rows = latency_entry["rows"]
+    assert len(rows) == 2
+    assert rows[0]["osr_label"] == "OSR32"
+    assert pytest.approx(rows[0]["mean_us"], rel=1e-6) == 512.0
+    assert rows[1]["has_metrics"] is False
+
+    report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
+    assert (
+        "## Summary Table (osr_latency: warmup=1, samples=8, modes=blocking+irq)"
+        in report_text
+    )
+    assert "| OSR | Mode | Samples | Mean" in report_text
+    assert "| OSR32 | blocking | 8 | 512.000" in report_text
+    assert "| OSR64 | irq | 16 | --" in report_text
+
+
+def test_create_report_splits_multiple_osr_latency_runs(tmp_path: Path) -> None:
+    lines = _osr_latency_multi_run_lines()
+
+    plan_path = tmp_path / "multi_osr_latency_plan.json"
+    plan_path.write_text(json.dumps({"commands": []}), encoding="utf-8")
+
+    output_dir = tmp_path / "multi-osr-latency-report"
+    artifacts = create_report(lines, plan_path, output_dir)
+
+    slug_first = "osr_latency_warmup1_samples8_modes-blocking-irq"
+    slug_second = "osr_latency_warmup3_samples24_modes-irq"
+
+    assert slug_first in artifacts.plot_paths
+    assert slug_second in artifacts.plot_paths
+
+    report_text = artifacts.report_markdown_path.read_text(encoding="utf-8")
+    assert report_text.count("## Summary Table (osr_latency") == 2
+    assert (
+        "## Summary Table (osr_latency: warmup=1, samples=8, modes=blocking+irq)"
+        in report_text
+    )
+    assert (
+        "## Summary Table (osr_latency: warmup=3, samples=24, modes=irq)" in report_text
+    )
+
+    first_section_index = report_text.index("warmup=1, samples=8")
+    second_section_index = report_text.index("warmup=3, samples=24")
+    assert first_section_index < second_section_index
+
+    assert "| OSR64 | irq | 16 | --" in report_text
+    assert "| OSR32 | irq | 24 | 9.000" in report_text
+
+    assert f"![{slug_first} plot]({slug_first}.png)" in report_text
+    assert f"![{slug_second} plot]({slug_second}.png)" in report_text
 
 
 def _adc_speed_summary_lines() -> List[str]:

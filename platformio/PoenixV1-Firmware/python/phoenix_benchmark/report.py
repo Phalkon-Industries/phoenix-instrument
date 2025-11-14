@@ -60,6 +60,7 @@ __all__ = [
     "ColdSweepSummaryRow",
     "ColdSweepSampleRow",
     "DwellSweepSummaryRow",
+    "OsrLatencySummaryRow",
     "OsrSweepSummaryRow",
     "PotSweepSummaryRow",
     "SummaryRow",
@@ -125,6 +126,30 @@ class AdcSpeedSummaryRow:
             "loop_microseconds": self.loop_microseconds,
             "error_count": self.error_count,
             "notes": self.notes,
+            "has_metrics": self.has_metrics,
+        }
+
+
+@dataclass(frozen=True)
+class OsrLatencySummaryRow:
+    osr_label: str
+    mode: str
+    sample_count: int
+    mean_us: float | None
+    stddev_us: float | None
+    min_us: int | None
+    max_us: int | None
+    has_metrics: bool
+
+    def to_dict(self) -> dict[str, object | None]:
+        return {
+            "osr_label": self.osr_label,
+            "mode": self.mode,
+            "sample_count": self.sample_count,
+            "mean_us": self.mean_us,
+            "stddev_us": self.stddev_us,
+            "min_us": self.min_us,
+            "max_us": self.max_us,
             "has_metrics": self.has_metrics,
         }
 
@@ -305,6 +330,7 @@ class ReportArtifacts:
 @dataclass(frozen=True)
 class _SummarySection:
     scenario: str
+    slug: str
     header: str
     rows: List[str]
     metadata: Dict[str, str]
@@ -316,6 +342,7 @@ class _SummarySection:
 ParsedSummary = Union[
     SummaryRow,
     AdcSpeedSummaryRow,
+    OsrLatencySummaryRow,
     ColdSweepSummaryRow,
     OsrSweepSummaryRow,
     PotSweepSummaryRow,
@@ -445,6 +472,33 @@ def _build_scenario_slug(scenario: str, metadata: Dict[str, str]) -> str:
                 continue
             sanitized = value.replace("/", "_").replace(" ", "_")
             parts.append(f"{key}{sanitized}")
+        return "_".join(parts)
+
+    if scenario == "osr_latency" and metadata:
+        parts = [scenario]
+        warmup = metadata.get("warmup") or metadata.get("warmup_count")
+        samples = metadata.get("samples") or metadata.get("sample_count")
+        if warmup:
+            parts.append(f"warmup{warmup}")
+        if samples:
+            parts.append(f"samples{samples}")
+        blocking = metadata.get("include_blocking")
+        irq = metadata.get("include_irq")
+        mode_tokens: List[str] = []
+        if blocking and blocking.lower() == "true":
+            mode_tokens.append("blocking")
+        if irq and irq.lower() == "true":
+            mode_tokens.append("irq")
+        if mode_tokens:
+            parts.append("modes-" + "-".join(mode_tokens))
+        elif blocking or irq:
+            raw_tokens = []
+            if blocking:
+                raw_tokens.append(f"blocking{blocking}")
+            if irq:
+                raw_tokens.append(f"irq{irq}")
+            if raw_tokens:
+                parts.append("modes-" + "-".join(raw_tokens))
         return "_".join(parts)
 
     return scenario
@@ -701,6 +755,19 @@ def create_report(
             ],
         }
 
+    plot_paths: Dict[str, List[Path]] = {}
+    csv_paths: Dict[str, List[Path]] = {}
+
+    for section in sections:
+        if section.scenario != "osr_latency":
+            continue
+
+        osr_rows = _parse_osr_latency_rows(section)
+        slug = section.slug or scenario_slug_map.get("osr_latency", "osr_latency")
+        plot_path = output_dir / f"{slug}.png"
+        _render_osr_latency_plot(osr_rows, plot_path)
+        plot_paths[slug] = [plot_path]
+
     summary_payload: List[dict[str, object]] = []
     for scenario in scenario_order:
         scenario_rows = summaries.get(scenario, [])
@@ -723,9 +790,6 @@ def create_report(
     drift_csv_paths = drift_bundle.csv_paths
     drift_plot_paths = drift_bundle.plot_paths
     drift_entries = drift_bundle.entries
-
-    plot_paths: Dict[str, List[Path]] = {}
-    csv_paths: Dict[str, List[Path]] = {}
     if "channel_map" in summaries:
         channel_rows = [
             row for row in summaries["channel_map"] if isinstance(row, SummaryRow)
@@ -867,9 +931,14 @@ def _collect_summary_sections(lines: List[str]) -> List[_SummarySection]:
     def flush() -> None:
         nonlocal header, rows, collecting
         if collecting and header is not None:
+            slug = _build_scenario_slug(current_scenario, current_metadata)
             sections.append(
                 _SummarySection(
-                    current_scenario, header, rows.copy(), current_metadata.copy()
+                    current_scenario,
+                    slug,
+                    header,
+                    rows.copy(),
+                    current_metadata.copy(),
                 )
             )
         header = None
@@ -884,18 +953,28 @@ def _collect_summary_sections(lines: List[str]) -> List[_SummarySection]:
             if scenario:
                 current_scenario = scenario
                 current_metadata = _extract_metadata(line)
+            continue
 
-        if line.startswith("# summary_table"):
+        if line.startswith("# summary_table") or line.startswith(
+            "# osr_latency_summary"
+        ):
             flush()
             collecting = True
             header = None
             rows = []
             continue
 
-        if collecting:
-            if line == "":
+        if line.startswith("#"):
+            if collecting:
                 flush()
-                continue
+            continue
+
+        if line == "":
+            if collecting:
+                flush()
+            continue
+
+        if collecting:
             if header is None:
                 header = line
             else:
@@ -912,6 +991,8 @@ def _parse_sections(sections: List[_SummarySection]) -> Dict[str, List[ParsedSum
             rows = _parse_channel_map_rows(section)
         elif section.header.startswith("Mode"):
             rows = _parse_adc_speed_rows(section)
+        elif section.header.startswith("OSR") and "Mode" in section.header:
+            rows = _parse_osr_latency_rows(section)
         elif section.header.startswith("Channel"):
             rows = _parse_cold_sweep_rows(section)
         elif section.header.startswith("Value"):
@@ -1134,6 +1215,46 @@ def _parse_adc_speed_rows(section: _SummarySection) -> List[AdcSpeedSummaryRow]:
                 loop_microseconds=loop,
                 error_count=error_count,
                 notes=notes,
+                has_metrics=has_metrics,
+            )
+        )
+    return parsed
+
+
+def _parse_osr_latency_rows(section: _SummarySection) -> List[OsrLatencySummaryRow]:
+    parsed: List[OsrLatencySummaryRow] = []
+    for entry in section.rows:
+        data = entry.strip()
+        if not data:
+            continue
+
+        parts = data.split()
+        if len(parts) < 7:
+            raise ValueError(f"Invalid osr_latency summary row: '{entry}'")
+
+        osr_label = parts[0]
+        mode = parts[1]
+        sample_count = _parse_int(parts[2])
+        mean_us = _parse_float(parts[3])
+        stddev_us = _parse_float(parts[4])
+        min_us = _parse_optional_int(parts[5])
+        max_us = _parse_optional_int(parts[6])
+        has_metrics = (
+            mean_us is not None
+            and stddev_us is not None
+            and min_us is not None
+            and max_us is not None
+        )
+
+        parsed.append(
+            OsrLatencySummaryRow(
+                osr_label=osr_label,
+                mode=mode,
+                sample_count=sample_count,
+                mean_us=mean_us,
+                stddev_us=stddev_us,
+                min_us=min_us,
+                max_us=max_us,
                 has_metrics=has_metrics,
             )
         )
@@ -1604,6 +1725,153 @@ def _render_adc_speed_plot(rows: List[AdcSpeedSummaryRow], output_path: Path) ->
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
+
+
+def _render_osr_latency_plot(
+    rows: List[OsrLatencySummaryRow], output_path: Path
+) -> None:
+    metric_rows = [row for row in rows if row.has_metrics and row.mean_us is not None]
+
+    if not metric_rows:
+        _render_placeholder_plot("No osr_latency metrics available", output_path)
+        return
+
+    label_order: List[tuple[str, int | None]] = []
+    label_seen: set[str] = set()
+    for row in metric_rows:
+        label_token = row.osr_label.strip()
+        if label_token in label_seen:
+            continue
+        label_seen.add(label_token)
+        numeric_value: int | None = None
+        normalized = label_token.upper()
+        if normalized.startswith("OSR"):
+            try:
+                numeric_value = int(normalized[3:])
+            except ValueError:
+                numeric_value = None
+        label_order.append((label_token, numeric_value))
+
+    numeric_only = all(value is not None for _, value in label_order)
+    if numeric_only:
+        label_order.sort(key=lambda item: item[1] or 0)
+        tick_positions = [
+            value or index for index, (_, value) in enumerate(label_order)
+        ]
+    else:
+        tick_positions = list(range(len(label_order)))
+
+    position_map: Dict[str, float] = {}
+    for index, (label, numeric_value) in enumerate(label_order):
+        if numeric_only and numeric_value is not None:
+            position_map[label] = float(numeric_value)
+        else:
+            position_map[label] = float(index)
+
+    rows_by_mode: Dict[str, List[OsrLatencySummaryRow]] = {}
+    for row in metric_rows:
+        rows_by_mode.setdefault(row.mode, []).append(row)
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    color_cycle = plt.rcParams.get("axes.prop_cycle", None)
+    color_iter = iter(color_cycle.by_key()["color"] if color_cycle else [])
+
+    for mode, mode_rows in sorted(rows_by_mode.items()):
+        sorted_rows = sorted(
+            mode_rows, key=lambda item: position_map[item.osr_label.strip()]
+        )
+        x_values = [position_map[item.osr_label.strip()] for item in sorted_rows]
+        mean_values = [item.mean_us or 0.0 for item in sorted_rows]
+        std_values = [item.stddev_us or 0.0 for item in sorted_rows]
+        try:
+            color = next(color_iter)
+        except StopIteration:
+            color = None
+        line = ax.plot(x_values, mean_values, marker="o", label=mode, color=color)
+        if any(std_values):
+            ax.errorbar(
+                x_values,
+                mean_values,
+                yerr=std_values,
+                fmt="none",
+                ecolor=line[0].get_color() if color else "#1B9E77",
+                elinewidth=1.0,
+                capsize=4,
+            )
+
+    tick_labels = [label for label, _ in label_order]
+    ax.set_xlabel("OSR")
+    ax.set_ylabel("Mean latency (µs)")
+    ax.set_title("Latency versus oversampling ratio")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.set_xticks(tick_positions)
+    if numeric_only:
+        numeric_positions = [position_map[label] for label in tick_labels]
+        if all(value > 0 for value in numeric_positions):
+            _apply_osr_log_axis(
+                [ax], sorted(set(int(value) for value in numeric_positions))
+            )
+    ax.set_xticklabels(tick_labels, rotation=45, ha="right")
+
+    if len(rows_by_mode) > 1:
+        ax.legend()
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def _summarize_osr_latency_metadata(metadata: Dict[str, str]) -> str:
+    warmup = metadata.get("warmup") or metadata.get("warmup_count")
+    samples = metadata.get("samples") or metadata.get("sample_count")
+    include_blocking = metadata.get("include_blocking")
+    include_irq = metadata.get("include_irq")
+
+    components: List[str] = []
+    if warmup:
+        components.append(f"warmup={warmup}")
+    if samples:
+        components.append(f"samples={samples}")
+
+    mode_labels: List[str] = []
+    if isinstance(include_blocking, str) and include_blocking.lower() == "true":
+        mode_labels.append("blocking")
+    if isinstance(include_irq, str) and include_irq.lower() == "true":
+        mode_labels.append("irq")
+
+    if mode_labels:
+        components.append(f"modes={'+'.join(mode_labels)}")
+    elif include_blocking is not None or include_irq is not None:
+        raw_modes: List[str] = []
+        if include_blocking is not None:
+            raw_modes.append(f"blocking={include_blocking}")
+        if include_irq is not None:
+            raw_modes.append(f"irq={include_irq}")
+        if raw_modes:
+            components.append("modes=" + ",".join(raw_modes))
+
+    ignored_keys = {
+        "warmup",
+        "warmup_count",
+        "samples",
+        "sample_count",
+        "include_blocking",
+        "include_irq",
+        "scenario",
+    }
+    for key, value in sorted(metadata.items()):
+        if key in ignored_keys:
+            continue
+        components.append(f"{key}={value}")
+
+    return ", ".join(components)
+
+
+def _build_osr_latency_heading(metadata: Dict[str, str]) -> str:
+    description = _summarize_osr_latency_metadata(metadata)
+    if description:
+        return f"## Summary Table (osr_latency: {description})"
+    return "## Summary Table (osr_latency)"
 
 
 def _render_cold_sweep_plot(
@@ -2508,6 +2776,40 @@ def _build_adc_speed_table(rows: List[ParsedSummary]) -> List[str]:
     return table
 
 
+def _build_osr_latency_table(rows: List[ParsedSummary]) -> List[str]:
+    latency_rows = [row for row in rows if isinstance(row, OsrLatencySummaryRow)]
+    if not latency_rows:
+        return []
+
+    headers = [
+        "OSR",
+        "Mode",
+        "Samples",
+        "Mean (µs)",
+        "StdDev (µs)",
+        "Min (µs)",
+        "Max (µs)",
+    ]
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+
+    for row in latency_rows:
+        values = [
+            row.osr_label,
+            row.mode,
+            str(row.sample_count),
+            _format_optional_float(row.mean_us),
+            _format_optional_float(row.stddev_us),
+            _format_optional_int(row.min_us),
+            _format_optional_int(row.max_us),
+        ]
+        table.append("| " + " | ".join(values) + " |")
+
+    return table
+
+
 def _build_osr_sweep_table(rows: List[ParsedSummary]) -> List[str]:
     osr_rows = [row for row in rows if isinstance(row, OsrSweepSummaryRow)]
     if not osr_rows:
@@ -2655,6 +2957,8 @@ def _render_section_table(scenario: str, rows: List[ParsedSummary]) -> List[str]
         return _build_channel_map_table(rows)
     if scenario == "adc_speed":
         return _build_adc_speed_table(rows)
+    if scenario == "osr_latency":
+        return _build_osr_latency_table(rows)
     if scenario == "cold_sweep":
         return _build_cold_sweep_table(rows)
     if scenario == "osr_sweep":
@@ -2883,10 +3187,15 @@ def _render_markdown_report(
                 lines.extend(dwell_lines)
                 continue
 
-            lines.append(f"## Summary Table ({section.scenario})")
-            table_lines = _render_section_table(
-                section.scenario, summaries.get(section.scenario, [])
-            )
+            if section.scenario == "osr_latency":
+                section_rows = _parse_osr_latency_rows(section)
+                heading = _build_osr_latency_heading(section.metadata)
+            else:
+                section_rows = summaries.get(section.scenario, [])
+                heading = f"## Summary Table ({section.scenario})"
+
+            lines.append(heading)
+            table_lines = _render_section_table(section.scenario, section_rows)
             if table_lines:
                 lines.extend(table_lines)
             else:
@@ -2894,19 +3203,22 @@ def _render_markdown_report(
                 lines.append(section.header)
                 lines.extend(section.rows)
                 lines.append("```")
-            csv_entries = csv_paths.get(section.scenario, [])
+            csv_entries = csv_paths.get(
+                section.slug, csv_paths.get(section.scenario, [])
+            )
             if csv_entries:
                 for index, csv_entry in enumerate(csv_entries, start=1):
                     suffix = f" #{index}" if len(csv_entries) > 1 else ""
                     lines.append(f"[Download CSV{suffix}]({csv_entry.as_posix()})")
             lines.append("")
-            if section.scenario in plot_paths:
-                for index, path in enumerate(plot_paths[section.scenario], start=1):
+            plot_key = section.slug if section.slug in plot_paths else section.scenario
+            plot_entries = plot_paths.get(plot_key, [])
+            if plot_entries:
+                plot_label = plot_key
+                for index, path in enumerate(plot_entries, start=1):
                     plot_name = path.as_posix()
-                    suffix = (
-                        f" #{index}" if len(plot_paths[section.scenario]) > 1 else ""
-                    )
-                    lines.append(f"![{section.scenario} plot{suffix}]({plot_name})")
+                    suffix = f" #{index}" if len(plot_entries) > 1 else ""
+                    lines.append(f"![{plot_label} plot{suffix}]({plot_name})")
                 lines.append("")
     else:
         lines.append("## Summary Table")
