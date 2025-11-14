@@ -37,16 +37,10 @@ int device_setup_initialize(void) {
   }
 
   // Step 1: Energise shared power domains and initialise peripheral drivers.
-  int return_code = power_control_prepare_power_domains(&g_device_power_control_config);
-  if (return_code != POWER_CONTROL_OK) {
-    return return_code;
-  }
+  GUARD(power_control_prepare_power_domains(&g_device_power_control_config));
 
   // Step 2: Bring the light readings helper online so batches can run immediately.
-  return_code = light_readings_initialize(&g_device_light_readings_config);
-  if (return_code != LIGHT_READINGS_OK) {
-    return return_code;
-  }
+  GUARD(light_readings_initialize(&g_device_light_readings_config));
 
   light_readings_ready = true;
   return LIGHT_READINGS_OK;

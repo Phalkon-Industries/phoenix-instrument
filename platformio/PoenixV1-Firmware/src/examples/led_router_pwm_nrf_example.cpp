@@ -15,7 +15,7 @@ constexpr uint32_t         k_pwm_pin_in2              = TS5A3359_IN2;
 constexpr uint32_t         k_pwm_pin_not_used         = NRF_PWM_PIN_NOT_CONNECTED;
 nrf_pwm_values_wave_form_t g_pwm_waveforms[]          = {
     {k_pwm_in1_high_count, static_cast<uint16_t>(k_pwm_polarity_invert_mask | k_pwm_in2_base_count), 0u,
-     k_pwm_top_value},
+              k_pwm_top_value},
 };
 
 NRF_PWM_Type* const k_pwm_instance = NRF_PWM3;
@@ -26,8 +26,9 @@ void configure_pwm_pins(void) {
   const uint32_t in2_psel = g_ADigitalPinMap[k_pwm_pin_in2];
 
   // Step 2: Bind both switch control pins and disconnect the remaining channels.
-  k_pwm_instance->PSEL.OUT[0] = in1_psel;
-  k_pwm_instance->PSEL.OUT[1] = in2_psel;
+  // Step 2a: V1.0.0 Stormcloud boards only stabilise when LED2 precedes LED1, so bind IN2 before IN1.
+  k_pwm_instance->PSEL.OUT[0] = in2_psel;
+  k_pwm_instance->PSEL.OUT[1] = in1_psel;
   k_pwm_instance->PSEL.OUT[2] = k_pwm_pin_not_used;
   k_pwm_instance->PSEL.OUT[3] = k_pwm_pin_not_used;
 }
@@ -77,7 +78,7 @@ void setup() {
   // Step 1: Ensure the device wiring is initialised so the switch control pins are configured for output.
   device_setup_initialize();
 
-  // Step 2: Set up the PWM peripheral so IN1 is 25% duty and IN2 is 75% duty.
+  // Step 2: Configure PWM so LED2 leads LED1; V1.0.0 Stormcloud boards require this ordering for stability.
   configure_pwm_pins();
   configure_pwm_core();
   configure_pwm_sequence();

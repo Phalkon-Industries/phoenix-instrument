@@ -191,9 +191,7 @@ int led_router_pwm_start(uint32_t minimum_period_us) {
   }
 
   NRF_PWM_Type* const pwm_instance = g_router_config.pwm_config.pwm_instance;
-  if (pwm_instance == nullptr) {
-    return LED_ROUTER_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(pwm_instance);
 
   if (minimum_period_us == 0u) {
     return LED_ROUTER_ERR_INVALID_ARG;
@@ -230,9 +228,10 @@ int led_router_pwm_start(uint32_t minimum_period_us) {
   pwm_instance->ENABLE         = (PWM_ENABLE_ENABLE_Disabled << PWM_ENABLE_ENABLE_Pos);
 
   // Step 4: Bind the TS5A3359 control pins to the PWM channels.
+  // Step 4a: V1.0.0 Stormcloud boards only remain stable when LED2 precedes LED1, so bind IN2 ahead of IN1 here.
   const uint32_t pwm_pins[NRF_PWM_CHANNEL_COUNT] = {
-      g_ADigitalPinMap[g_router_config.switch_in1_pin],
       g_ADigitalPinMap[g_router_config.switch_in2_pin],
+      g_ADigitalPinMap[g_router_config.switch_in1_pin],
       k_pwm_channel_not_connected,
       k_pwm_channel_not_connected,
   };
@@ -298,9 +297,7 @@ int led_router_pwm_stop(void) {
   }
 
   NRF_PWM_Type* const pwm_instance = g_router_config.pwm_config.pwm_instance;
-  if (pwm_instance == nullptr) {
-    return LED_ROUTER_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(pwm_instance);
 
   if (!g_pwm_state.pwm_configured) {
     return LED_ROUTER_OK;
