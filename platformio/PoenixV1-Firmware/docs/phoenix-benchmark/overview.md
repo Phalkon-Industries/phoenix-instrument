@@ -8,6 +8,7 @@ This document captures the *currently implemented* capabilities of the Phoenix b
 - The dwell sweep scenario walks a linear series of LED settle times (`start_dwell_us` → `end_dwell_us` with `dwell_step_us` spacing), reruns the channel-map capture loop for each dwell window, and records per-step variance plus warning masks so operators can pick a dwell that balances stability and runtime.
 - The potentiometer sweep scenario always scans every digi-pot wiper code (0–255) while allowing hosts to override only the sweep count and LED dwell via `sweeps` and `dwell_us`; summary rows now call out recommended wipers per color when saturation is detected.
 - The OSR sweep scenario iterates every supported oversampling ratio preset, capturing drain blue/green variance alongside LED metrics and sweep duration so operators can spot the lowest-noise configuration quickly.
+- The OSR latency scenario times MCP356x conversions for each oversampling preset using both blocking and IRQ sampling, averages multiple trials (with configurable warm-up counts), and feeds the measured worst-case latencies into the `mcp356x_estimate_conversion_delay` lookup so firmware modules can budget conversion windows without re-running the benchmark.
 - The drift capture scenario records high-rate ADC codes immediately after each LED transitions on, buffers blue/green samples with aligned timestamps, and surfaces warning masks when saturation or buffer overflow occurs so settle-time behaviour is easy to review later. The firmware now derives its blue/green wiper defaults from the shared `g_device_light_readings_config` so CLI metadata and JSON artifacts report the actual digipot settings.
 - The cold sweep scenario captures the very first light-reading sweeps after power-on using the firmware defaults, streams both summary statistics and every raw sample, and exposes saturation metadata so operators can verify warm-up repeatability before running longer plans. The host CLI renders a combined timeline plot with saturation markers, emits a CSV of every sweep sample, and annotates Markdown reports with captured sweep counts and warning labels.
 - The command parser is dual-mode: it prefers JSON payloads that match the host tooling schema and automatically falls back to key-value arguments such as `channel_map sweeps=10`. Both forms converge to the same option structure and apply firmware defaults when fields are omitted. Channel-map now rejects dwell and wiper overrides so the sweep always uses the light-readings configuration baked into the firmware image.
@@ -27,21 +28,23 @@ The reusable library lives in `lib/phoenix_benchmark/channel_map/` and exposes C
 
 - `lib/phoenix_benchmark/adc_speed/` exposes the throughput surface used by the example sketch: `phoenix_benchmark_adc_speed_parse_command`, `phoenix_benchmark_adc_speed_run`, and formatter helpers that mirror the channel-map table conventions. Blocking and IRQ sampling share the same execution entry point so hosts can toggle each mode without changing firmware binaries.
 - `lib/phoenix_benchmark/osr_sweep/` reuses the channel-map hardware preparation helpers, iterates the oversampling presets, and records per-setting drain/LED metrics alongside elapsed sweep timing.
+- `lib/phoenix_benchmark/osr_latency/` installs hardware-backed samplers that snapshot `micros()` before and after each conversion, supports warm-up/sample overrides via the parser, and streams latency statistics (mean/stddev/min/max) that align with the lookup helper stored in `lib/mcp356x`.
 
 Consumers outside the example sketch can include `channel_map/channel_map.hpp` or `adc_speed/adc_speed.hpp` and reuse the same APIs without copying orchestration code.
 
 ## Host Workflow
 1. **Configuration** – Build the firmware (`pio run -e phoenix_benchmark_example`) with any desired compile-time overrides.
-2. **Dry-run Plans** – Use the Python CLI (within the shared conda environment) to validate command plans without touching hardware. Sample plans now cover both individual and combined scenarios (`docs/phoenix-benchmark/sample_plans/channel_map_phase1.json` and `docs/phoenix-benchmark/sample_plans/combined_benchmarks.json`):
+2. **Dry-run Plans** – Use the Python CLI (within the shared conda environment) to validate command plans without touching hardware. Sample plans now cover both individual and combined scenarios (`docs/phoenix-benchmark/sample_plans/channel_map_phase1.json`, `docs/phoenix-benchmark/sample_plans/osr_latency_multiple_runs.json`, and `docs/phoenix-benchmark/sample_plans/combined_benchmarks.json`):
    ```powershell
    conda run -n phoenix-python python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/channel_map_phase1.json --dry-run
    ```
    The tool echoes the serial payloads it will transmit during execution.
    The combined template demonstrates issuing a `cold_sweep` immediately after boot, running a `channel_map` sweep, capturing a rapid `drift_capture` burst, running the OSR sweep, sweeping LED dwell (`dwell_sweep`), scanning the potentiometer (`pot_sweep`), and finishing with an `adc_speed` throughput run.
-3. **Execution** – Connect hardware, then run the CLI against a plan and serial port:
+3. **Execution** – Connect hardware, then run the CLI against a plan and serial port. The OSR latency plan issues three successive runs (default warm-up/sample counts, an extended 2×16 capture, and a 24-sample pass) to gather stable statistics for both blocking and IRQ modes:
    ```powershell
-   conda run -n phoenix-python python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/combined_benchmarks.json --port COM6 --ready-timeout 10 --command-timeout 240
+   conda run -n phoenix-python python python/phoenix_benchmark/cli.py docs/phoenix-benchmark/sample_plans/osr_latency_multiple_runs.json --port COM6 --ready-timeout 10 --command-timeout 240
    ```
+   Swap the plan path for other scenarios (for example `combined_benchmarks.json`) when orchestrating broader test suites.
    The CLI waits for the firmware `# ready` banner, streams each command, prints device output to stdout, and stores every line in a transcript buffer. Provide `--output <path>` to capture artifacts inside a preferred workspace location.
    Progress updates appear as host-side `# progress,step=<n>,total=<m>,command=<name>,started_at=<timestamp>` lines so operators can track scenario execution without polluting the stored transcript.
    When invoking the CLI through `conda run`, add `--live-stream` so Conda forwards stdout as it arrives; otherwise, Conda buffers the output until the process exits. Running `conda activate phoenix-python` and calling `python ...` directly achieves the same live behaviour without the extra flag.
@@ -57,6 +60,7 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
 - Channel-map summary tables list each state (and the overall cycle) with aligned columns: samples, channel statistics (mean/std/slope/min/max), timing metrics, the channel alignment verdict, and a `Warnings` column sourced from the saturation detector. The CLI parses this table to populate the exported JSON, plot the channel dominance, and now exposes the drift slopes in both JSON and Markdown reports.
 - ADC-speed summary tables contain one row per enabled mode (blocking and/or IRQ) with samples-per-second, average loop timing, error counts, and free-form notes that highlight warnings such as ADC error spikes.
 - OSR sweep summary tables list every oversampling preset with separate drain_blue/drain_green and LED statistics plus elapsed sweep time. The CLI renders paired plots comparing drain_blue/drain_green and LED standard deviation across presets and sweep duration vs OSR on a log₂ axis, and each variance line now receives its own y-axis so mismatched scales stay readable.
+- OSR latency summary tables list oversampling ratio, sampling mode (blocking or IRQ), sample count, and microsecond statistics (mean, standard deviation, min, max). The CLI persists the table verbatim, records the JSON summary (consumed by the conversion-delay lookup), and renders a plot comparing blocking and IRQ latencies so plan reviewers can spot jitter or IRQ wake-up overheads.
 - Dwell sweep summary tables include dwell duration, split drain_blue/drain_green variance, LED variance, sweep timing, and warning masks that highlight saturation or ADC recovery events. Companion plots trace dwell duration against variance and runtime to guide dwell selection, with individual axes per variance line to avoid compressing smaller signals.
 - Drift capture sections list each burst with start/end bounds, wiper code, OSR, sample counts, and decoded warning labels, and link CSV/JSON artifacts alongside annotated settle plots so the raw samples stay downloadable without bloating the Markdown.
 - Cold sweep sections highlight drain/LED statistics, list captured sweep counts and timestamp metadata, enumerate saturated channels, embed a raw-sample CSV link, and include a per-channel sample timeline (one y-axis per sensor) so engineers can confirm sensors converge without clipping.
@@ -65,6 +69,7 @@ Consumers outside the example sketch can include `channel_map/channel_map.hpp` o
 ## Revision History
 | Date       | Notes                                                                                                                      |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 2025-11-14 | Documented the OSR latency measurement workflow, sample plan usage, and conversion-delay lookup integration.               |
 | 2025-10-22 | Documented the cold sweep workflow, including CLI behaviour, artifact outputs, and warm-up guidance.                       |
 | 2025-10-21 | Added drift capture workflow coverage, including CLI/report behaviour and the combined plan template update.               |
 | 2025-10-21 | Documented dwell sweep workflow, refreshed host automation notes, and removed references to repository-stored sample runs. |
