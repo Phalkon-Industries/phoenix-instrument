@@ -1,18 +1,134 @@
 #include "osr_latency.hpp"
 
+#include "../../adc_hal/adc_hal.hpp"
+#include "../channel_map/channel_map.hpp"
 #include "osr_latency_command_parser.hpp"
+#include <Arduino.h>
 #include <cstdio>
 #include <cstring>
 
 namespace {
 
+bool measure_osr_latency_blocking(mcp356x_osr osr, uint32_t warmup_count, uint32_t sample_count,
+                                  PhoenixBenchmarkRunningStats<uint32_t>* stats_out);
+bool measure_osr_latency_irq(mcp356x_osr osr, uint32_t warmup_count, uint32_t sample_count,
+                             PhoenixBenchmarkRunningStats<uint32_t>* stats_out);
+void install_default_samplers(void);
+
 static constexpr PhoenixBenchmarkOsrLatencyDefaults k_default_defaults = {1u, 8u, true, true};
 static PhoenixBenchmarkOsrLatencyDefaults           g_defaults         = k_default_defaults;
 
 static bool (*g_blocking_sampler)(mcp356x_osr osr, uint32_t warmup_count, uint32_t sample_count,
-                                  PhoenixBenchmarkRunningStats<uint32_t>* stats_out) = nullptr;
+                                  PhoenixBenchmarkRunningStats<uint32_t>* stats_out) = measure_osr_latency_blocking;
 static bool (*g_irq_sampler)(mcp356x_osr osr, uint32_t warmup_count, uint32_t sample_count,
-                             PhoenixBenchmarkRunningStats<uint32_t>* stats_out)      = nullptr;
+                             PhoenixBenchmarkRunningStats<uint32_t>* stats_out)      = measure_osr_latency_irq;
+
+static constexpr AdcHalChannel k_latency_channel    = AdcHalChannel::ADC_HAL_CHANNEL_4;
+static constexpr uint32_t      k_latency_timeout_us = 5000000u;
+
+uint32_t elapsed_microseconds(uint32_t start, uint32_t end) {
+  if (end >= start) {
+    return end - start;
+  }
+  return static_cast<uint32_t>((0xFFFFFFFFu - start) + 1u + end);
+}
+
+bool ensure_latency_hardware_ready(void) {
+  // Step 1: Surface the shared channel-map guard to ensure power rails are active.
+  return phoenix_benchmark_channel_map_ensure_hardware_ready();
+}
+
+bool capture_single_conversion(mcp356x_sampling_mode mode, uint32_t* elapsed_us) {
+  // Step 1: Capture the starting tick so we can compute the conversion latency.
+  int32_t        sample_code = 0;
+  const uint32_t start_ticks = micros();
+  // Step 2: Issue the conversion using the requested sampling mode.
+  const int      hal_result = (mode == mcp356x_sampling_mode::blocking) ?
+                                  adc_hal_read_single_ended(k_latency_channel, k_latency_timeout_us, &sample_code) :
+                                  adc_hal_read_channel_irq(k_latency_channel, k_latency_timeout_us, &sample_code);
+  const uint32_t end_ticks  = micros();
+
+  if (hal_result != ADC_HAL_OK) {
+    return false;
+  }
+
+  if (elapsed_us != nullptr) {
+    // Step 3: Convert the tick delta into a microsecond duration for the statistics helper.
+    *elapsed_us = elapsed_microseconds(start_ticks, end_ticks);
+  }
+
+  return true;
+}
+
+bool capture_latency_common(mcp356x_osr osr, mcp356x_sampling_mode mode, uint32_t warmup_count, uint32_t sample_count,
+                            PhoenixBenchmarkRunningStats<uint32_t>* stats_out) {
+  // Step 1: Ensure the analog front-end is powered before measuring latency.
+  if (!ensure_latency_hardware_ready()) {
+    return false;
+  }
+
+  // Step 2: Remember the active OSR so we can restore it after sampling.
+  mcp356x_osr previous_osr     = osr;
+  const bool  restore_required = (mcp356x_get_osr(&previous_osr) == MCP356X_OK);
+
+  // Step 3: Program the requested OSR so conversions mirror the benchmark row.
+  if (mcp356x_set_osr(osr) != MCP356X_OK) {
+    return false;
+  }
+
+  bool success = true;
+
+  // Step 4: Execute warm-up conversions to clear stale pipeline data.
+  for (uint32_t index = 0u; (index < warmup_count) && success; ++index) {
+    success = capture_single_conversion(mode, nullptr);
+  }
+
+  // Step 5: Capture timed conversions and stream them into the running statistics.
+  if (success && (sample_count > 0u)) {
+    if (stats_out != nullptr) {
+      for (uint32_t index = 0u; index < sample_count; ++index) {
+        uint32_t latency_us = 0u;
+        if (!capture_single_conversion(mode, &latency_us)) {
+          success = false;
+          break;
+        }
+        stats_out->update(latency_us);
+      }
+    }
+    else {
+      for (uint32_t index = 0u; index < sample_count; ++index) {
+        if (!capture_single_conversion(mode, nullptr)) {
+          success = false;
+          break;
+        }
+      }
+    }
+  }
+
+  // Step 6: Restore the prior OSR so other benchmarks retain their configuration.
+  if (restore_required) {
+    if (mcp356x_set_osr(previous_osr) != MCP356X_OK) {
+      success = false;
+    }
+  }
+
+  return success;
+}
+
+bool measure_osr_latency_blocking(mcp356x_osr osr, uint32_t warmup_count, uint32_t sample_count,
+                                  PhoenixBenchmarkRunningStats<uint32_t>* stats_out) {
+  return capture_latency_common(osr, mcp356x_sampling_mode::blocking, warmup_count, sample_count, stats_out);
+}
+
+bool measure_osr_latency_irq(mcp356x_osr osr, uint32_t warmup_count, uint32_t sample_count,
+                             PhoenixBenchmarkRunningStats<uint32_t>* stats_out) {
+  return capture_latency_common(osr, mcp356x_sampling_mode::irq, warmup_count, sample_count, stats_out);
+}
+
+void install_default_samplers(void) {
+  g_blocking_sampler = measure_osr_latency_blocking;
+  g_irq_sampler      = measure_osr_latency_irq;
+}
 
 static constexpr const char k_error_invalid_arguments[] = "osr_latency_invalid_arguments";
 static constexpr const char k_error_invalid_options[]   = "osr_latency_invalid_options";
@@ -34,6 +150,7 @@ static constexpr PhoenixBenchmarkOsrEntry k_osr_entries[] = {
 
 bool run_sampler(mcp356x_osr osr, mcp356x_sampling_mode mode, const PhoenixBenchmarkOsrLatencyOptions& options,
                  PhoenixBenchmarkRunningStats<uint32_t>* stats_out) {
+  // Step 1: Choose the sampler implementation corresponding to the requested mode.
   bool (*sampler)(mcp356x_osr, uint32_t, uint32_t, PhoenixBenchmarkRunningStats<uint32_t>*) = nullptr;
 
   if (mode == mcp356x_sampling_mode::blocking) {
@@ -44,10 +161,12 @@ bool run_sampler(mcp356x_osr osr, mcp356x_sampling_mode mode, const PhoenixBench
   }
 
   if (sampler != nullptr) {
+    // Step 2: Invoke the registered sampler so hardware-backed measurements populate the stats.
     return sampler(osr, options.warmup_count, options.sample_count, stats_out);
   }
 
   if ((stats_out != nullptr) && (options.sample_count > 0u)) {
+    // Step 3: Fall back to the lookup table when tests override the sampler hooks.
     const uint32_t estimate = mcp356x_estimate_conversion_delay(osr, mode);
     if (estimate > 0u) {
       stats_out->update(estimate);
@@ -63,6 +182,7 @@ void emit_summary_line(const PhoenixBenchmarkOsrLatencyMeasurement& measurement,
     return;
   }
 
+  // Step 1: Produce a human-readable OSR label for the output table.
   char osr_label[16] = {};
   std::snprintf(osr_label, sizeof(osr_label), "OSR%lu", static_cast<unsigned long>(measurement.osr_value));
 
@@ -73,6 +193,7 @@ void emit_summary_line(const PhoenixBenchmarkOsrLatencyMeasurement& measurement,
   row_values.has_metrics                                = measurement.latency_us.has_samples();
 
   if (row_values.has_metrics) {
+    // Step 2: Populate the statistics columns when the sampler captured data.
     row_values.mean_us   = measurement.latency_us.mean;
     row_values.stddev_us = measurement.latency_us.standard_deviation();
     row_values.min_us    = measurement.latency_us.min_value;
@@ -81,6 +202,7 @@ void emit_summary_line(const PhoenixBenchmarkOsrLatencyMeasurement& measurement,
 
   char buffer[k_phoenix_benchmark_osr_latency_summary_buffer_bytes] = {};
   if (phoenix_benchmark_osr_latency_format_summary_row(row_values, buffer, sizeof(buffer))) {
+    // Step 3: Emit the formatted row through the registered summary callback.
     callbacks.summary_writer(buffer);
   }
 }
@@ -124,9 +246,8 @@ void phoenix_benchmark_osr_latency_initialise(const PhoenixBenchmarkOsrLatencyDe
 }
 
 void phoenix_benchmark_osr_latency_reset_state(void) {
-  g_defaults         = k_default_defaults;
-  g_blocking_sampler = nullptr;
-  g_irq_sampler      = nullptr;
+  g_defaults = k_default_defaults;
+  install_default_samplers();
 }
 
 PhoenixBenchmarkOsrLatencyOptions phoenix_benchmark_osr_latency_defaults(void) {
@@ -256,6 +377,5 @@ void phoenix_benchmark_osr_latency_set_irq_sampler_for_test(bool (*sampler)(
 }
 
 void phoenix_benchmark_osr_latency_clear_test_hooks(void) {
-  g_blocking_sampler = nullptr;
-  g_irq_sampler      = nullptr;
+  install_default_samplers();
 }

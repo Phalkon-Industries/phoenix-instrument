@@ -492,10 +492,12 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
 /**
  * @brief Estimate the conversion latency for a given OSR and sampling mode.
  *
- * The helper surfaces empirically captured timings so higher-level modules can
- * predict how long a conversion will take when scheduling measurement loops.
- * Values returned here are placeholders until Step 6 of the benchmark plan
- * populates the lookup table with hardware measurements.
+ * The helper surfaces empirically captured timings gathered during Step 6 of
+ * the OSR latency benchmark (Stormcloud v1.0.0, AMCLK 4.9152 MHz). Higher-level
+ * modules can use these worst-case values to schedule measurement loops without
+ * re-running the benchmark; see docs/phoenix-benchmark/sample_plans/
+ * osr_latency_multiple_runs.json and python/benchmark_runs/report.md for the
+ * source transcripts.
  *
  * @param osr  Oversampling ratio applied to the ADC conversion.
  * @param mode Sampling mode distinguishing between blocking and IRQ paths.

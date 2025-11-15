@@ -804,25 +804,29 @@ uint32_t mcp356x_estimate_conversion_delay(mcp356x_osr osr, mcp356x_sampling_mod
     uint32_t    irq_latency_us;
   };
 
-  static const ConversionLatencyEntry k_conversion_latency_table[] = {
-      {mcp356x_osr::osr_32, 10u, 8u},       {mcp356x_osr::osr_64, 20u, 16u},      {mcp356x_osr::osr_128, 30u, 24u},
-      {mcp356x_osr::osr_256, 40u, 32u},     {mcp356x_osr::osr_512, 50u, 40u},     {mcp356x_osr::osr_1024, 60u, 48u},
-      {mcp356x_osr::osr_2048, 70u, 56u},    {mcp356x_osr::osr_4096, 80u, 64u},    {mcp356x_osr::osr_8192, 90u, 72u},
-      {mcp356x_osr::osr_16384, 100u, 80u},  {mcp356x_osr::osr_20480, 110u, 88u},  {mcp356x_osr::osr_24576, 120u, 96u},
-      {mcp356x_osr::osr_40960, 130u, 104u}, {mcp356x_osr::osr_49152, 140u, 112u}, {mcp356x_osr::osr_81920, 150u, 120u},
-      {mcp356x_osr::osr_98304, 160u, 128u},
+  // Step 1: Bound conversion delays using worst-case latencies captured on Stormcloud v1.0.0
+  // (AMCLK 4.9152 MHz) via docs/phoenix-benchmark/sample_plans/osr_latency_multiple_runs.json;
+  // see python/benchmark_runs/report.md for the full measurement tables.
+  static constexpr ConversionLatencyEntry k_conversion_latency_table[] = {
+      {mcp356x_osr::osr_32, 977u, 977u},        {mcp356x_osr::osr_64, 977u, 977u},
+      {mcp356x_osr::osr_128, 977u, 977u},       {mcp356x_osr::osr_256, 977u, 977u},
+      {mcp356x_osr::osr_512, 1954u, 1954u},     {mcp356x_osr::osr_1024, 2930u, 2930u},
+      {mcp356x_osr::osr_2048, 2930u, 2930u},    {mcp356x_osr::osr_4096, 4883u, 4883u},
+      {mcp356x_osr::osr_8192, 8790u, 8790u},    {mcp356x_osr::osr_16384, 15625u, 15625u},
+      {mcp356x_osr::osr_20480, 19532u, 19532u}, {mcp356x_osr::osr_24576, 23438u, 23438u},
+      {mcp356x_osr::osr_40960, 37110u, 37110u}, {mcp356x_osr::osr_49152, 44922u, 44922u},
+      {mcp356x_osr::osr_81920, 73243u, 73243u}, {mcp356x_osr::osr_98304, 87891u, 87891u},
   };
 
   for (size_t index = 0u; index < (sizeof(k_conversion_latency_table) / sizeof(k_conversion_latency_table[0]));
        ++index) {
     if (k_conversion_latency_table[index].osr == osr) {
-      // Step 1: Return the placeholder latency that mirrors the Unity coverage
-      // until Step 6 replaces these entries with measured figures.
+      // Step 2: Return the measured latency matching the requested sampling path.
       return (mode == mcp356x_sampling_mode::blocking) ? k_conversion_latency_table[index].blocking_latency_us :
                                                          k_conversion_latency_table[index].irq_latency_us;
     }
   }
 
-  // Step 2: Guardrail for unexpected OSR enums; zero signals a missing table entry.
+  // Step 3: Guardrail for unexpected OSR enums; zero signals a missing table entry.
   return 0u;
 }
