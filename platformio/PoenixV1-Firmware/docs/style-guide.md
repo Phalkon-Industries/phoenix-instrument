@@ -39,6 +39,7 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 ## 4. Documentation Expectations
 - Public-facing APIs declared in headers use Doxygen-style blocks describing purpose, parameters, return codes, and side effects.
 - Internal helpers still carry concise doc comments so IDE tooltips remain informative; focus on intent, inputs, outputs, and notable side effects.
+- File-local helpers implemented as `static` functions must include a brief leading comment (one sentence is sufficient) explaining the helper's purpose and why it exists. When the function already carries a Doxygen block in a header, the additional helper comment is not required.
 - Inline comments describe the processing step in plain English before the code executes it. Summarize what the step accomplishes and why it belongs here; prefer one full sentence and let `clang-format` wrap.
 - Start sequential comments with an explicit `Step N:` prefix (use suffixes `Step 2a`, `Step 2b`, etc. for sub-steps) so readers can follow the ordered progression (`// Step 2: Sample drain channel to clear residual charge.`). Single, stand-alone comments that are not part of a sequence may omit the prefix, but multi-line workflows must use it consistently.
 - Avoid restating the obvious expression; explain the intent, constraints, datasheet references, or timing notes that justify the implementation.
