@@ -11,14 +11,6 @@
                 "include_blocking": true,
                 "include_irq": true
             }
-        },
-        {
-            "command": "osr_latency",
-            "parameters": {
-                "sample_count": 24,
-                "include_blocking": true,
-                "include_irq": true
-            }
         }
     ]
 }

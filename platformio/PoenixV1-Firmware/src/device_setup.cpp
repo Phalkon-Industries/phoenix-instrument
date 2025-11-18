@@ -14,7 +14,7 @@ const LedRouterConfig g_device_led_router_config = {
 
 const AdcHalConfig g_device_adc_hal_config = {
     PIN_ADC_CS,
-    500000UL,
+    20000000UL,
     PIN_ADC_IRQ,
 };
 
