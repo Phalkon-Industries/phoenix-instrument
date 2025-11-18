@@ -23,6 +23,7 @@ const LightReadingsConfig g_device_light_readings_config = {
     {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, 0xDEu},  // Blue LED
     {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, 0xB0u},   // Green LED
     1000000u,
+    {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, 30000u, 100000u},  // PWM configuration
 };
 
 const PowerControlConfig g_device_power_control_config = {

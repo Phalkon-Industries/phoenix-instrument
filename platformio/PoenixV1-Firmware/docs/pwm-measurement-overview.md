@@ -19,3 +19,17 @@ IN1 (CH1, inv): ┌ LOW ──────────────────�
 Router state:   |  Green   |    Drain              | Blue     |
 ```
 
+## Firmware API Expectations
+
+- `light_readings_pwm_sweep_n` only observes the live waveform; production code (or tests) must call
+	`led_router_pwm_start` ahead of time and leave the router under PWM control for the duration of the sweep.
+- The helper now surfaces distinct Phoenix error codes so callers can triage setup issues quickly:
+	- `LIGHT_READINGS_ERR_PWM_DISABLED` when PWM support is disabled in the cached light readings configuration.
+	- `LIGHT_READINGS_ERR_PWM_NOT_CONFIGURED` when required metadata (pins, minimum period, timeout) is missing.
+	- `LIGHT_READINGS_ERR_PWM_UNSUPPORTED_INSTANCE` when a PWM peripheral other than `NRF_PWM3` is wired in.
+	- `LIGHT_READINGS_ERR_PWM_NOT_RUNNING` when the PWM engine is idle at the start of a sweep.
+	- `LIGHT_READINGS_ERR_PWM_INTERRUPTS_UNAVAILABLE` when the configured router pins cannot raise Arduino change
+		interrupts.
+- The period watcher now backs up one cycle before waiting for the next boundary so an event that lands between
+	`light_readings_pwm_enable_period_tracking` and the first wait call does not cause off-by-one sampling.
+
