@@ -14,8 +14,19 @@ const LedRouterConfig g_device_led_router_config = {
 
 const AdcHalConfig g_device_adc_hal_config = {
     PIN_ADC_CS,
-    20000000UL,
+    500000UL,
     PIN_ADC_IRQ,
+};
+
+mcp356x_settings g_device_mcp356x_settings = {
+    mcp356x_gain::gain_x1,
+    mcp356x_osr::osr_4096,
+    mcp356x_prescaler::mclk_div1,
+    mcp356x_conversion_mode::oneshot_shutdown,
+    mcp356x_data_format::data24,
+    mcp356x_irq_mode::irq_push_pull,
+    true,
+    false,
 };
 
 const LightReadingsConfig g_device_light_readings_config = {
@@ -40,7 +51,10 @@ int device_setup_initialize(void) {
   // Step 1: Energise shared power domains and initialise peripheral drivers.
   GUARD(power_control_prepare_power_domains(&g_device_power_control_config));
 
-  // Step 2: Bring the light readings helper online so batches can run immediately.
+  // Step 2: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
+  GUARD(mcp356x_apply_settings(&g_device_mcp356x_settings));
+
+  // Step 3: Bring the light readings helper online so batches can run immediately.
   GUARD(light_readings_initialize(&g_device_light_readings_config));
 
   light_readings_ready = true;
