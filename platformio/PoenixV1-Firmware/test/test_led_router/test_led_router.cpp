@@ -62,7 +62,7 @@ static void test_led_router_initialize_rejects_duplicate_pins(void) {
 
 static void test_led_router_set_state_requires_initialization(void) {
   // Step 1. Attempt to change the routing before calling initialise to validate the guard.
-  int return_code = led_router_set_state(LedRouterState::LED_ROUTER_STATE_LED1);
+  int return_code = led_router_set_state(LedRouterState::LED_ROUTER_STATE_GREEN);
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_ERR_NOT_INITIALIZED, return_code);
 }
 
@@ -96,12 +96,12 @@ static void test_led_router_set_state_updates_outputs(void) {
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_router_config));
 
   // Step 2. Route LED1 and confirm the switch poles match the expectation.
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_set_state(LedRouterState::LED_ROUTER_STATE_LED1));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_set_state(LedRouterState::LED_ROUTER_STATE_GREEN));
   TEST_ASSERT_EQUAL(HIGH, digitalRead(k_router_config.switch_in1_pin));
   TEST_ASSERT_EQUAL(LOW, digitalRead(k_router_config.switch_in2_pin));
 
   // Step 3. Flip to LED2 and ensure the outputs swap accordingly.
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_set_state(LedRouterState::LED_ROUTER_STATE_LED2));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_set_state(LedRouterState::LED_ROUTER_STATE_BLUE));
   TEST_ASSERT_EQUAL(LOW, digitalRead(k_router_config.switch_in1_pin));
   TEST_ASSERT_EQUAL(HIGH, digitalRead(k_router_config.switch_in2_pin));
 
@@ -120,7 +120,7 @@ static void test_led_router_shutdown_requires_initialization(void) {
 static void test_led_router_shutdown_parks_outputs_off(void) {
   // Step 1. Initialise and drive an active LED path.
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&k_router_config));
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_set_state(LedRouterState::LED_ROUTER_STATE_LED1));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_set_state(LedRouterState::LED_ROUTER_STATE_GREEN));
 
   // Step 2. Shut down the driver and confirm both outputs are deasserted.
   int return_code = led_router_shutdown();

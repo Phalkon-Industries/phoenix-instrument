@@ -25,8 +25,8 @@ struct LedSweepRequest {
 
 static const LedSweepRequest k_led_sweep_sequence[] = {
     {"Drain", LedRouterState::LED_ROUTER_STATE_DRAIN},
-    {"LED1", LedRouterState::LED_ROUTER_STATE_LED1},
-    {"LED2", LedRouterState::LED_ROUTER_STATE_LED2},
+    {"Green", LedRouterState::LED_ROUTER_STATE_GREEN},
+    {"Blue", LedRouterState::LED_ROUTER_STATE_BLUE},
 };
 static const size_t k_led_sweep_count = sizeof(k_led_sweep_sequence) / sizeof(k_led_sweep_sequence[0]);
 

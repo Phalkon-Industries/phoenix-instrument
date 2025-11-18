@@ -575,11 +575,11 @@ static int drift_capture_fake_led_setter(LedRouterState state) {
       (sizeof(g_drift_capture_router_transitions) / sizeof(g_drift_capture_router_transitions[0]))) {
     g_drift_capture_router_transitions[g_drift_capture_router_transition_count++] = state;
   }
-  if (state == LedRouterState::LED_ROUTER_STATE_LED1) {
+  if (state == LedRouterState::LED_ROUTER_STATE_BLUE) {
     g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kBlue;
     g_drift_capture_led_active  = true;
   }
-  else if (state == LedRouterState::LED_ROUTER_STATE_LED2) {
+  else if (state == LedRouterState::LED_ROUTER_STATE_GREEN) {
     g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kGreen;
     g_drift_capture_led_active  = true;
   }
@@ -752,10 +752,10 @@ static void test_drift_capture_parse_command_accepts_plain_token(void) {
 static void test_drift_capture_defaults_use_light_config(void) {
   // Step 1: Build a light readings configuration with distinct wiper codes per colour.
   const LightReadingsConfig light_config = {
-      .drain_state    = LedRouterState::LED_ROUTER_STATE_DRAIN,
-      .green_channel  = {LedRouterState::LED_ROUTER_STATE_LED2, AdcHalChannel::ADC_HAL_CHANNEL_3, 150u, 0x42u},
-      .blue_channel   = {LedRouterState::LED_ROUTER_STATE_LED1, AdcHalChannel::ADC_HAL_CHANNEL_0, 175u, 0xA7u},
-      .adc_timeout_us = 50000u,
+    .drain_state    = LedRouterState::LED_ROUTER_STATE_DRAIN,
+    .green_channel  = {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_3, 150u, 0x42u},
+    .blue_channel   = {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_0, 175u, 0xA7u},
+    .adc_timeout_us = 50000u,
   };
 
   // Step 2: Seed baseline drift defaults with placeholder wiper codes that should be overridden.
@@ -898,9 +898,9 @@ static void test_drift_capture_run_captures_leds_in_sequence(void) {
   TEST_ASSERT_EQUAL_INT32(green_codes[0], green_samples[0].adc_code);
 
   TEST_ASSERT_TRUE(g_drift_capture_router_transition_count >= 3u);
-  TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_LED1, g_drift_capture_router_transitions[0]);
+  TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_BLUE, g_drift_capture_router_transitions[0]);
   TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_DRAIN, g_drift_capture_router_transitions[1]);
-  TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_LED2, g_drift_capture_router_transitions[2]);
+  TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_GREEN, g_drift_capture_router_transitions[2]);
 }
 
 static void test_drift_capture_run_sets_saturation_warning(void) {

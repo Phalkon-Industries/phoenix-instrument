@@ -49,8 +49,8 @@ bool is_valid_state(LedRouterState state) {
   // Step 1: Map the provided state to the set of supported router modes.
   switch (state) {
     case LedRouterState::LED_ROUTER_STATE_OFF:
-    case LedRouterState::LED_ROUTER_STATE_LED1:
-    case LedRouterState::LED_ROUTER_STATE_LED2:
+    case LedRouterState::LED_ROUTER_STATE_GREEN:
+    case LedRouterState::LED_ROUTER_STATE_BLUE:
     case LedRouterState::LED_ROUTER_STATE_DRAIN:
       return true;
     default:
@@ -67,18 +67,18 @@ void apply_state_to_pins(LedRouterState state) {
   int pin_in1_level = LOW;
   int pin_in2_level = LOW;
 
-  // TS5A3359 truth table: IN1/IN2 -> OFF (0/0), LED1 (1/0), LED2 (0/1), DRAIN (1/1).
+  // TS5A3359 truth table: (IN1, IN2) -> OFF (LOW, LOW), GREEN (HIGH, LOW), BLUE (LOW, HIGH), DRAIN (HIGH, HIGH).
   // Step 1: Translate the router state into the two control-line levels.
   switch (state) {
     case LedRouterState::LED_ROUTER_STATE_OFF:
       pin_in1_level = LOW;
       pin_in2_level = LOW;
       break;
-    case LedRouterState::LED_ROUTER_STATE_LED1:
+    case LedRouterState::LED_ROUTER_STATE_GREEN:
       pin_in1_level = HIGH;
       pin_in2_level = LOW;
       break;
-    case LedRouterState::LED_ROUTER_STATE_LED2:
+    case LedRouterState::LED_ROUTER_STATE_BLUE:
       pin_in1_level = LOW;
       pin_in2_level = HIGH;
       break;

@@ -87,8 +87,8 @@ AdcHalChannel channel_for_led(PhoenixBenchmarkDriftCaptureLed led) {
 }
 
 LedRouterState router_state_for_led(PhoenixBenchmarkDriftCaptureLed led) {
-  return (led == PhoenixBenchmarkDriftCaptureLed::kBlue) ? LedRouterState::LED_ROUTER_STATE_LED1 :
-                                                           LedRouterState::LED_ROUTER_STATE_LED2;
+  return (led == PhoenixBenchmarkDriftCaptureLed::kBlue) ? LedRouterState::LED_ROUTER_STATE_BLUE :
+                                                           LedRouterState::LED_ROUTER_STATE_GREEN;
 }
 
 bool resolve_osr_value(uint32_t value, mcp356x_osr* out_osr) {
