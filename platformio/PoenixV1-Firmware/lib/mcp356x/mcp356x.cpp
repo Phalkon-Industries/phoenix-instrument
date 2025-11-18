@@ -691,7 +691,7 @@ int mcp356x_full_reset(uint8_t* status_byte) {
   return return_code;
 }
 
-int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result) {
+int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_us, int32_t* result) {
   // Step 1: Ensure we have a destination for the conversion result.
   GUARD_NONNULL(result);
   // Step 2: Require driver initialisation.
@@ -711,7 +711,7 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
 
   const uint8_t payload_length = mcp356x_data_length_from_format(g_cached_data_format);
   uint8_t       adc_bytes[4]   = {0};
-  uint32_t      elapsed_ms     = 0u;
+  uint32_t      elapsed_us     = 0u;  // use microsecond resolution to reduce blocking floor
   bool          data_ready     = false;
   g_last_data_length           = 0u;
   g_last_raw_word              = 0u;
@@ -730,12 +730,14 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
       break;
     }
 
-    if (elapsed_ms >= timeout_ms) {
+    // Enforce microsecond-timeout budget and use short sleeps to lower blocking floor.
+    if ((timeout_us > 0u) && (elapsed_us >= timeout_us)) {
       return MCP356X_ERR_TIMEOUT;
     }
 
-    mcp356x_delay_ms(1u);
-    ++elapsed_ms;
+    // Short sleep to lower the blocking-path floor while still yielding CPU.
+    delayMicroseconds(100);
+    elapsed_us += 100u;
   }
 
   uint32_t raw_word  = 0u;

@@ -480,14 +480,18 @@ int mcp356x_full_reset(uint8_t* status_byte);
  *
  * Wrapper performing: reset DRDY state, select the MUX, trigger a conversion,
  * poll ADCDATA until DR_STATUS indicates fresh data, sign-extend the 24-bit
- * result, and optionally return MCP356X_ERR_TIMEOUT if @p timeout_ms elapses.
+ * result, and optionally return MCP356X_ERR_TIMEOUT if @p timeout_us elapses.
+ *
+ * Note: This API uses microsecond-resolution timeouts. Callers that previously
+ * supplied millisecond budgets must convert to microseconds before invoking
+ * this helper (e.g. 200 ms -> 200000 us).
  *
  * @param channel_index Logical channel (0-7) to sample single-ended.
- * @param timeout_ms    Maximum time in milliseconds to wait for DRDY (0 => immediate timeout).
+ * @param timeout_us    Maximum time in microseconds to wait for DRDY (0 => immediate timeout).
  * @param result        Pointer receiving the signed 24-bit conversion result.
  * @return MCP356X_OK on success, MCP356X_ERR_TIMEOUT on timeout, or a negative error from underlying calls.
  */
-int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result);
+int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_us, int32_t* result);
 
 /**
  * @brief Estimate the conversion latency for a given OSR and sampling mode.

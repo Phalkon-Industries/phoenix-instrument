@@ -33,6 +33,7 @@ static volatile bool           g_irq_sample_ready          = false;
 static volatile int32_t        g_irq_sample_cache          = 0;
 static volatile uint8_t        g_irq_status_cache          = 0u;
 static volatile int            g_irq_last_error            = MCP356X_OK;
+static volatile bool           g_irq_edge_detected         = false;
 
 int adc_hal_initialize(const AdcHalConfig* config) {
   // Step 1: Reject calls that forget required configuration (SPI pins and IRQ line).
@@ -96,12 +97,12 @@ int adc_hal_read_single_ended(AdcHalChannel channel, uint32_t timeout_us, int32_
     return ADC_HAL_ERR_INVALID_ARG;
   }
 
-  // Step 4: Convert the timeout to milliseconds, matching the MCP356x API contract.
-  const uint32_t timeout_ms = adc_hal_timeout_us_to_ms(timeout_us);
-  g_last_channel_requested  = channel;
+  // Step 4: The MCP356x driver now expects a microsecond timeout budget; pass through directly.
+  const uint32_t timeout_us_forward = timeout_us;
+  g_last_channel_requested          = channel;
 
   // Step 5: Delegate the conversion to the MCP356x driver and surface its error codes.
-  const int return_code = mcp356x_read_single_ended_channel(channel_index, timeout_ms, code_out);
+  const int return_code = mcp356x_read_single_ended_channel(channel_index, timeout_us_forward, code_out);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
@@ -122,8 +123,8 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
     return ADC_HAL_ERR_INVALID_ARG;
   }
 
-  // Step 4: Convert the timeout to the units expected by the MCP356x driver while retaining the
-  // original microsecond budget for the local wait loop.
+  // Step 4: The MCP356x driver expects microsecond timeouts; retain the original microsecond budget for the
+  // local wait loop and forward microsecond budget to lower-level operations when needed.
   const uint32_t timeout_ms = adc_hal_timeout_us_to_ms(timeout_us);
 
   g_last_channel_requested = channel;
@@ -159,7 +160,24 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
       g_irq_wait_hook();
     }
 
+    // If the ISR already completed a staged sample, the ready flag will be set.
     if (g_irq_sample_ready) {
+      break;
+    }
+
+    // If an edge was detected, perform the SPI read here in foreground context
+    // to avoid long SPI transfers inside the ISR.
+    if (g_irq_edge_detected) {
+      g_irq_edge_detected = false;
+      int32_t sample_code = 0;
+      uint8_t status_byte = 0u;
+      int     rc          = adc_hal_read_sample_via_driver(&sample_code, &status_byte);
+      if (rc == MCP356X_OK) {
+        g_irq_sample_cache = sample_code;
+        g_irq_status_cache = status_byte;
+      }
+      g_irq_last_error   = rc;
+      g_irq_sample_ready = true;
       break;
     }
 
@@ -176,6 +194,10 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
     }
     delayMicroseconds(1);
     elapsed_us++;
+    if (elapsed_us >= 1000u) {
+      elapsed_ms += 1u;
+      elapsed_us -= 1000u;
+    }
   }
 
   g_irq_waiting = false;
@@ -354,27 +376,23 @@ static void adc_hal_irq_handler(void) {
     return;
   }
 
-  // Step 2: Pull a staged Unity sample or interrogate the ADC directly on hardware.
-  int32_t sample_code = 0;
-  uint8_t status_byte = 0u;
-  int     return_code = MCP356X_OK;
-
+  // If tests staged a sample, honor that path synchronously so unit tests continue
+  // to operate by invoking this handler directly. Otherwise, record the DRDY
+  // edge and return quickly; the foreground waiter will perform the SPI read.
   if (g_has_staged_irq_sample) {
-    sample_code             = g_staged_irq_sample;
-    status_byte             = g_staged_irq_status;
+    int32_t sample_code     = g_staged_irq_sample;
+    uint8_t status_byte     = g_staged_irq_status;
     g_has_staged_irq_sample = false;
-  }
-  else {
-    return_code = adc_hal_read_sample_via_driver(&sample_code, &status_byte);
-  }
 
-  if (return_code == MCP356X_OK) {
     g_irq_sample_cache = sample_code;
     g_irq_status_cache = status_byte;
+    g_irq_last_error   = MCP356X_OK;
+    g_irq_sample_ready = true;
+    return;
   }
 
-  g_irq_last_error   = return_code;
-  g_irq_sample_ready = true;
+  // Record the event and return quickly - the foreground waiter will perform the SPI transfer.
+  g_irq_edge_detected = true;
 }
 
 static uint8_t adc_hal_payload_length_from_format(mcp356x_data_format format) {
