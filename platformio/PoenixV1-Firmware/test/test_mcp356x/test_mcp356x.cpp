@@ -713,12 +713,12 @@ static void test_conversion_config_helpers_require_initialization(void) {
 static void test_conversion_config_updates_cached_data_format(void) {
   // Step 1. Apply the baseline configuration and confirm the cached format reflects the default.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
-  TEST_ASSERT_EQUAL(mcp356x_data_format::data24, mcp356x_test_cached_data_format());
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data24, mcp356x_get_cached_data_format());
 
   // Step 2. Request a 32-bit signed data format and ensure the cached state tracks the change.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_conversion_config(mcp356x_conversion_mode::continuous,
                                                               mcp356x_data_format::data32_signed));
-  TEST_ASSERT_EQUAL(mcp356x_data_format::data32_signed, mcp356x_test_cached_data_format());
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data32_signed, mcp356x_get_cached_data_format());
 }
 
 static void test_read_single_ended_respects_all_data_formats(void) {

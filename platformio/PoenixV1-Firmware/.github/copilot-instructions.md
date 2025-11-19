@@ -2,6 +2,7 @@
 
 1. **Read the style guide.** `docs/style-guide.md` defines naming, documentation depth (including helper comments), pointer rules, formatting expectations, and Arduino-specific patterns not enforced by tooling. Follow the naming guidance exactly—for example, capture function return values in a variable named `return_code` rather than the shorthand `rc`.
 	- Naming quick refs: files/use `lower_snake_case`; types/enums/structs/classes use `CamelCase`; functions and local variables use `lower_snake_case`; static globals are prefixed with `g_`.
+	- Reserve `_test_` in symbol names for helpers consumed exclusively by Unity/unit tests. If production code needs the helper, rename it to drop the `_test_` qualifier before using it elsewhere.
 	- Constants: macros use `UPPER_SNAKE_CASE`; file- or function-local constants use `k_` + `lower_snake_case` (e.g. `k_spi_clock_hz`); enum values use `UPPER_SNAKE_CASE`.
 	- Namespaces are generally avoided; prefer `static` linkage unless integrating with Arduino/third-party quirks that require namespaces.
 	- Guard helpers live in `lib/phoenix_common/phoenix_guard.hpp`; prefer the shared `GUARD`/`GUARD_NONNULL`/`GUARD_INITIALIZED` macros over ad-hoc pointer checks so modules surface consistent Phoenix error codes.

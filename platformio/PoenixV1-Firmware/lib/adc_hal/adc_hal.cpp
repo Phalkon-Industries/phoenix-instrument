@@ -233,7 +233,7 @@ void adc_hal_test_reset_irq_state(void) {
 // Helper: read and discard any pending payload so the next DRDY edge reflects a fresh conversion.
 static void adc_hal_clear_stale_drdy(void) {
   // Step 1: Determine how many bytes to read based on the cached data format.
-  const mcp356x_data_format format       = mcp356x_test_cached_data_format();
+  const mcp356x_data_format format       = mcp356x_get_cached_data_format();
   const uint8_t             payload_size = adc_hal_payload_length_from_format(format);
   if (payload_size == 0u) {
     return;
@@ -342,7 +342,7 @@ static int adc_hal_read_sample_via_driver(int32_t* sample_out, uint8_t* status_o
   }
 
   // Step 1: Size the read operation using the cached data format.
-  const mcp356x_data_format format       = mcp356x_test_cached_data_format();
+  const mcp356x_data_format format       = mcp356x_get_cached_data_format();
   const uint8_t             payload_size = adc_hal_payload_length_from_format(format);
   if (payload_size == 0u) {
     return MCP356X_ERR_UNSUPPORTED;

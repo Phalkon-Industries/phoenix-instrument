@@ -7,6 +7,7 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 - **Namespaces:** Avoid unless interacting with Arduino libraries; prefer `static` linkage instead.
 - **Types / structs / enums / classes:** Use `CamelCase` (upper camel). Example: `struct AdcSampleBuffer`.
 - **Functions and free helpers:** Use `lower_snake_case`. Example: `read_config_value()`.
+- **Test-only helpers:** Reserve `_test_` in symbol names (functions, globals, or accessors) for code exercised exclusively by Unity/unit tests. If production sources need the helper, rename it to drop `_test_` before promoting it to shared use.
 - **Public phoenix benchmark APIs:** Export scenario entry points with the C-style prefix
   `phoenix_benchmark_<module>_<verb>` so they link cleanly from C and C++. For example,
   `phoenix_benchmark_channel_map_run`, `phoenix_benchmark_channel_map_format_summary_row`.

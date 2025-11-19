@@ -787,7 +787,7 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_us
   return MCP356X_OK;
 }
 
-mcp356x_data_format mcp356x_test_cached_data_format(void) {
+mcp356x_data_format mcp356x_get_cached_data_format(void) {
   return g_cached_data_format;
 }
 

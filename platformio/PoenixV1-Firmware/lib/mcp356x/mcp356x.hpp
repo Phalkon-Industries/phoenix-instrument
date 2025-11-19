@@ -368,7 +368,12 @@ int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_for
  */
 int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_data_format* out_format);
 
-mcp356x_data_format mcp356x_test_cached_data_format(void);
+/**
+ * @brief Return the most recently configured MCP356x data format.
+ *
+ * Exposed for both production code (to size data reads) and tests (to assert register programming).
+ */
+mcp356x_data_format mcp356x_get_cached_data_format(void);
 uint8_t             mcp356x_test_last_data_length(void);
 void                mcp356x_test_reset_diagnostics(void);
 uint32_t            mcp356x_test_last_raw_word(void);
