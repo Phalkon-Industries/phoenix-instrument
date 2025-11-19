@@ -2,6 +2,7 @@
 #include "main.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
+#include <limits.h>
 #include <unity.h>
 
 static const AdcHalConfig k_valid_config = {
@@ -10,9 +11,20 @@ static const AdcHalConfig k_valid_config = {
     .irq_pin         = PIN_ADC_IRQ,
 };
 
-static void adc_hal_irq_wait_hook_fire_once(void) {
-  // Arrange for the ISR to fire once the HAL enters its wait loop.
-  adc_hal_test_fire_staged_irq();
+static uint32_t g_irq_stub_threshold_polls = 0u;
+static uint32_t g_irq_stub_poll_count      = 0u;
+
+// Helper: emulate the DRDY pin by asserting it once a configurable poll budget is consumed.
+static bool adc_hal_irq_stub_reader(void) {
+  g_irq_stub_poll_count += 1u;
+  return g_irq_stub_poll_count >= g_irq_stub_threshold_polls;
+}
+
+// Helper: reset stub state and inject the fake pin reader so tests can drive busy-wait logic.
+static void adc_hal_configure_irq_stub(uint32_t polls_before_assert) {
+  g_irq_stub_poll_count      = 0u;
+  g_irq_stub_threshold_polls = polls_before_assert;
+  adc_hal_test_set_irq_pin_reader(adc_hal_irq_stub_reader);
 }
 
 void setUp(void) {
@@ -86,13 +98,11 @@ static void test_adc_hal_read_channel_irq_times_out_without_interrupt(void) {
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&k_valid_config));
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
 
+  adc_hal_configure_irq_stub(UINT32_MAX);
   int32_t sample_code = 0;
   TEST_ASSERT_EQUAL_INT(ADC_HAL_ERR_TIMEOUT,
                         adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_3, 1000u, &sample_code));
-
-  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_attach_interrupt_call_count());
-  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_detach_interrupt_call_count());
-  TEST_ASSERT_FALSE(adc_hal_test_interrupt_attached());
+  TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, g_irq_stub_poll_count, "Expected busy-wait loop to poll the IRQ stub");
 }
 
 static void test_adc_hal_read_channel_irq_returns_sample_when_isr_fires(void) {
@@ -100,31 +110,22 @@ static void test_adc_hal_read_channel_irq_returns_sample_when_isr_fires(void) {
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
 
   adc_hal_test_stage_irq_sample(0x0055AA, 0u);
-  adc_hal_test_set_irq_wait_hook(adc_hal_irq_wait_hook_fire_once);
+  adc_hal_configure_irq_stub(5u);
 
   int32_t sample_code = 0;
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_2, 5000u, &sample_code));
   TEST_ASSERT_EQUAL_INT32(0x0055AA, sample_code);
-
-  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_attach_interrupt_call_count());
-  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_detach_interrupt_call_count());
-  TEST_ASSERT_FALSE(adc_hal_test_interrupt_attached());
-
-  adc_hal_test_set_irq_wait_hook(NULL);
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(5u, g_irq_stub_poll_count);
 }
 
 static void test_adc_hal_read_channel_irq_returns_sample_from_hardware(void) {
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_initialize(&k_valid_config));
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_apply_default_configuration());
 
-  adc_hal_test_set_irq_wait_hook(NULL);
+  adc_hal_test_set_irq_pin_reader(NULL);
 
   int32_t sample_code = 0;
   TEST_ASSERT_EQUAL_INT(ADC_HAL_OK, adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_1, 5000u, &sample_code));
-
-  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_attach_interrupt_call_count());
-  TEST_ASSERT_EQUAL_UINT32(1u, adc_hal_test_detach_interrupt_call_count());
-  TEST_ASSERT_FALSE(adc_hal_test_interrupt_attached());
 
   TEST_ASSERT_GREATER_OR_EQUAL_INT32(-0x800000, sample_code);
   TEST_ASSERT_LESS_OR_EQUAL_INT32(0x7FFFFF, sample_code);

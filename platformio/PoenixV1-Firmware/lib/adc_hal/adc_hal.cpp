@@ -3,14 +3,12 @@
 #include "mcp356x.hpp"
 #include <Arduino.h>
 
-static void     adc_hal_attach_interrupt_handler(void);
-static void     adc_hal_detach_interrupt_handler(void);
-static void     adc_hal_clear_stale_drdy(void);
-static void     adc_hal_irq_handler(void);
-static uint8_t  adc_hal_payload_length_from_format(mcp356x_data_format format);
-static int      adc_hal_decode_sample(const uint8_t* data_bytes, mcp356x_data_format format, int32_t* sample_out);
-static int      adc_hal_read_sample_via_driver(int32_t* sample_out, uint8_t* status_out);
-static uint32_t adc_hal_timeout_us_to_ms(uint32_t timeout_us);
+static void    adc_hal_clear_stale_drdy(void);
+static bool    adc_hal_wait_for_irq_asserted(uint32_t timeout_us);
+static bool    adc_hal_is_irq_asserted(void);
+static uint8_t adc_hal_payload_length_from_format(mcp356x_data_format format);
+static int     adc_hal_decode_sample(const uint8_t* data_bytes, mcp356x_data_format format, int32_t* sample_out);
+static int     adc_hal_read_sample_via_driver(int32_t* sample_out, uint8_t* status_out);
 
 struct AdcHalState {
   bool initialized;
@@ -18,22 +16,14 @@ struct AdcHalState {
   int  irq_pin;  // Latched DRDY pin so attach/detach helpers avoid global constants.
 };
 
-static AdcHalState             g_state                     = {false, false, -1};
-static uint32_t                g_default_config_call_count = 0u;
-static AdcHalChannel           g_last_channel_requested    = AdcHalChannel::ADC_HAL_CHANNEL_0;
-static adc_hal_irq_wait_hook_t g_irq_wait_hook             = NULL;
-static uint32_t                g_attach_interrupt_count    = 0u;
-static uint32_t                g_detach_interrupt_count    = 0u;
-static bool                    g_interrupt_attached        = false;
-static int32_t                 g_staged_irq_sample         = 0;
-static uint8_t                 g_staged_irq_status         = 0u;
-static bool                    g_has_staged_irq_sample     = false;
-static volatile bool           g_irq_waiting               = false;
-static volatile bool           g_irq_sample_ready          = false;
-static volatile int32_t        g_irq_sample_cache          = 0;
-static volatile uint8_t        g_irq_status_cache          = 0u;
-static volatile int            g_irq_last_error            = MCP356X_OK;
-static volatile bool           g_irq_edge_detected         = false;
+static AdcHalState              g_state                     = {false, false, -1};
+static uint32_t                 g_default_config_call_count = 0u;
+static AdcHalChannel            g_last_channel_requested    = AdcHalChannel::ADC_HAL_CHANNEL_0;
+static adc_hal_irq_wait_hook_t  g_irq_wait_hook             = NULL;
+static adc_hal_irq_pin_reader_t g_irq_pin_reader            = NULL;
+static int32_t                  g_staged_irq_sample         = 0;
+static uint8_t                  g_staged_irq_status         = 0u;
+static bool                     g_has_staged_irq_sample     = false;
 
 int adc_hal_initialize(const AdcHalConfig* config) {
   // Step 1: Reject calls that forget required configuration (SPI pins and IRQ line).
@@ -55,8 +45,6 @@ int adc_hal_initialize(const AdcHalConfig* config) {
   g_state.irq_pin             = config->irq_pin;
 
   pinMode(g_state.irq_pin, INPUT);  // External pull-up on DRDY keeps the line idle between reads.
-  detachInterrupt(digitalPinToInterrupt(g_state.irq_pin));
-  g_interrupt_attached = false;
 
   return ADC_HAL_OK;
 }
@@ -114,7 +102,7 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
   // Step 1: Guard against null result storage.
   GUARD_NONNULL(code_out);
 
-  // Step 2: Require driver initialisation before arming interrupts.
+  // Step 2: Require driver initialisation before arming hardware.
   GUARD_INITIALIZED(g_state.initialized);
 
   // Step 3: Validate the channel selection against the hardware's supported range.
@@ -123,92 +111,45 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
     return ADC_HAL_ERR_INVALID_ARG;
   }
 
-  // Step 4: The MCP356x driver expects microsecond timeouts; retain the original microsecond budget for the
-  // local wait loop and forward microsecond budget to lower-level operations when needed.
-  const uint32_t timeout_ms = adc_hal_timeout_us_to_ms(timeout_us);
-
   g_last_channel_requested = channel;
-  g_irq_sample_ready       = false;
-  g_irq_last_error         = MCP356X_OK;
-  g_irq_waiting            = true;
 
-  // Step 5: Point the channel mux toward the requested single-ended input.
+  // Step 4: Point the channel mux toward the requested single-ended input.
   int return_code = mcp356x_select_single_ended_channel(channel_index);
   if (return_code != MCP356X_OK) {
-    g_irq_waiting = false;
     return return_code;
   }
 
-  // Step 6: Clear any stale DRDY condition so the next edge corresponds to this conversion.
+  // Step 5: Clear any stale DRDY condition so the next edge corresponds to this conversion.
   adc_hal_clear_stale_drdy();
 
-  // Step 7: Arm the interrupt before issuing the conversion command.
-  adc_hal_attach_interrupt_handler();
-
+  // Step 6: Launch the conversion so DRDY asserts once fresh data is ready.
   return_code = mcp356x_start_conversion(NULL);
   if (return_code != MCP356X_OK) {
-    g_irq_waiting = false;
-    adc_hal_detach_interrupt_handler();
     return return_code;
   }
 
-  // Step 8: Busy-wait for the ISR to cache a sample or until the timeout expires.
-  uint32_t elapsed_ms = 0u;
-  uint32_t elapsed_us = 0u;
-  while (!g_irq_sample_ready) {
-    if (g_irq_wait_hook != NULL) {
-      g_irq_wait_hook();
-    }
+  // Step 7: Busy-wait on the DRDY pin until it asserts or the timeout expires.
+  if (!adc_hal_wait_for_irq_asserted(timeout_us)) {
+    return ADC_HAL_ERR_TIMEOUT;
+  }
 
-    // If the ISR already completed a staged sample, the ready flag will be set.
-    if (g_irq_sample_ready) {
-      break;
-    }
-
-    // If an edge was detected, perform the SPI read here in foreground context
-    // to avoid long SPI transfers inside the ISR.
-    if (g_irq_edge_detected) {
-      g_irq_edge_detected = false;
-      int32_t sample_code = 0;
-      uint8_t status_byte = 0u;
-      int     rc          = adc_hal_read_sample_via_driver(&sample_code, &status_byte);
-      if (rc == MCP356X_OK) {
-        g_irq_sample_cache = sample_code;
-        g_irq_status_cache = status_byte;
-      }
-      g_irq_last_error   = rc;
-      g_irq_sample_ready = true;
-      break;
-    }
-
-    if ((timeout_ms > 0u) && (elapsed_ms >= timeout_ms)) {
-      g_irq_waiting = false;
-      adc_hal_detach_interrupt_handler();
-      return ADC_HAL_ERR_TIMEOUT;
-    }
-
-    if (elapsed_us >= timeout_us) {
-      g_irq_waiting = false;
-      adc_hal_detach_interrupt_handler();
-      return ADC_HAL_ERR_TIMEOUT;
-    }
-    delayMicroseconds(1);
-    elapsed_us++;
-    if (elapsed_us >= 1000u) {
-      elapsed_ms += 1u;
-      elapsed_us -= 1000u;
+  // Step 8: Pull the conversion result either from a staged test sample or from the ADC.
+  int32_t sample_code = 0;
+  uint8_t status_byte = 0u;
+  if (g_has_staged_irq_sample) {
+    sample_code             = g_staged_irq_sample;
+    status_byte             = g_staged_irq_status;
+    g_has_staged_irq_sample = false;
+  }
+  else {
+    return_code = adc_hal_read_sample_via_driver(&sample_code, &status_byte);
+    if (return_code != MCP356X_OK) {
+      return return_code;
     }
   }
 
-  g_irq_waiting = false;
-
-  // Step 9: Surface backend failures captured by the ISR.
-  if (g_irq_last_error != MCP356X_OK) {
-    return g_irq_last_error;
-  }
-
-  // Step 10: Publish the cached conversion code populated by the ISR.
-  *code_out = g_irq_sample_cache;
+  *code_out = sample_code;
+  (void) status_byte;
   return ADC_HAL_OK;
 }
 
@@ -259,20 +200,6 @@ void adc_hal_reset_for_test(void) {
   adc_hal_test_reset_irq_state();
 }
 
-static uint32_t adc_hal_timeout_us_to_ms(uint32_t timeout_us) {
-  if (timeout_us == 0u) {
-    return 0u;
-  }
-
-  const uint32_t remainder  = timeout_us % 1000u;
-  uint32_t       timeout_ms = timeout_us / 1000u;
-  if (remainder > 0u) {
-    timeout_ms += 1u;
-  }
-
-  return timeout_ms;
-}
-
 uint32_t adc_hal_test_default_config_call_count(void) {
   return g_default_config_call_count;
 }
@@ -291,69 +218,19 @@ void adc_hal_test_stage_irq_sample(int32_t sample_code, uint8_t status_byte) {
   g_has_staged_irq_sample = true;
 }
 
-void adc_hal_test_fire_staged_irq(void) {
-  adc_hal_irq_handler();
-  // Let Unity drive the ISR path without real hardware edges.
-}
-
-uint32_t adc_hal_test_attach_interrupt_call_count(void) {
-  return g_attach_interrupt_count;
-}
-
-uint32_t adc_hal_test_detach_interrupt_call_count(void) {
-  return g_detach_interrupt_count;
-}
-
-bool adc_hal_test_interrupt_attached(void) {
-  return g_interrupt_attached;
+void adc_hal_test_set_irq_pin_reader(adc_hal_irq_pin_reader_t reader) {
+  g_irq_pin_reader = reader;
 }
 
 void adc_hal_test_reset_irq_state(void) {
-  adc_hal_detach_interrupt_handler();
-  g_irq_wait_hook          = NULL;
-  g_attach_interrupt_count = 0u;
-  g_detach_interrupt_count = 0u;
-  g_interrupt_attached     = false;
-  g_staged_irq_sample      = 0;
-  g_staged_irq_status      = 0u;
-  g_has_staged_irq_sample  = false;
-  g_irq_waiting            = false;
-  g_irq_sample_ready       = false;
-  g_irq_sample_cache       = 0;
-  g_irq_status_cache       = 0u;
-  g_irq_last_error         = MCP356X_OK;
+  g_irq_wait_hook         = NULL;
+  g_irq_pin_reader        = NULL;
+  g_staged_irq_sample     = 0;
+  g_staged_irq_status     = 0u;
+  g_has_staged_irq_sample = false;
 }
 
-static void adc_hal_attach_interrupt_handler(void) {
-  // Step 1: Skip re-attaching if the handler already owns the line.
-  if (g_interrupt_attached) {
-    return;
-  }
-
-  if (g_state.irq_pin < 0) {
-    return;
-  }
-
-  // Step 2: Use Arduino helpers so the HAL remains portable across supported boards.
-  attachInterrupt(digitalPinToInterrupt(g_state.irq_pin), adc_hal_irq_handler, FALLING);
-  g_interrupt_attached = true;
-  g_attach_interrupt_count += 1u;
-}
-
-static void adc_hal_detach_interrupt_handler(void) {
-  // Step 1: Do nothing if the interrupt is already masked.
-  if (!g_interrupt_attached) {
-    return;
-  }
-
-  if (g_state.irq_pin >= 0) {
-    // Step 2: Detach to prevent spurious edges while no conversion is pending.
-    detachInterrupt(digitalPinToInterrupt(g_state.irq_pin));
-  }
-  g_interrupt_attached = false;
-  g_detach_interrupt_count += 1u;
-}
-
+// Helper: read and discard any pending payload so the next DRDY edge reflects a fresh conversion.
 static void adc_hal_clear_stale_drdy(void) {
   // Step 1: Determine how many bytes to read based on the cached data format.
   const mcp356x_data_format format       = mcp356x_test_cached_data_format();
@@ -368,33 +245,46 @@ static void adc_hal_clear_stale_drdy(void) {
   (void) mcp356x_read_register(MCP356X_REG_ADCDATA, discard_bytes, payload_size, &status_byte);
 }
 
-static void adc_hal_irq_handler(void) {
-  // Step 1: Mask the interrupt immediately so the handler stays single-shot.
-  adc_hal_detach_interrupt_handler();
-
-  if (!g_irq_waiting) {
-    return;
+// Helper: busy-wait on the DRDY pin (or its test double) until it asserts or the timeout expires.
+static bool adc_hal_wait_for_irq_asserted(uint32_t timeout_us) {
+  // Step 1: Enforce the historical behaviour where a zero timeout budgets results in an immediate timeout.
+  if (timeout_us == 0u) {
+    return false;
   }
 
-  // If tests staged a sample, honor that path synchronously so unit tests continue
-  // to operate by invoking this handler directly. Otherwise, record the DRDY
-  // edge and return quickly; the foreground waiter will perform the SPI read.
-  if (g_has_staged_irq_sample) {
-    int32_t sample_code     = g_staged_irq_sample;
-    uint8_t status_byte     = g_staged_irq_status;
-    g_has_staged_irq_sample = false;
+  const uint32_t start_us = micros();
 
-    g_irq_sample_cache = sample_code;
-    g_irq_status_cache = status_byte;
-    g_irq_last_error   = MCP356X_OK;
-    g_irq_sample_ready = true;
-    return;
+  while (true) {
+    if (adc_hal_is_irq_asserted()) {
+      return true;
+    }
+
+    if (g_irq_wait_hook != NULL) {
+      g_irq_wait_hook();
+    }
+
+    const uint32_t elapsed_us = micros() - start_us;
+    if (elapsed_us >= timeout_us) {
+      return false;
+    }
   }
-
-  // Record the event and return quickly - the foreground waiter will perform the SPI transfer.
-  g_irq_edge_detected = true;
 }
 
+// Helper: normalize DRDY sensing across hardware GPIO and the injected test pin reader.
+static bool adc_hal_is_irq_asserted(void) {
+  // Step 1: Bail out when initialise never latched a valid DRDY pin (common in tests).
+  if (g_state.irq_pin < 0) {
+    return false;
+  }
+
+  if (g_irq_pin_reader != NULL) {
+    return g_irq_pin_reader();
+  }
+
+  return digitalRead(g_state.irq_pin) == LOW;
+}
+
+// Helper: convert the cached MCP356x data format into the number of raw payload bytes to read.
 static uint8_t adc_hal_payload_length_from_format(mcp356x_data_format format) {
   switch (format) {
     case mcp356x_data_format::data24:
@@ -408,6 +298,7 @@ static uint8_t adc_hal_payload_length_from_format(mcp356x_data_format format) {
   }
 }
 
+// Helper: translate the MCP356x wire-format payload into a signed 32-bit value.
 static int adc_hal_decode_sample(const uint8_t* data_bytes, mcp356x_data_format format, int32_t* sample_out) {
   if ((data_bytes == NULL) || (sample_out == NULL)) {
     return MCP356X_ERR_INVALID_ARG;
@@ -444,6 +335,7 @@ static int adc_hal_decode_sample(const uint8_t* data_bytes, mcp356x_data_format 
   return MCP356X_OK;
 }
 
+// Helper: request the ADC data register through the driver and convert it into a signed sample.
 static int adc_hal_read_sample_via_driver(int32_t* sample_out, uint8_t* status_out) {
   if (sample_out == NULL) {
     return MCP356X_ERR_INVALID_ARG;

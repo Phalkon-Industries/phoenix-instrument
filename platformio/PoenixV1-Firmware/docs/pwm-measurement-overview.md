@@ -6,7 +6,7 @@ This note captures how the Stormcloud LED router drives its TS5A3359 switch matr
 
 - The router uses `NRF_PWM3` with the waveform programmed by `led_router_pwm_start`. Channel 0 (IN2) and channel 1 (IN1, inverted form) is set up so we can get led on for each, and the drain inbetween with a simple pwm waveform. Channel assignments preserve the Stormcloud quirk that green must precede blue; the waveform opens with a drain segment in the middle.
 - The PWM sequence contains a single waveform entry that loops continuously. `NRF_PWM_EVENT_PWMPERIODEND` fires at the start of every cycle, independent of the sequence length, so we treat it as the cycle reference for interrupt-driven sampling.
-- The MCP356x can only start conversions via the `MCP356X_FASTCMD_START` command delivered over SPI. DRDY remains on `PIN_ADC_IRQ` (GPIO 9) and asserts low when data is ready if using IRQ method.
+- The MCP356x can only start conversions via the `MCP356X_FASTCMD_START` command delivered over SPI. DRDY remains on `PIN_ADC_IRQ` (GPIO 9) and asserts low when data is ready. The firmware now spins in a tight loop watching that GPIO instead of wiring an Arduino interrupt, so the conversion flow stays deterministic without extra ISR plumbing.
 
 ## Waveform Layout
 
