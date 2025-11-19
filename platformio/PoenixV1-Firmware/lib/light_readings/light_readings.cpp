@@ -17,9 +17,8 @@ static bool                g_force_saturation_for_test      = false;
 static constexpr uint8_t k_light_readings_blue_channel  = 0u;
 static constexpr uint8_t k_light_readings_green_channel = 1u;
 // MCP3564 full-scale boundary codes as documented in datasheet DS20006204.
-static constexpr int32_t  k_light_readings_adc_positive_full_scale_code = 8388607;
-static constexpr int32_t  k_light_readings_adc_negative_full_scale_code = -8388608;
-static constexpr uint32_t k_light_readings_edge_poll_delay_us           = 5u;
+static constexpr int32_t k_light_readings_adc_positive_full_scale_code = 8388607;
+static constexpr int32_t k_light_readings_adc_negative_full_scale_code = -8388608;
 
 LightReadingsSweepSample g_light_readings_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT] = {};
 
@@ -82,22 +81,16 @@ static void light_readings_running_stats_update(LightReadingsRunningStats* stats
   }
 }
 
-struct LightReadingsEdgeEvent {
-  volatile bool     pending;
-  volatile uint32_t period_index;
-};
-
 struct LightReadingsPwmState {
-  bool                   sweep_active;
-  NRF_PWM_Type*          pwm_instance;
-  IRQn_Type              pwm_irq;
-  uint8_t                in1_pin;
-  uint8_t                in2_pin;
-  uint32_t               period_timeout_us;
-  volatile uint32_t      period_counter;
-  LightReadingsEdgeEvent in1_rise;
-  LightReadingsEdgeEvent in1_fall;
-  LightReadingsEdgeEvent in2_rise;
+  bool              sweep_active;
+  NRF_PWM_Type*     pwm_instance;
+  IRQn_Type         pwm_irq;
+  uint8_t           in1_pin;
+  uint8_t           in2_pin;
+  uint32_t          in1_nrf_pin;
+  uint32_t          in2_nrf_pin;
+  uint32_t          period_timeout_us;
+  volatile uint32_t period_counter;
 };
 
 static LightReadingsPwmState       g_pwm_state                  = {};
@@ -145,86 +138,44 @@ static void light_readings_populate_summary(const LightReadingsRunningStats& run
 
 static constexpr IRQn_Type k_light_readings_invalid_pwm_irq = static_cast<IRQn_Type>(-1);
 
-// Helper: Record router edges so PWM sweeps can align ADC conversions with switch transitions.
-static void light_readings_record_edge(LightReadingsEdgeEvent* rise_event, LightReadingsEdgeEvent* fall_event,
-                                       uint8_t board_pin) {
-  // Step 1: Ignore edges that arrive when no sweep is active.
-  if (!g_pwm_state.sweep_active) {
-    return;
+static int light_readings_wait_for_next_period(uint32_t current_period, uint32_t timeout_us, uint32_t* next_period_out);
+
+// Helper: Sample the router state directly from the PWM-driven GPIO levels.
+static LedRouterState light_readings_sample_router_state(void) {
+  const uint32_t in1_level = nrf_gpio_pin_read(g_pwm_state.in1_nrf_pin);
+  const uint32_t in2_level = nrf_gpio_pin_read(g_pwm_state.in2_nrf_pin);
+
+  if ((in1_level != 0u) && (in2_level != 0u)) {
+    return LedRouterState::LED_ROUTER_STATE_DRAIN;
+  }
+  if ((in1_level != 0u) && (in2_level == 0u)) {
+    return LedRouterState::LED_ROUTER_STATE_GREEN;
+  }
+  if ((in1_level == 0u) && (in2_level != 0u)) {
+    return LedRouterState::LED_ROUTER_STATE_BLUE;
   }
 
-  // Step 2: Read the current pin level so the event can be routed to a rise or fall bucket.
-  const uint32_t nrf_pin      = g_ADigitalPinMap[board_pin];
-  const uint32_t level        = nrf_gpio_pin_read(nrf_pin);
-  const uint32_t period_index = g_pwm_state.period_counter;
-
-  LightReadingsEdgeEvent* target_event = (level != 0u) ? rise_event : fall_event;
-  if (target_event == nullptr) {
-    return;
-  }
-
-  // Step 3: Cache the period index and flag the edge so the foreground loop can consume it.
-  target_event->period_index = period_index;
-  target_event->pending      = true;
+  return LedRouterState::LED_ROUTER_STATE_OFF;
 }
 
-static void light_readings_in1_edge_isr(void) {
-  // Step 1: Record the edge so the foreground PWM sweep can reference it.
-  light_readings_record_edge(&g_pwm_state.in1_rise, &g_pwm_state.in1_fall, g_pwm_state.in1_pin);
-}
+// Helper: Wait for the PWM waveform to enter a specific router state within the current period.
+static int light_readings_wait_for_router_state(uint32_t period_index, LedRouterState target_state,
+                                                uint32_t timeout_us) {
+  const uint32_t start_us = micros();
 
-static void light_readings_in2_edge_isr(void) {
-  // Step 1: Record the edge so the foreground PWM sweep can reference it.
-  light_readings_record_edge(&g_pwm_state.in2_rise, nullptr, g_pwm_state.in2_pin);
-}
+  while (true) {
+    if (light_readings_sample_router_state() == target_state) {
+      return LIGHT_READINGS_OK;
+    }
 
-static void light_readings_pwm_detach_pin_interrupts(void);
+    if (g_pwm_state.period_counter > period_index) {
+      return LIGHT_READINGS_ERR_TIMEOUT;
+    }
 
-// Helper: Attach Arduino interrupt handlers so router edges are observed during PWM playback.
-static int light_readings_pwm_attach_pin_interrupts(void) {
-  // Step 1: Clear any stale watchers before registering replacements.
-  light_readings_pwm_detach_pin_interrupts();
-
-  // Step 2: Validate that both router pins expose interrupt-capable mappings.
-  const int in1_irq = digitalPinToInterrupt(g_pwm_state.in1_pin);
-  const int in2_irq = digitalPinToInterrupt(g_pwm_state.in2_pin);
-#if defined(NOT_AN_INTERRUPT)
-  if ((in1_irq == NOT_AN_INTERRUPT) || (in2_irq == NOT_AN_INTERRUPT)) {
-    return LIGHT_READINGS_ERR_PWM_INTERRUPTS_UNAVAILABLE;
+    if ((timeout_us > 0u) && ((micros() - start_us) >= timeout_us)) {
+      return LIGHT_READINGS_ERR_TIMEOUT;
+    }
   }
-#endif
-  if ((in1_irq < 0) || (in2_irq < 0)) {
-    return LIGHT_READINGS_ERR_PWM_INTERRUPTS_UNAVAILABLE;
-  }
-
-  // Step 3: Attach change handlers so the PWM sweep can observe router transitions.
-  attachInterrupt(in1_irq, light_readings_in1_edge_isr, CHANGE);
-  attachInterrupt(in2_irq, light_readings_in2_edge_isr, CHANGE);
-
-  return LIGHT_READINGS_OK;
-}
-
-// Helper: Detach Arduino interrupt handlers so future sweeps can reconfigure them.
-static void light_readings_pwm_detach_pin_interrupts(void) {
-  // Step 1: Drop the IN1 handler so subsequent sweeps can reconfigure it.
-  const int in1_irq = digitalPinToInterrupt(g_pwm_state.in1_pin);
-#if defined(NOT_AN_INTERRUPT)
-  if (in1_irq != NOT_AN_INTERRUPT) {
-    detachInterrupt(in1_irq);
-  }
-#else
-  detachInterrupt(in1_irq);
-#endif
-
-  // Step 2: Drop the IN2 handler to release the channel for later sweeps.
-  const int in2_irq = digitalPinToInterrupt(g_pwm_state.in2_pin);
-#if defined(NOT_AN_INTERRUPT)
-  if (in2_irq != NOT_AN_INTERRUPT) {
-    detachInterrupt(in2_irq);
-  }
-#else
-  detachInterrupt(in2_irq);
-#endif
 }
 
 // Helper: Arm the PWM period-end interrupt so sweeps can detect cycle boundaries.
@@ -263,6 +214,44 @@ static void light_readings_pwm_disable_period_tracking(void) {
   }
 }
 
+// Helper: Reset PWM observation state so future sweeps start from a blank slate.
+static void light_readings_pwm_clear_state(void) {
+  // Step 1: Drop the active flag and period tracking hooks.
+  g_pwm_state.sweep_active = false;
+  light_readings_pwm_disable_period_tracking();
+
+  // Step 2: Clear cached PWM metadata so future sweeps start from a blank slate.
+  g_pwm_state.pwm_instance      = nullptr;
+  g_pwm_state.pwm_irq           = k_light_readings_invalid_pwm_irq;
+  g_pwm_state.in1_pin           = 0u;
+  g_pwm_state.in2_pin           = 0u;
+  g_pwm_state.in1_nrf_pin       = 0u;
+  g_pwm_state.in2_nrf_pin       = 0u;
+  g_pwm_state.period_timeout_us = 0u;
+  g_pwm_state.period_counter    = 0u;
+}
+
+// Helper: Prepare PWM observation bookkeeping so sweeps can poll the waveform in the foreground.
+static int light_readings_pwm_prepare_observation(NRF_PWM_Type* pwm_instance) {
+  // Step 1: Validate the PWM instance reference before caching any state.
+  if (pwm_instance == nullptr) {
+    return LIGHT_READINGS_ERR_INVALID_ARG;
+  }
+
+  // Step 2: Cache the active PWM resources and pin mappings for foreground polling.
+  g_pwm_state.sweep_active      = true;
+  g_pwm_state.pwm_instance      = pwm_instance;
+  g_pwm_state.pwm_irq           = (pwm_instance == NRF_PWM3) ? PWM3_IRQn : k_light_readings_invalid_pwm_irq;
+  g_pwm_state.in1_pin           = static_cast<uint8_t>(g_light_config.pwm_config.router_in1_pin);
+  g_pwm_state.in2_pin           = static_cast<uint8_t>(g_light_config.pwm_config.router_in2_pin);
+  g_pwm_state.in1_nrf_pin       = g_ADigitalPinMap[g_pwm_state.in1_pin];
+  g_pwm_state.in2_nrf_pin       = g_ADigitalPinMap[g_pwm_state.in2_pin];
+  g_pwm_state.period_timeout_us = g_light_config.pwm_config.period_timeout_us;
+  g_pwm_state.period_counter    = 0u;
+
+  return LIGHT_READINGS_OK;
+}
+
 // Helper: Wait for the next PWM period, enforcing a timeout so sweeps cannot hang indefinitely.
 static int light_readings_wait_for_next_period(uint32_t current_period, uint32_t timeout_us,
                                                uint32_t* next_period_out) {
@@ -284,59 +273,13 @@ static int light_readings_wait_for_next_period(uint32_t current_period, uint32_t
       return LIGHT_READINGS_ERR_TIMEOUT;
     }
 
-    // Step 4: Yield briefly so ISRs can run without monopolising the CPU.
-    delayMicroseconds(k_light_readings_edge_poll_delay_us);
+    // Step 4: Continue spinning so the next ISR-observed period is captured immediately.
   }
 }
 
-// Helper: Wait for a captured router edge associated with a particular PWM period.
-static int light_readings_wait_for_edge(LightReadingsEdgeEvent* edge_event, uint32_t target_period,
-                                        uint32_t timeout_us) {
-  // Step 1: Reject calls that forget to provide the edge bookkeeping structure.
-  if (edge_event == nullptr) {
-    return LIGHT_READINGS_ERR_INVALID_ARG;
-  }
-
-  // Step 2: Track elapsed time so the wait can honour the configured timeout.
-  const uint32_t start_us = micros();
-
-  while (true) {
-    bool     observed     = false;
-    uint32_t event_period = 0u;
-
-    // Step 3: Claim the pending edge atomically and verify it occurred on or after the target period.
-    noInterrupts();
-    if (edge_event->pending) {
-      event_period = edge_event->period_index;
-      if (event_period >= target_period) {
-        observed            = true;
-        edge_event->pending = false;
-      }
-      else {
-        edge_event->pending = false;
-      }
-    }
-    interrupts();
-
-    if (observed) {
-      // Step 4: Return once the expected edge has been latched.
-      (void) event_period;  // Intentional: reserved for future diagnostics.
-      return LIGHT_READINGS_OK;
-    }
-
-    // Step 5: Enforce the timeout window so stalled edges surface a watchdog error.
-    if ((timeout_us > 0u) && ((micros() - start_us) >= timeout_us)) {
-      return LIGHT_READINGS_ERR_TIMEOUT;
-    }
-
-    // Step 6: Yield briefly to keep ISR latency low during the polling loop.
-    delayMicroseconds(k_light_readings_edge_poll_delay_us);
-  }
-}
-
-// Helper: Capture a single ADC conversion via the IRQ path and update optional diagnostics.
-static int light_readings_capture_channel(AdcHalChannel channel, int32_t* code_out, uint32_t* counter_out,
-                                          bool* saw_saturation) {
+// Helper: Capture a single ADC conversion through the IRQ read path and update optional diagnostics.
+static int light_readings_capture_channel_irq(AdcHalChannel channel, int32_t* code_out, uint32_t* counter_out,
+                                              bool* saw_saturation) {
   // Step 1: Reject calls that omit the destination storage for the captured sample.
   if (code_out == NULL) {
     return LIGHT_READINGS_ERR_INVALID_ARG;
@@ -376,7 +319,8 @@ static int light_readings_capture_channel(AdcHalChannel channel, int32_t* code_o
 static int light_readings_capture_pwm_cycle(uint32_t period_index, LightReadingsSweepSample* sample,
                                             bool* saw_saturation) {
   // Step 1: Wait for the green illumination window and capture the direct reading.
-  GUARD(light_readings_wait_for_edge(&g_pwm_state.in1_rise, period_index, g_pwm_state.period_timeout_us));
+  GUARD(light_readings_wait_for_router_state(period_index, LedRouterState::LED_ROUTER_STATE_GREEN,
+                                             g_pwm_state.period_timeout_us));
 
   // Step 2: Honour the configured dwell period before sampling the illuminated photodiode.
   if (g_light_config.green_channel.dwell_us > 0u) {
@@ -384,21 +328,23 @@ static int light_readings_capture_pwm_cycle(uint32_t period_index, LightReadings
   }
 
   // Step 3: Capture the green-channel conversion and propagate saturation metadata.
-  GUARD(light_readings_capture_channel(g_light_config.green_channel.adc_channel, &sample->green_code,
-                                       &g_pwm_diagnostics.green_conversion_count, saw_saturation));
+  GUARD(light_readings_capture_channel_irq(g_light_config.green_channel.adc_channel, &sample->green_code,
+                                           &g_pwm_diagnostics.green_conversion_count, saw_saturation));
 
   // Step 4: Enter the drain window and sample both photodiodes for the dark reference.
-  GUARD(light_readings_wait_for_edge(&g_pwm_state.in2_rise, period_index, g_pwm_state.period_timeout_us));
+  GUARD(light_readings_wait_for_router_state(period_index, LedRouterState::LED_ROUTER_STATE_DRAIN,
+                                             g_pwm_state.period_timeout_us));
 
   // Step 5: Capture drain-state conversions for the green and blue channels.
-  GUARD(light_readings_capture_channel(g_light_config.green_channel.adc_channel, &sample->drain_green_code, NULL,
-                                       saw_saturation));
-  GUARD(light_readings_capture_channel(g_light_config.blue_channel.adc_channel, &sample->drain_blue_code, NULL,
-                                       saw_saturation));
+  GUARD(light_readings_capture_channel_irq(g_light_config.green_channel.adc_channel, &sample->drain_green_code, NULL,
+                                           saw_saturation));
+  GUARD(light_readings_capture_channel_irq(g_light_config.blue_channel.adc_channel, &sample->drain_blue_code, NULL,
+                                           saw_saturation));
   g_pwm_diagnostics.drain_read_count += 1u;
 
   // Step 6: Wait for the blue illumination window and capture the direct reading.
-  GUARD(light_readings_wait_for_edge(&g_pwm_state.in1_fall, period_index, g_pwm_state.period_timeout_us));
+  GUARD(light_readings_wait_for_router_state(period_index, LedRouterState::LED_ROUTER_STATE_BLUE,
+                                             g_pwm_state.period_timeout_us));
 
   // Step 7: Honour the blue-channel dwell before sampling the illuminated photodiode.
   if (g_light_config.blue_channel.dwell_us > 0u) {
@@ -406,8 +352,8 @@ static int light_readings_capture_pwm_cycle(uint32_t period_index, LightReadings
   }
 
   // Step 8: Capture the blue-channel conversion and propagate saturation metadata.
-  GUARD(light_readings_capture_channel(g_light_config.blue_channel.adc_channel, &sample->blue_code,
-                                       &g_pwm_diagnostics.blue_conversion_count, saw_saturation));
+  GUARD(light_readings_capture_channel_irq(g_light_config.blue_channel.adc_channel, &sample->blue_code,
+                                           &g_pwm_diagnostics.blue_conversion_count, saw_saturation));
 
   return LIGHT_READINGS_OK;
 }
@@ -699,87 +645,52 @@ int light_readings_pwm_sweep_n(uint32_t sweep_count, LightReadingsSweepCollectio
     return LIGHT_READINGS_ERR_PWM_NOT_RUNNING;
   }
 
-  int      return_code      = LIGHT_READINGS_OK;
-  bool     interrupts_armed = false;
-  bool     saw_saturation   = false;
-  uint32_t current_period   = 0u;
+  // Step 10: Prepare PWM observation bookkeeping so the ISR can publish period boundaries.
+  int return_code = light_readings_pwm_prepare_observation(pwm_instance);
+  if (return_code != LIGHT_READINGS_OK) {
+    return return_code;
+  }
 
-  // Step 10: Execute the PWM-driven sweep sequence, observing the already-running PWM playback.
-  do {
-    // Step 10a: Prime sweep bookkeeping and cache the PWM resources for ISR access.
-    g_pwm_state.sweep_active = true;
-    g_pwm_state.pwm_instance = pwm_instance;
-    g_pwm_state.pwm_irq      = (g_pwm_state.pwm_instance == NRF_PWM3) ? PWM3_IRQn : k_light_readings_invalid_pwm_irq;
-    g_pwm_state.in1_pin      = static_cast<uint8_t>(g_light_config.pwm_config.router_in1_pin);
-    g_pwm_state.in2_pin      = static_cast<uint8_t>(g_light_config.pwm_config.router_in2_pin);
-    g_pwm_state.period_timeout_us = g_light_config.pwm_config.period_timeout_us;
-    g_pwm_state.period_counter    = 0u;
-    g_pwm_state.in1_rise          = {};
-    g_pwm_state.in1_fall          = {};
-    g_pwm_state.in2_rise          = {};
+  // Step 11: Enable period tracking now that the PWM metadata has been latched.
+  light_readings_pwm_enable_period_tracking();
 
-    // Step 10b: Enable period tracking so the ISR records each PWM cycle boundary.
-    light_readings_pwm_enable_period_tracking();
+  // Step 12: Wait for the next completed period so sampling starts on a clean boundary.
+  uint32_t current_period = g_pwm_state.period_counter;
+  if (current_period > 0u) {
+    // Reset count if interrupt occured in between setup and here
+    current_period = 0u;
+  }
 
-    // Step 10c: Attach Arduino change handlers to observe router edges during playback.
-    return_code = light_readings_pwm_attach_pin_interrupts();
-    if (return_code != LIGHT_READINGS_OK) {
-      break;
-    }
-    interrupts_armed = true;
+  return_code = light_readings_wait_for_next_period(current_period, g_pwm_state.period_timeout_us, &current_period);
+  if (return_code != LIGHT_READINGS_OK) {
+    light_readings_pwm_clear_state();
+    return return_code;
+  }
 
-    // Step 10d: Wait for the next completed period so sampling aligns with a fresh cycle.
-    current_period = g_pwm_state.period_counter;
-    if (current_period > 0u) {
-      // Step 10d-a: Back up one period so the wait helper always observes a new completion.
-      current_period -= 1u;
-    }
-    return_code = light_readings_wait_for_next_period(current_period, g_pwm_state.period_timeout_us, &current_period);
+  bool saw_saturation = false;
+
+  // Step 13: Capture the requested PWM-synchronised sweeps.
+  for (uint32_t index = 0u; index < sweep_count; ++index) {
+    LightReadingsSweepSample& sample = results_out->sweeps[index];
+    return_code                      = light_readings_capture_pwm_cycle(current_period, &sample, &saw_saturation);
     if (return_code != LIGHT_READINGS_OK) {
       break;
     }
 
-    // Step 10e: Capture the requested PWM-synchronised sweeps.
-    for (uint32_t index = 0u; index < sweep_count; ++index) {
-      LightReadingsSweepSample& sample = results_out->sweeps[index];
-      return_code                      = light_readings_capture_pwm_cycle(current_period, &sample, &saw_saturation);
+    results_out->sweep_count              = index + 1u;
+    g_pwm_diagnostics.sample_period_count = results_out->sweep_count;
+
+    // Wait for next period edge
+    if ((index + 1u) < sweep_count) {
+      return_code = light_readings_wait_for_next_period(current_period, g_pwm_state.period_timeout_us, &current_period);
       if (return_code != LIGHT_READINGS_OK) {
         break;
       }
-
-      results_out->sweep_count       = index + 1u;
-      g_pwm_diagnostics.period_count = results_out->sweep_count;
-
-      if ((index + 1u) < sweep_count) {
-        return_code =
-            light_readings_wait_for_next_period(current_period, g_pwm_state.period_timeout_us, &current_period);
-        if (return_code != LIGHT_READINGS_OK) {
-          break;
-        }
-      }
     }
-  } while (false);
-
-  // Step 11: Tear down hook state before exiting the sweep helper.
-  g_pwm_state.sweep_active = false;
-
-  if (interrupts_armed) {
-    light_readings_pwm_detach_pin_interrupts();
   }
 
-  light_readings_pwm_disable_period_tracking();
-
-  g_pwm_state.pwm_instance      = nullptr;
-  g_pwm_state.pwm_irq           = k_light_readings_invalid_pwm_irq;
-  g_pwm_state.in1_pin           = 0u;
-  g_pwm_state.in2_pin           = 0u;
-  g_pwm_state.period_timeout_us = 0u;
-  g_pwm_state.period_counter    = 0u;
-  g_pwm_state.in1_rise          = {};
-  g_pwm_state.in1_fall          = {};
-  g_pwm_state.in2_rise          = {};
-
   g_last_sweep_detected_saturation = saw_saturation;
+  light_readings_pwm_clear_state();
 
   if (return_code != LIGHT_READINGS_OK) {
     return return_code;
@@ -789,20 +700,9 @@ int light_readings_pwm_sweep_n(uint32_t sweep_count, LightReadingsSweepCollectio
 }
 
 void light_readings_pwm_reset_for_test(void) {
-  g_pwm_state.sweep_active = false;
-  light_readings_pwm_detach_pin_interrupts();
-  light_readings_pwm_disable_period_tracking();
-  g_pwm_state.pwm_instance      = nullptr;
-  g_pwm_state.pwm_irq           = k_light_readings_invalid_pwm_irq;
-  g_pwm_state.in1_pin           = 0u;
-  g_pwm_state.in2_pin           = 0u;
-  g_pwm_state.period_timeout_us = 0u;
-  g_pwm_state.period_counter    = 0u;
-  g_pwm_state.in1_rise          = {};
-  g_pwm_state.in1_fall          = {};
-  g_pwm_state.in2_rise          = {};
-  g_pwm_diagnostics             = {};
-  g_force_pwm_timeout_for_test  = false;
+  light_readings_pwm_clear_state();
+  g_pwm_diagnostics            = {};
+  g_force_pwm_timeout_for_test = false;
 }
 
 void light_readings_pwm_get_diagnostics(LightReadingsPwmDiagnostics* diagnostics_out) {

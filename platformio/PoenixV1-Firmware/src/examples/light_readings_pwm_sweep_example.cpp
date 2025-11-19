@@ -85,6 +85,15 @@ void loop() {
   print_summary_row("blue", g_sweep_stats.blue);
   print_summary_row("green", g_sweep_stats.green);
 
+  LightReadingsPwmDiagnostics diagnostics = {};
+  light_readings_pwm_get_diagnostics(&diagnostics);
+  Serial.print(F("PWM diagnostics: periods="));
+  Serial.print(diagnostics.sample_period_count);
+  Serial.print(F(", drain_reads="));
+  Serial.print(diagnostics.drain_read_count);
+  Serial.print(F(", missed_drdy="));
+  Serial.println(diagnostics.missed_drdy_count);
+
   if (light_readings_last_sweep_detected_saturation()) {
     Serial.println(F("Warning: saturation detected during last sweep."));
   }

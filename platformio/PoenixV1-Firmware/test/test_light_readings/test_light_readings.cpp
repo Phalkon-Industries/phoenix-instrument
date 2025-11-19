@@ -482,7 +482,7 @@ static void test_light_readings_pwm_sweep_populates_samples(void) {
   // Step 3: Confirm diagnostics observe the expected number of conversions and drain reads.
   LightReadingsPwmDiagnostics diagnostics = {};
   light_readings_pwm_get_diagnostics(&diagnostics);
-  TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.period_count);
+  TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.sample_period_count);
   TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.green_conversion_count);
   TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.blue_conversion_count);
   TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.drain_read_count);

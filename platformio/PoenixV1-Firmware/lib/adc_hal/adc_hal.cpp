@@ -7,6 +7,7 @@ static void    adc_hal_clear_stale_drdy(void);
 static bool    adc_hal_wait_for_irq_asserted(uint32_t timeout_us);
 static bool    adc_hal_is_irq_asserted(void);
 static uint8_t adc_hal_payload_length_from_format(mcp356x_data_format format);
+static uint8_t adc_hal_get_cached_payload_length(void);
 static int     adc_hal_decode_sample(const uint8_t* data_bytes, mcp356x_data_format format, int32_t* sample_out);
 static int     adc_hal_read_sample_via_driver(int32_t* sample_out, uint8_t* status_out);
 
@@ -24,6 +25,9 @@ static adc_hal_irq_pin_reader_t g_irq_pin_reader            = NULL;
 static int32_t                  g_staged_irq_sample         = 0;
 static uint8_t                  g_staged_irq_status         = 0u;
 static bool                     g_has_staged_irq_sample     = false;
+static mcp356x_data_format      g_cached_data_format        = mcp356x_data_format::data24;
+static uint8_t                  g_cached_payload_length     = 3u;
+static bool                     g_payload_length_valid      = false;
 
 int adc_hal_initialize(const AdcHalConfig* config) {
   // Step 1: Reject calls that forget required configuration (SPI pins and IRQ line).
@@ -120,7 +124,10 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
   }
 
   // Step 5: Clear any stale DRDY condition so the next edge corresponds to this conversion.
-  adc_hal_clear_stale_drdy();
+  // Might not be strictly necessary since starting new conversion should reset the IRQ state.
+  if (adc_hal_is_irq_asserted()) {
+    adc_hal_clear_stale_drdy();
+  }
 
   // Step 6: Launch the conversion so DRDY asserts once fresh data is ready.
   return_code = mcp356x_start_conversion(NULL);
@@ -142,14 +149,11 @@ int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t
     g_has_staged_irq_sample = false;
   }
   else {
-    return_code = adc_hal_read_sample_via_driver(&sample_code, &status_byte);
-    if (return_code != MCP356X_OK) {
-      return return_code;
-    }
+    GUARD(adc_hal_read_sample_via_driver(&sample_code, &status_byte));
   }
 
   *code_out = sample_code;
-  (void) status_byte;
+  (void) status_byte;  // Keep compiler quiet
   return ADC_HAL_OK;
 }
 
@@ -233,8 +237,7 @@ void adc_hal_test_reset_irq_state(void) {
 // Helper: read and discard any pending payload so the next DRDY edge reflects a fresh conversion.
 static void adc_hal_clear_stale_drdy(void) {
   // Step 1: Determine how many bytes to read based on the cached data format.
-  const mcp356x_data_format format       = mcp356x_get_cached_data_format();
-  const uint8_t             payload_size = adc_hal_payload_length_from_format(format);
+  const uint8_t payload_size = adc_hal_get_cached_payload_length();
   if (payload_size == 0u) {
     return;
   }
@@ -298,33 +301,44 @@ static uint8_t adc_hal_payload_length_from_format(mcp356x_data_format format) {
   }
 }
 
+// Helper: cache the payload length so repeated calls avoid re-running the format map.
+static uint8_t adc_hal_get_cached_payload_length(void) {
+  const mcp356x_data_format format = mcp356x_get_cached_data_format();
+  if (!g_payload_length_valid || (format != g_cached_data_format)) {
+    g_cached_data_format    = format;
+    g_cached_payload_length = adc_hal_payload_length_from_format(format);
+    g_payload_length_valid  = true;
+  }
+
+  return g_cached_payload_length;
+}
+
 // Helper: translate the MCP356x wire-format payload into a signed 32-bit value.
 static int adc_hal_decode_sample(const uint8_t* data_bytes, mcp356x_data_format format, int32_t* sample_out) {
-  if ((data_bytes == NULL) || (sample_out == NULL)) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(data_bytes);
+  GUARD_NONNULL(sample_out);
 
   // Step 1: Decode the raw ADC payload into a signed 32-bit value that matches the requested format.
   int32_t decoded_value = 0;
 
   switch (format) {
     case mcp356x_data_format::data24: {
-      decoded_value = (int32_t) ((data_bytes[0] << 16) | (data_bytes[1] << 8) | data_bytes[2]);
+      decoded_value = (int32_t)((data_bytes[0] << 16) | (data_bytes[1] << 8) | data_bytes[2]);
       if ((decoded_value & 0x00800000L) != 0) {
         decoded_value |= 0xFF000000L;
       }
       break;
     }
     case mcp356x_data_format::data32_left: {
-      const int32_t raw_word = (int32_t) (((uint32_t) data_bytes[0] << 24) | ((uint32_t) data_bytes[1] << 16) |
-                                          ((uint32_t) data_bytes[2] << 8) | data_bytes[3]);
+      const int32_t raw_word = (int32_t)(((uint32_t) data_bytes[0] << 24) | ((uint32_t) data_bytes[1] << 16) |
+                                         ((uint32_t) data_bytes[2] << 8) | data_bytes[3]);
       decoded_value          = raw_word >> 8;
       break;
     }
     case mcp356x_data_format::data32_signed:
     case mcp356x_data_format::data32_signed_chid: {
-      decoded_value = (int32_t) (((uint32_t) data_bytes[0] << 24) | ((uint32_t) data_bytes[1] << 16) |
-                                 ((uint32_t) data_bytes[2] << 8) | data_bytes[3]);
+      decoded_value = (int32_t)(((uint32_t) data_bytes[0] << 24) | ((uint32_t) data_bytes[1] << 16) |
+                                ((uint32_t) data_bytes[2] << 8) | data_bytes[3]);
       break;
     }
     default:
@@ -337,13 +351,11 @@ static int adc_hal_decode_sample(const uint8_t* data_bytes, mcp356x_data_format 
 
 // Helper: request the ADC data register through the driver and convert it into a signed sample.
 static int adc_hal_read_sample_via_driver(int32_t* sample_out, uint8_t* status_out) {
-  if (sample_out == NULL) {
-    return MCP356X_ERR_INVALID_ARG;
-  }
+  GUARD_NONNULL(sample_out);
 
   // Step 1: Size the read operation using the cached data format.
   const mcp356x_data_format format       = mcp356x_get_cached_data_format();
-  const uint8_t             payload_size = adc_hal_payload_length_from_format(format);
+  const uint8_t             payload_size = adc_hal_get_cached_payload_length();
   if (payload_size == 0u) {
     return MCP356X_ERR_UNSUPPORTED;
   }

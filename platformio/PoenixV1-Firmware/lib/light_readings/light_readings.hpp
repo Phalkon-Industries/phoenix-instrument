@@ -15,8 +15,7 @@
 #define LIGHT_READINGS_ERR_PWM_DISABLED (PHX_ERR_MODULE_BASE - 2)
 #define LIGHT_READINGS_ERR_PWM_NOT_CONFIGURED (PHX_ERR_MODULE_BASE - 3)
 #define LIGHT_READINGS_ERR_PWM_UNSUPPORTED_INSTANCE (PHX_ERR_MODULE_BASE - 4)
-#define LIGHT_READINGS_ERR_PWM_INTERRUPTS_UNAVAILABLE (PHX_ERR_MODULE_BASE - 5)
-#define LIGHT_READINGS_ERR_PWM_NOT_RUNNING (PHX_ERR_MODULE_BASE - 6)
+#define LIGHT_READINGS_ERR_PWM_NOT_RUNNING (PHX_ERR_MODULE_BASE - 5)
 #define LIGHT_READINGS_ERR_NOT_IMPLEMENTED PHX_ERR_NOT_IMPLEMENTED
 #define LIGHT_READINGS_ERR_TIMEOUT PHX_ERR_TIMEOUT
 
@@ -130,7 +129,7 @@ struct LightReadingsSweepStats {
  * @brief Diagnostic counters captured while PWM-driven sweeps execute.
  */
 struct LightReadingsPwmDiagnostics {
-  uint32_t period_count;           /**< Number of PWM period completions observed. */
+  uint32_t sample_period_count;    /**< Number of PWM period completions observed. */
   uint32_t green_conversion_count; /**< Successful green-channel conversion starts. */
   uint32_t blue_conversion_count;  /**< Successful blue-channel conversion starts. */
   uint32_t drain_read_count;       /**< Drain-state dual-channel measurements captured. */
@@ -215,7 +214,6 @@ void light_readings_pwm_force_timeout_for_test(bool enabled);
  *         LIGHT_READINGS_ERR_PWM_NOT_CONFIGURED when required PWM metadata is missing or invalid.
  *         LIGHT_READINGS_ERR_PWM_UNSUPPORTED_INSTANCE when the cached instance is not NRF_PWM3.
  *         LIGHT_READINGS_ERR_PWM_NOT_RUNNING when the PWM instance is idle.
- *         LIGHT_READINGS_ERR_PWM_INTERRUPTS_UNAVAILABLE when router pins lack interrupt capability.
  *         LIGHT_READINGS_ERR_TIMEOUT when period tracking or ADC capture times out.
  */
 int light_readings_pwm_sweep_n(uint32_t sweep_count, LightReadingsSweepCollection* results_out);
