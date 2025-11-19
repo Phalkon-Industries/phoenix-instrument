@@ -14,13 +14,13 @@ const LedRouterConfig g_device_led_router_config = {
 
 const AdcHalConfig g_device_adc_hal_config = {
     PIN_ADC_CS,
-    500000UL,
+    1000000UL,
     PIN_ADC_IRQ,
 };
 
 mcp356x_settings g_device_mcp356x_settings = {
     mcp356x_gain::gain_x1,
-    mcp356x_osr::osr_4096,
+    mcp356x_osr::osr_32,
     mcp356x_prescaler::mclk_div1,
     mcp356x_conversion_mode::oneshot_shutdown,
     mcp356x_data_format::data24,
