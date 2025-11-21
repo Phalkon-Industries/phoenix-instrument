@@ -264,6 +264,101 @@ def test_load_command_plan_accepts_plain_cold_sweep(tmp_path: Path) -> None:
     assert cold_command.parameters == {}
 
 
+def test_load_command_plan_normalizes_osr_latency(tmp_path: Path) -> None:
+    plan_path = tmp_path / "osr_latency.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "osr_latency",
+                        "parameters": {
+                            "warmup_count": 2,
+                            "sample_count": 16,
+                            "include_blocking": False,
+                            "include_irq": True,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 1
+    latency_command = commands[0]
+    assert latency_command.name == "osr_latency"
+    assert latency_command.parameters == {
+        "warmup_count": 2,
+        "sample_count": 16,
+        "include_blocking": False,
+        "include_irq": True,
+    }
+
+
+def test_load_command_plan_retains_multiple_osr_latency_runs(tmp_path: Path) -> None:
+    plan_path = tmp_path / "osr_latency_multi.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "osr_latency",
+                        "parameters": {"sample_count": 8},
+                    },
+                    {
+                        "command": "osr_latency",
+                        "parameters": {"sample_count": 16},
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    commands = load_command_plan(plan_path)
+
+    assert len(commands) == 2
+    first, second = commands
+    assert first.name == "osr_latency"
+    assert second.name == "osr_latency"
+    assert first.parameters == {"sample_count": 8}
+    assert second.parameters == {"sample_count": 16}
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"sample_count": 0},
+        {"warmup_count": -1},
+        {"include_blocking": False, "include_irq": False},
+        {"sample_count": 8, "include_blocking": "yes"},
+    ],
+)
+def test_load_command_plan_rejects_invalid_osr_latency(
+    parameters: dict[str, object], tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "osr_latency_invalid.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {
+                        "command": "osr_latency",
+                        "parameters": parameters,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        load_command_plan(plan_path)
+
+
 @pytest.mark.parametrize(
     "parameters",
     [

@@ -208,6 +208,14 @@ enum class mcp356x_data_format : uint8_t {
   data32_signed_chid = 0b11,
 };
 
+// Sampling mode used when estimating conversion delays for the Phoenix
+// benchmarking suite. Blocking corresponds to the polling path used by
+// mcp356x_read_single_ended_channel while irq samples rely on the ADC HAL ISR.
+enum class mcp356x_sampling_mode : uint8_t {
+  blocking = 0u,
+  irq      = 1u,
+};
+
 // IRQ mode encodings map to IRQ_MODE[1:0] and select between IRQ/MDAT output
 // behaviour and inactive-state polarity.
 enum class mcp356x_irq_mode : uint8_t {
@@ -360,7 +368,12 @@ int mcp356x_set_conversion_config(mcp356x_conversion_mode mode, mcp356x_data_for
  */
 int mcp356x_get_conversion_config(mcp356x_conversion_mode* out_mode, mcp356x_data_format* out_format);
 
-mcp356x_data_format mcp356x_test_cached_data_format(void);
+/**
+ * @brief Return the most recently configured MCP356x data format.
+ *
+ * Exposed for both production code (to size data reads) and tests (to assert register programming).
+ */
+mcp356x_data_format mcp356x_get_cached_data_format(void);
 uint8_t             mcp356x_test_last_data_length(void);
 void                mcp356x_test_reset_diagnostics(void);
 uint32_t            mcp356x_test_last_raw_word(void);
@@ -472,12 +485,32 @@ int mcp356x_full_reset(uint8_t* status_byte);
  *
  * Wrapper performing: reset DRDY state, select the MUX, trigger a conversion,
  * poll ADCDATA until DR_STATUS indicates fresh data, sign-extend the 24-bit
- * result, and optionally return MCP356X_ERR_TIMEOUT if @p timeout_ms elapses.
+ * result, and optionally return MCP356X_ERR_TIMEOUT if @p timeout_us elapses.
+ *
+ * Note: This API uses microsecond-resolution timeouts. Callers that previously
+ * supplied millisecond budgets must convert to microseconds before invoking
+ * this helper (e.g. 200 ms -> 200000 us).
  *
  * @param channel_index Logical channel (0-7) to sample single-ended.
- * @param timeout_ms    Maximum time in milliseconds to wait for DRDY (0 => immediate timeout).
+ * @param timeout_us    Maximum time in microseconds to wait for DRDY (0 => immediate timeout).
  * @param result        Pointer receiving the signed 24-bit conversion result.
  * @return MCP356X_OK on success, MCP356X_ERR_TIMEOUT on timeout, or a negative error from underlying calls.
  */
-int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result);
+int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_us, int32_t* result);
+
+/**
+ * @brief Estimate the conversion latency for a given OSR and sampling mode.
+ *
+ * The helper surfaces empirically captured timings gathered during Step 6 of
+ * the OSR latency benchmark (Stormcloud v1.0.0, AMCLK 4.9152 MHz). Higher-level
+ * modules can use these worst-case values to schedule measurement loops without
+ * re-running the benchmark; see docs/phoenix-benchmark/sample_plans/
+ * osr_latency_multiple_runs.json and python/benchmark_runs/report.md for the
+ * source transcripts.
+ *
+ * @param osr  Oversampling ratio applied to the ADC conversion.
+ * @param mode Sampling mode distinguishing between blocking and IRQ paths.
+ * @return Estimated conversion duration in microseconds.
+ */
+uint32_t mcp356x_estimate_conversion_delay(mcp356x_osr osr, mcp356x_sampling_mode mode);
 #endif  // MCP356X_HPP

@@ -691,19 +691,24 @@ int mcp356x_full_reset(uint8_t* status_byte) {
   return return_code;
 }
 
-int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms, int32_t* result) {
+int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_us, int32_t* result) {
   // Step 1: Ensure we have a destination for the conversion result.
   GUARD_NONNULL(result);
   // Step 2: Require driver initialisation.
   GUARD_INITIALIZED(g_initialized);
 
-  // Step 3: Program the mux to the requested single-ended channel.
+  // Step 3: Reject zero-microsecond budgets so callers see an immediate timeout when no wait is allowed.
+  if (timeout_us == 0u) {
+    return MCP356X_ERR_TIMEOUT;
+  }
+
+  // Step 4: Program the mux to the requested single-ended channel.
   int return_code = mcp356x_select_single_ended_channel(channel_index);
   if (return_code != MCP356X_OK) {
     return return_code;
   }
 
-  // Step 4: Kick off a conversion.
+  // Step 5: Kick off a conversion.
   return_code = mcp356x_start_conversion(NULL);
   if (return_code != MCP356X_OK) {
     return return_code;
@@ -711,13 +716,16 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
 
   const uint8_t payload_length = mcp356x_data_length_from_format(g_cached_data_format);
   uint8_t       adc_bytes[4]   = {0};
-  uint32_t      elapsed_ms     = 0u;
+  uint32_t      elapsed_us     = 0u;  // use microsecond resolution to reduce blocking floor
   bool          data_ready     = false;
   g_last_data_length           = 0u;
   g_last_raw_word              = 0u;
 
-  // Step 5: Poll the ADC result register until data is ready or the timeout expires.
+  // Step 6: Poll the ADC result register until data is ready or the timeout expires.
   while (!data_ready) {
+    // Short sleep to lower the blocking-path floor while still yielding CPU.
+    delayMicroseconds(100);
+    elapsed_us += 100u;
     uint8_t read_status = 0xFFu;
     return_code         = mcp356x_read_register(MCP356X_REG_ADCDATA, adc_bytes, payload_length, &read_status);
     if (return_code != MCP356X_OK) {
@@ -730,14 +738,13 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
       break;
     }
 
-    if (elapsed_ms >= timeout_ms) {
+    // Enforce microsecond-timeout budget and use short sleeps to lower blocking floor.
+    if ((timeout_us > 0u) && (elapsed_us >= timeout_us)) {
       return MCP356X_ERR_TIMEOUT;
     }
-
-    mcp356x_delay_ms(1u);
-    ++elapsed_ms;
   }
 
+  // Step 7: Decode the raw ADC payload according to the currently cached data format.
   uint32_t raw_word  = 0u;
   int32_t  raw_value = 0;
 
@@ -775,12 +782,12 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_ms
 
   g_last_raw_word = raw_word;
 
-  // Step 7: Publish the conversion outcome to the caller.
+  // Step 8: Publish the conversion outcome to the caller.
   *result = raw_value;
   return MCP356X_OK;
 }
 
-mcp356x_data_format mcp356x_test_cached_data_format(void) {
+mcp356x_data_format mcp356x_get_cached_data_format(void) {
   return g_cached_data_format;
 }
 
@@ -795,4 +802,40 @@ void mcp356x_test_reset_diagnostics(void) {
 
 uint32_t mcp356x_test_last_raw_word(void) {
   return g_last_raw_word;
+}
+
+uint32_t mcp356x_estimate_conversion_delay(mcp356x_osr osr, mcp356x_sampling_mode mode) {
+  struct ConversionLatencyEntry {
+    mcp356x_osr osr;
+    float       blocking_latency_us;
+    float       irq_latency_us;
+  };
+
+  // Step 1: Bound conversion delays with the latest on-device measurements captured on Stormcloud v1.0.0
+  // (AMCLK 4.9152 MHz). Provenance: docs/phoenix-benchmark/sample_plans/osr_latency_multiple_runs.json and
+  // python/benchmark_runs/report.md, updated with the 2025-11-19 lab sweep provided by the hardware team.
+  static constexpr ConversionLatencyEntry k_conversion_latency_table[] = {
+      {mcp356x_osr::osr_32, 86.32f, 86.32f},          {mcp356x_osr::osr_64, 170.55f, 170.55f},
+      {mcp356x_osr::osr_128, 338.79f, 338.79f},       {mcp356x_osr::osr_256, 675.43f, 675.43f},
+      {mcp356x_osr::osr_512, 1348.95f, 1348.95f},     {mcp356x_osr::osr_1024, 1797.65f, 1797.65f},
+      {mcp356x_osr::osr_2048, 2696.18f, 2696.18f},    {mcp356x_osr::osr_4096, 4491.84f, 4491.84f},
+      {mcp356x_osr::osr_8192, 8231.20f, 8231.20f},    {mcp356x_osr::osr_16384, 15417.49f, 15417.49f},
+      {mcp356x_osr::osr_20480, 19012.80f, 19012.80f}, {mcp356x_osr::osr_24576, 22599.34f, 22599.34f},
+      {mcp356x_osr::osr_40960, 37113.89f, 37113.89f}, {mcp356x_osr::osr_49152, 43000.34f, 43000.34f},
+      {mcp356x_osr::osr_81920, 72725.53f, 72725.53f}, {mcp356x_osr::osr_98304, 87087.29f, 87087.29f},
+  };
+
+  for (size_t index = 0u; index < (sizeof(k_conversion_latency_table) / sizeof(k_conversion_latency_table[0]));
+       ++index) {
+    if (k_conversion_latency_table[index].osr == osr) {
+      // Step 2: Return the measured latency matching the requested sampling path (rounded to whole microseconds).
+      const float latency_us = (mode == mcp356x_sampling_mode::blocking) ?
+                                   k_conversion_latency_table[index].blocking_latency_us :
+                                   k_conversion_latency_table[index].irq_latency_us;
+      return static_cast<uint32_t>(latency_us + 0.5f);
+    }
+  }
+
+  // Step 3: Guardrail for unexpected OSR enums; zero signals a missing table entry.
+  return 0u;
 }

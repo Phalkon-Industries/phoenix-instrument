@@ -40,6 +40,14 @@ static void bring_light_readings_online(void) {
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&g_device_light_readings_config));
 }
 
+static void bring_light_readings_online_with_config(const LightReadingsConfig* config) {
+  // Step 1: Bring the hardware power domains online using the shared setup helper.
+  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_prepare_power_domains_for_test());
+
+  // Step 2: Initialise the light readings helper with the provided configuration override.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(config));
+}
+
 void setUp(void) {
   // Step 1: Reset state so each test exercises a clean instance of every helper.
   power_control_reset_for_test();
@@ -167,6 +175,60 @@ static void test_light_readings_sweep_n_rejects_null_collection(void) {
 
   // Step 2: Confirm passing a null buffer results in an invalid-argument error.
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_INVALID_ARG, light_readings_sweep_n(1u, NULL));
+}
+
+static void test_light_readings_pwm_sweep_requires_running_pwm(void) {
+  // Step 1: Bring the helper online without starting PWM playback.
+  bring_light_readings_online();
+  light_readings_pwm_reset_for_test();
+
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+
+  // Step 2: Expect the helper to reject a sweep request while PWM is idle.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_PWM_NOT_RUNNING, light_readings_pwm_sweep_n(1u, &collection));
+}
+
+static void test_light_readings_pwm_sweep_rejects_disabled_pwm(void) {
+  // Step 1: Bring the helper online with PWM support disabled.
+  LightReadingsConfig config    = g_device_light_readings_config;
+  config.pwm_config.pwm_enabled = false;
+
+  bring_light_readings_online_with_config(&config);
+
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+
+  // Step 2: Expect the helper to surface a PWM-disabled error.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_PWM_DISABLED, light_readings_pwm_sweep_n(1u, &collection));
+}
+
+static void test_light_readings_pwm_sweep_rejects_invalid_pwm_configuration(void) {
+  // Step 1: Bring the helper online with an invalid PWM configuration.
+  LightReadingsConfig config          = g_device_light_readings_config;
+  config.pwm_config.minimum_period_us = 0u;
+
+  bring_light_readings_online_with_config(&config);
+
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+
+  // Step 2: Expect the helper to surface a PWM-configuration error.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_PWM_NOT_CONFIGURED, light_readings_pwm_sweep_n(1u, &collection));
+}
+
+static void test_light_readings_pwm_sweep_rejects_unsupported_instance(void) {
+  // Step 1: Bring the helper online with an unsupported PWM instance selected.
+  LightReadingsConfig config     = g_device_light_readings_config;
+  config.pwm_config.pwm_instance = NRF_PWM0;
+
+  bring_light_readings_online_with_config(&config);
+
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+
+  // Step 2: Expect the helper to surface an unsupported-instance error.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_PWM_UNSUPPORTED_INSTANCE, light_readings_pwm_sweep_n(1u, &collection));
 }
 
 static void test_light_readings_sweep_n_rejects_excess_count(void) {
@@ -370,6 +432,87 @@ static void test_light_readings_compute_sweep_stats_reports_negative_drift(void)
   TEST_ASSERT_FLOAT_WITHIN(0.0001f, -1000.0f, static_cast<float>(stats.green.drift_slope));
 }
 
+static void test_light_readings_pwm_sweep_requires_initialization(void) {
+  // Step 1: Attempt to run a PWM sweep before initialisation and expect a guard failure.
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_pwm_sweep_n(1u, &collection));
+}
+
+static void test_light_readings_pwm_sweep_rejects_null_collection(void) {
+  // Step 1: Bring the helper online so argument validation can run.
+  bring_light_readings_online();
+
+  // Step 2: Confirm a null results pointer is rejected.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_INVALID_ARG, light_readings_pwm_sweep_n(1u, NULL));
+}
+
+static void test_light_readings_pwm_sweep_populates_samples(void) {
+  // Step 1: Prepare the helper and diagnostics.
+  bring_light_readings_online();
+  light_readings_pwm_reset_for_test();
+
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+
+  // Step 2: Request multiple sweeps and expect the helper to populate drain/colour fields.
+  const uint32_t sweep_request = 3u;
+  for (uint32_t index = 0u; index < sweep_request; ++index) {
+    collection.sweeps[index] = {
+        .drain_blue_code  = INT32_MAX,
+        .drain_green_code = INT32_MAX,
+        .blue_code        = INT32_MAX,
+        .green_code       = INT32_MAX,
+    };
+  }
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK,
+                        led_router_pwm_start(g_device_light_readings_config.pwm_config.minimum_period_us));
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_pwm_sweep_n(sweep_request, &collection));
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_stop());
+  TEST_ASSERT_EQUAL_UINT32(sweep_request, collection.sweep_count);
+
+  for (uint32_t index = 0u; index < collection.sweep_count; ++index) {
+    const LightReadingsSweepSample& sample = collection.sweeps[index];
+    TEST_ASSERT_TRUE(sample.drain_blue_code != INT32_MAX);
+    TEST_ASSERT_TRUE(sample.drain_green_code != INT32_MAX);
+    TEST_ASSERT_TRUE(sample.blue_code != INT32_MAX);
+    TEST_ASSERT_TRUE(sample.green_code != INT32_MAX);
+  }
+
+  // Step 3: Confirm diagnostics observe the expected number of conversions and drain reads.
+  LightReadingsPwmDiagnostics diagnostics = {};
+  light_readings_pwm_get_diagnostics(&diagnostics);
+  TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.sample_period_count);
+  TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.green_conversion_count);
+  TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.blue_conversion_count);
+  TEST_ASSERT_EQUAL_UINT32(sweep_request, diagnostics.drain_read_count);
+  TEST_ASSERT_EQUAL_UINT32(0u, diagnostics.missed_drdy_count);
+}
+
+static void test_light_readings_pwm_sweep_reports_drdy_faults(void) {
+  // Step 1: Bring the helper online to drive a PWM sweep.
+  bring_light_readings_online();
+  light_readings_pwm_reset_for_test();
+
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+
+  // Step 2: Attempt a sweep configured to trigger a DRDY timeout and ensure the error bubbles up.
+  const uint32_t sweep_request = 1u;
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK,
+                        led_router_pwm_start(g_device_light_readings_config.pwm_config.minimum_period_us));
+  light_readings_pwm_force_timeout_for_test(true);
+  TEST_ASSERT_EQUAL_INT_MESSAGE(LIGHT_READINGS_ERR_TIMEOUT, light_readings_pwm_sweep_n(sweep_request, &collection),
+                                "Expected DRDY watchdog to surface a timeout error");
+  light_readings_pwm_force_timeout_for_test(false);
+  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_stop());
+
+  // Step 3: Confirm diagnostics report the missed conversion.
+  LightReadingsPwmDiagnostics diagnostics = {};
+  light_readings_pwm_get_diagnostics(&diagnostics);
+  TEST_ASSERT_EQUAL_UINT32(1u, diagnostics.missed_drdy_count);
+}
+
 static void test_light_readings_modify_settings_requires_initialization(void) {
   // Step 1: Attempt to modify settings prior to initialisation and expect a guard failure.
   const LightReadingsRuntimeSettings overrides = {
@@ -446,6 +589,10 @@ void setup() {
   RUN_TEST(test_light_readings_sweep_returns_reasonable_codes);
   RUN_TEST(test_light_readings_sweep_n_requires_initialization);
   RUN_TEST(test_light_readings_sweep_n_rejects_null_collection);
+  RUN_TEST(test_light_readings_pwm_sweep_requires_running_pwm);
+  RUN_TEST(test_light_readings_pwm_sweep_rejects_disabled_pwm);
+  RUN_TEST(test_light_readings_pwm_sweep_rejects_invalid_pwm_configuration);
+  RUN_TEST(test_light_readings_pwm_sweep_rejects_unsupported_instance);
   RUN_TEST(test_light_readings_sweep_n_rejects_excess_count);
   RUN_TEST(test_light_readings_sweep_n_populates_requested_sweeps);
   RUN_TEST(test_light_readings_sweep_n_handles_max_capacity);
@@ -460,6 +607,10 @@ void setup() {
   RUN_TEST(test_light_readings_shutdown_requires_initialization);
   RUN_TEST(test_light_readings_shutdown_clears_module_state);
   RUN_TEST(test_light_readings_reset_for_test_clears_initialization);
+  RUN_TEST(test_light_readings_pwm_sweep_requires_initialization);
+  RUN_TEST(test_light_readings_pwm_sweep_rejects_null_collection);
+  RUN_TEST(test_light_readings_pwm_sweep_populates_samples);
+  RUN_TEST(test_light_readings_pwm_sweep_reports_drdy_faults);
   // Step 3: Finalise Unity so loop() can idle once tests complete.
   UNITY_END();
 }

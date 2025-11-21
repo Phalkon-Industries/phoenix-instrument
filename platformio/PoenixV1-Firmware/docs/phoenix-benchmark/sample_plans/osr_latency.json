@@ -1,0 +1,16 @@
+{
+    "commands": [
+        {
+            "command": "osr_latency"
+        },
+        {
+            "command": "osr_latency",
+            "parameters": {
+                "warmup_count": 2,
+                "sample_count": 16,
+                "include_blocking": true,
+                "include_irq": true
+            }
+        }
+    ]
+}

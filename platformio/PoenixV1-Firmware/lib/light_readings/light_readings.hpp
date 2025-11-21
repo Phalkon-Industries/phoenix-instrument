@@ -12,7 +12,12 @@
 #define LIGHT_READINGS_ERR_INVALID_ARG PHX_ERR_INVALID_ARG
 #define LIGHT_READINGS_ERR_NOT_INITIALIZED PHX_ERR_NOT_INITIALIZED
 #define LIGHT_READINGS_ERR_SWEEP_CAPACITY_EXCEEDED (PHX_ERR_MODULE_BASE - 1)
+#define LIGHT_READINGS_ERR_PWM_DISABLED (PHX_ERR_MODULE_BASE - 2)
+#define LIGHT_READINGS_ERR_PWM_NOT_CONFIGURED (PHX_ERR_MODULE_BASE - 3)
+#define LIGHT_READINGS_ERR_PWM_UNSUPPORTED_INSTANCE (PHX_ERR_MODULE_BASE - 4)
+#define LIGHT_READINGS_ERR_PWM_NOT_RUNNING (PHX_ERR_MODULE_BASE - 5)
 #define LIGHT_READINGS_ERR_NOT_IMPLEMENTED PHX_ERR_NOT_IMPLEMENTED
+#define LIGHT_READINGS_ERR_TIMEOUT PHX_ERR_TIMEOUT
 
 // Default sweep capacity used when callers do not provide an override at build time.
 #ifndef LIGHT_READINGS_MAX_SWEEP_COUNT
@@ -38,6 +43,18 @@ struct LightReadingsChannelConfig {
 };
 
 /**
+ * @brief Configuration describing the PWM resources used to drive sweep timing.
+ */
+struct LightReadingsPwmConfig {
+  bool          pwm_enabled;       /**< Enables PWM-driven sweep timing when true. */
+  NRF_PWM_Type* pwm_instance;      /**< PWM instance that owns the router pins during playback. */
+  int           router_in1_pin;    /**< Board pin routed to TS5A3359 IN1. */
+  int           router_in2_pin;    /**< Board pin routed to TS5A3359 IN2. */
+  uint32_t      minimum_period_us; /**< Minimum PWM period requested when starting playback. */
+  uint32_t      period_timeout_us; /**< Timeout applied when waiting for PWM edges or periods. */
+};
+
+/**
  * @brief Configuration required to route LEDs and sample the ADC.
  */
 struct LightReadingsConfig {
@@ -45,6 +62,7 @@ struct LightReadingsConfig {
   LightReadingsChannelConfig green_channel;  /**< Runtime configuration for the green photodiode. */
   LightReadingsChannelConfig blue_channel;   /**< Runtime configuration for the blue photodiode. */
   uint32_t                   adc_timeout_us; /**< Timeout passed to adc_hal reads. */
+  LightReadingsPwmConfig     pwm_config;     /**< PWM resources used when executing timed sweeps. */
 };
 
 /**
@@ -105,6 +123,17 @@ struct LightReadingsSweepStats {
   LightReadingsStatisticSummary drain_green; /**< Drain measurement captured on the green photodiode. */
   LightReadingsStatisticSummary blue;        /**< Direct measurement with the blue photodiode routed. */
   LightReadingsStatisticSummary green;       /**< Direct measurement with the green photodiode routed. */
+};
+
+/**
+ * @brief Diagnostic counters captured while PWM-driven sweeps execute.
+ */
+struct LightReadingsPwmDiagnostics {
+  uint32_t sample_period_count;    /**< Number of PWM period completions observed. */
+  uint32_t green_conversion_count; /**< Successful green-channel conversion starts. */
+  uint32_t blue_conversion_count;  /**< Successful blue-channel conversion starts. */
+  uint32_t drain_read_count;       /**< Drain-state dual-channel measurements captured. */
+  uint32_t missed_drdy_count;      /**< Conversions that failed to produce DRDY before timing gate. */
 };
 
 /**
@@ -169,5 +198,34 @@ void light_readings_reset_for_test(void);
 void light_readings_force_saturation_for_test(bool enabled);
 
 void light_readings_get_config_for_test(LightReadingsConfig* config_out);
+
+void light_readings_pwm_force_timeout_for_test(bool enabled);
+
+/**
+ * @brief Execute a PWM-driven sweep sequence.
+ *
+ * Callers must start the configured PWM instance before invoking this helper; the function only observes the existing
+ * waveform and never starts or stops playback. The router remains under PWM control for the duration of the call.
+ *
+ * @param sweep_count Number of PWM periods / samples to capture.
+ * @param results_out Destination collection that receives buffered samples.
+ * @return LIGHT_READINGS_OK on success.
+ *         LIGHT_READINGS_ERR_PWM_DISABLED when PWM support is disabled in the cached configuration.
+ *         LIGHT_READINGS_ERR_PWM_NOT_CONFIGURED when required PWM metadata is missing or invalid.
+ *         LIGHT_READINGS_ERR_PWM_UNSUPPORTED_INSTANCE when the cached instance is not NRF_PWM3.
+ *         LIGHT_READINGS_ERR_PWM_NOT_RUNNING when the PWM instance is idle.
+ *         LIGHT_READINGS_ERR_TIMEOUT when period tracking or ADC capture times out.
+ */
+int light_readings_pwm_sweep_n(uint32_t sweep_count, LightReadingsSweepCollection* results_out);
+
+/**
+ * @brief Reset accumulated diagnostics for PWM-driven sweeps.
+ */
+void light_readings_pwm_reset_for_test(void);
+
+/**
+ * @brief Retrieve diagnostic counters captured by PWM-driven sweeps.
+ */
+void light_readings_pwm_get_diagnostics(LightReadingsPwmDiagnostics* diagnostics_out);
 
 #endif  // LIGHT_READINGS_HPP

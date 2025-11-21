@@ -2,7 +2,7 @@
                           // PIO Shared Code).
 #include "main.hpp"
 
-#include "device_settings.hpp"
+#include "device_setup.hpp"
 
 void setup() {
   // Step 1: Placeholder for one-time initialization; populate when main firmware logic is added.

@@ -34,16 +34,17 @@
 // LED path control
 #define TS5A3359_IN1 17
 #define TS5A3359_IN2 18
-/* Function table for TS5A3359
-IN2 IN1 OUT
+/* Function table for TS5A3359 (IN2, IN1 order)
 L   L   Off
-L   H   NO0(LED1)
-H   L   NO1(LED2)
-H   H   NO2(Drain)
+L   H   NO0 (Green LED)
+H   L   NO1 (Blue LED)
+H   H   NO2 (Drain)
 */
 
 extern const LedRouterConfig     g_device_led_router_config;
+extern const LedRouterPwmConfig  g_device_led_router_pwm_backend;
 extern const AdcHalConfig        g_device_adc_hal_config;
+extern mcp356x_settings          g_device_mcp356x_settings;
 extern const LightReadingsConfig g_device_light_readings_config;
 extern const PowerControlConfig  g_device_power_control_config;
 

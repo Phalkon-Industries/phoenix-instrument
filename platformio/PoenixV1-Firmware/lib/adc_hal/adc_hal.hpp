@@ -65,7 +65,17 @@ int adc_hal_apply_default_configuration(void);
 int adc_hal_read_single_ended(AdcHalChannel channel, uint32_t timeout_us, int32_t* code_out);
 
 /**
- * @brief Read a single-ended channel using the interrupt-driven flow.
+ * @brief Read a single-ended channel using the DRDY busy-wait helper.
+ *
+ * This API issues a conversion, polls the ADC's DRDY pin until it asserts, and then
+ * returns the conversion code sourced from the hardware-provided sample register. The
+ * busy-wait loop uses the configurable IRQ pin reader so tests can stage synthetic
+ * events without real GPIO hardware.
+ *
+ * @param channel Logical channel identifier to sample.
+ * @param timeout_us Maximum time to wait for DRDY before timing out, expressed in microseconds.
+ * @param code_out Destination pointer that receives the conversion result.
+ * @return ADC_HAL_OK on success, ADC_HAL_ERR_TIMEOUT when DRDY never asserts, or backend codes.
  */
 int adc_hal_read_channel_irq(AdcHalChannel channel, uint32_t timeout_us, int32_t* code_out);
 
@@ -98,14 +108,34 @@ uint32_t adc_hal_test_default_config_call_count(void);
  */
 AdcHalChannel adc_hal_test_last_channel_requested(void);
 
+/**
+ * @brief Callback invoked while the DRDY busy-wait loop spins inside tests.
+ */
 typedef void (*adc_hal_irq_wait_hook_t)(void);
 
-void     adc_hal_test_set_irq_wait_hook(adc_hal_irq_wait_hook_t hook);
-void     adc_hal_test_stage_irq_sample(int32_t sample_code, uint8_t status_byte);
-void     adc_hal_test_fire_staged_irq(void);
-uint32_t adc_hal_test_attach_interrupt_call_count(void);
-uint32_t adc_hal_test_detach_interrupt_call_count(void);
-bool     adc_hal_test_interrupt_attached(void);
-void     adc_hal_test_reset_irq_state(void);
+/**
+ * @brief Function pointer used to sense the virtual DRDY pin state during tests.
+ */
+typedef bool (*adc_hal_irq_pin_reader_t)(void);
+
+/**
+ * @brief Override the wait hook so tests can advance virtual time between polls.
+ */
+void adc_hal_test_set_irq_wait_hook(adc_hal_irq_wait_hook_t hook);
+
+/**
+ * @brief Stage a synthetic sample payload returned once the IRQ-driven flow completes.
+ */
+void adc_hal_test_stage_irq_sample(int32_t sample_code, uint8_t status_byte);
+
+/**
+ * @brief Swap in a fake DRDY reader so busy-wait logic can be driven deterministically.
+ */
+void adc_hal_test_set_irq_pin_reader(adc_hal_irq_pin_reader_t reader);
+
+/**
+ * @brief Clear staged samples, wait hooks, and pin readers between Unity tests.
+ */
+void adc_hal_test_reset_irq_state(void);
 
 #endif  // ADC_HAL_HPP

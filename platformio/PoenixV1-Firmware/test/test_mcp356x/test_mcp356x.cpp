@@ -713,12 +713,12 @@ static void test_conversion_config_helpers_require_initialization(void) {
 static void test_conversion_config_updates_cached_data_format(void) {
   // Step 1. Apply the baseline configuration and confirm the cached format reflects the default.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
-  TEST_ASSERT_EQUAL(mcp356x_data_format::data24, mcp356x_test_cached_data_format());
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data24, mcp356x_get_cached_data_format());
 
   // Step 2. Request a 32-bit signed data format and ensure the cached state tracks the change.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_set_conversion_config(mcp356x_conversion_mode::continuous,
                                                               mcp356x_data_format::data32_signed));
-  TEST_ASSERT_EQUAL(mcp356x_data_format::data32_signed, mcp356x_test_cached_data_format());
+  TEST_ASSERT_EQUAL(mcp356x_data_format::data32_signed, mcp356x_get_cached_data_format());
 }
 
 static void test_read_single_ended_respects_all_data_formats(void) {
@@ -742,7 +742,7 @@ static void test_read_single_ended_respects_all_data_formats(void) {
 
     int32_t       code    = INT32_MIN;
     const uint8_t channel = 0u;  // Test board only routes channel 0; reuse it for all format sweeps.
-    TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_single_ended_channel(channel, 200u, &code));
+    TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_single_ended_channel(channel, 200000u, &code));
 
     const uint8_t expected_length = (formats[i] == mcp356x_data_format::data24) ? 3u : 4u;
     TEST_ASSERT_EQUAL_UINT8(expected_length, mcp356x_test_last_data_length());
@@ -971,7 +971,7 @@ static void test_read_single_ended_channel_returns_sample(void) {
 
   // Step 2. Request a single-ended conversion on channel zero and verify range.
   int32_t conversion = INT32_MIN;
-  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_single_ended_channel(0u, 200u, &conversion));
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_read_single_ended_channel(0u, 200000u, &conversion));
   TEST_ASSERT_GREATER_OR_EQUAL_INT32(-0x800000, conversion);
   TEST_ASSERT_LESS_OR_EQUAL_INT32(0x7FFFFF, conversion);
 

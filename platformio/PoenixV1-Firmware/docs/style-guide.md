@@ -7,6 +7,7 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 - **Namespaces:** Avoid unless interacting with Arduino libraries; prefer `static` linkage instead.
 - **Types / structs / enums / classes:** Use `CamelCase` (upper camel). Example: `struct AdcSampleBuffer`.
 - **Functions and free helpers:** Use `lower_snake_case`. Example: `read_config_value()`.
+- **Test-only helpers:** Reserve `_test_` in symbol names (functions, globals, or accessors) for code exercised exclusively by Unity/unit tests. If production sources need the helper, rename it to drop `_test_` before promoting it to shared use.
 - **Public phoenix benchmark APIs:** Export scenario entry points with the C-style prefix
   `phoenix_benchmark_<module>_<verb>` so they link cleanly from C and C++. For example,
   `phoenix_benchmark_channel_map_run`, `phoenix_benchmark_channel_map_format_summary_row`.
@@ -39,6 +40,7 @@ This guide covers conventions not enforced automatically by `clang-format`. Foll
 ## 4. Documentation Expectations
 - Public-facing APIs declared in headers use Doxygen-style blocks describing purpose, parameters, return codes, and side effects.
 - Internal helpers still carry concise doc comments so IDE tooltips remain informative; focus on intent, inputs, outputs, and notable side effects.
+- File-local helpers implemented as `static` functions must include a brief leading comment (one sentence is sufficient) explaining the helper's purpose and why it exists. When the function already carries a Doxygen block in a header, the additional helper comment is not required.
 - Inline comments describe the processing step in plain English before the code executes it. Summarize what the step accomplishes and why it belongs here; prefer one full sentence and let `clang-format` wrap.
 - Start sequential comments with an explicit `Step N:` prefix (use suffixes `Step 2a`, `Step 2b`, etc. for sub-steps) so readers can follow the ordered progression (`// Step 2: Sample drain channel to clear residual charge.`). Single, stand-alone comments that are not part of a sequence may omit the prefix, but multi-line workflows must use it consistently.
 - Avoid restating the obvious expression; explain the intent, constraints, datasheet references, or timing notes that justify the implementation.
