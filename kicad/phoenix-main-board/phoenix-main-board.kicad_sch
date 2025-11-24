@@ -5535,6 +5535,12 @@
 		(uuid "7cd8de06-a147-444e-968c-4344c45608cd")
 	)
 	(junction
+		(at 50.8 229.87)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "7d741ebc-37ac-40b3-a826-5c763d189a2f")
+	)
+	(junction
 		(at 246.38 248.92)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -5569,12 +5575,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "9e1d9c0a-5210-4a08-bf66-e5eb5e12e255")
-	)
-	(junction
-		(at 52.07 229.87)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "9f330e86-98bd-4e32-85a9-8c28b44b89d1")
 	)
 	(junction
 		(at 349.25 100.33)
@@ -5934,16 +5934,6 @@
 	)
 	(wire
 		(pts
-			(xy 52.07 229.87) (xy 44.45 229.87)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "1e755bba-8230-4804-bf10-0fe514e34d85")
-	)
-	(wire
-		(pts
 			(xy 365.76 90.17) (xy 378.46 90.17)
 		)
 		(stroke
@@ -6051,6 +6041,16 @@
 			(type default)
 		)
 		(uuid "2d1cafe2-1ef4-4101-92bb-64b3887ad2c9")
+	)
+	(wire
+		(pts
+			(xy 50.8 229.87) (xy 44.45 229.87)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2d6b70f6-6465-4aee-aed3-8cd390d97be8")
 	)
 	(wire
 		(pts
@@ -6331,16 +6331,6 @@
 			(type default)
 		)
 		(uuid "51243d30-4696-4cda-b4ed-8c12d32067c0")
-	)
-	(wire
-		(pts
-			(xy 38.1 130.81) (xy 25.4 130.81)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "529d98dc-e5ce-4c4e-a35f-235889bb411c")
 	)
 	(wire
 		(pts
@@ -6954,6 +6944,16 @@
 	)
 	(wire
 		(pts
+			(xy 77.47 63.5) (xy 90.17 63.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "86f16d16-b128-417f-85a2-dcf9f4410459")
+	)
+	(wire
+		(pts
 			(xy 186.69 240.03) (xy 208.28 240.03)
 		)
 		(stroke
@@ -7544,16 +7544,6 @@
 	)
 	(wire
 		(pts
-			(xy 77.47 63.5) (xy 93.98 63.5)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "c37e2b57-42b1-4a5f-b95a-77f9e5f72bd4")
-	)
-	(wire
-		(pts
 			(xy 29.21 142.24) (xy 29.21 140.97)
 		)
 		(stroke
@@ -7644,7 +7634,7 @@
 	)
 	(wire
 		(pts
-			(xy 52.07 245.11) (xy 53.34 245.11)
+			(xy 50.8 245.11) (xy 53.34 245.11)
 		)
 		(stroke
 			(width 0)
@@ -7784,16 +7774,6 @@
 	)
 	(wire
 		(pts
-			(xy 52.07 229.87) (xy 54.61 229.87)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d74bc8e6-edf3-46c5-bf00-8da1d6d1ddf0")
-	)
-	(wire
-		(pts
 			(xy 140.97 256.54) (xy 140.97 257.81)
 		)
 		(stroke
@@ -7921,6 +7901,16 @@
 			(type default)
 		)
 		(uuid "e8801b5e-d7c0-4a6b-a86a-3cb00020c76e")
+	)
+	(wire
+		(pts
+			(xy 25.4 130.81) (xy 38.1 130.81)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e9188171-8e0f-4809-b452-77afbcdb75df")
 	)
 	(wire
 		(pts
@@ -8141,6 +8131,16 @@
 			(type default)
 		)
 		(uuid "fe5da2ef-438f-461a-a754-329ebc8badbe")
+	)
+	(wire
+		(pts
+			(xy 50.8 229.87) (xy 54.61 229.87)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "feb77268-acb1-41e0-989d-51e8c1ba8f2c")
 	)
 	(wire
 		(pts
@@ -8570,6 +8570,16 @@
 		)
 		(uuid "5f067b8a-ee14-4a37-81e6-92f537952d5b")
 	)
+	(label "LM7705_SD"
+		(at 25.4 130.81 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "6004f92f-b24e-4212-b1ab-58aad7e87dac")
+	)
 	(label "IN1"
 		(at 91.44 252.73 180)
 		(effects
@@ -8719,6 +8729,16 @@
 			(justify right bottom)
 		)
 		(uuid "bb2c0f83-3ec9-4a58-80b0-1f11bfc31240")
+	)
+	(label "LM7705_SD"
+		(at 90.17 63.5 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "be38ae1f-50a2-4a0c-8e13-5e87ba989a22")
 	)
 	(label "CH5"
 		(at 316.23 82.55 0)
@@ -14638,7 +14658,6 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "a3d2da53-a531-4472-822a-827d6a88c59b")
 		(property "Reference" "U2"
 			(at 50.8 215.5824 0)
@@ -14925,6 +14944,73 @@
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
 					(reference "R6")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector:TestPoint_Small")
+		(at 90.17 63.5 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "aadadfeb-f126-4f1d-b98d-3ebba4b2efbb")
+		(property "Reference" "TP29"
+			(at 91.186 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "TestPoint_Small"
+			(at 91.44 64.7699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_Keystone_5000-5004_Miniature"
+			(at 95.25 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 95.25 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "test point"
+			(at 90.17 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "b49f28d1-2536-4e62-88b7-4bd50e21c55d")
+		)
+		(instances
+			(project "phoenix-main-board"
+				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
+					(reference "TP29")
 					(unit 1)
 				)
 			)
@@ -15408,7 +15494,7 @@
 	)
 	(symbol
 		(lib_id "Device:R")
-		(at 52.07 233.68 180)
+		(at 50.8 233.68 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15416,7 +15502,7 @@
 		(dnp no)
 		(uuid "be7c8ecb-c4dc-4a70-9c86-bb6d13720df7")
 		(property "Reference" "R3"
-			(at 53.086 232.664 0)
+			(at 51.816 232.664 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15425,7 +15511,7 @@
 			)
 		)
 		(property "Value" "75"
-			(at 52.324 235.712 90)
+			(at 51.054 235.712 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15434,7 +15520,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 53.848 233.68 90)
+			(at 52.578 233.68 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15443,7 +15529,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 52.07 233.68 0)
+			(at 50.8 233.68 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15452,7 +15538,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 52.07 233.68 0)
+			(at 50.8 233.68 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15739,7 +15825,7 @@
 	)
 	(symbol
 		(lib_id "Device:LED")
-		(at 52.07 241.3 90)
+		(at 50.8 241.3 90)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15747,7 +15833,7 @@
 		(dnp no)
 		(uuid "c5ba995a-6bba-42bf-b720-13fdfc71eadb")
 		(property "Reference" "D2"
-			(at 52.578 238.506 90)
+			(at 51.308 238.506 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15756,7 +15842,7 @@
 			)
 		)
 		(property "Value" "GreenLED"
-			(at 50.292 237.49 0)
+			(at 49.022 237.49 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15765,7 +15851,7 @@
 			)
 		)
 		(property "Footprint" "LED_THT:LED_D5.0mm_Horizontal_O1.27mm_Z3.0mm"
-			(at 52.07 241.3 0)
+			(at 50.8 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15774,7 +15860,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 52.07 241.3 0)
+			(at 50.8 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15783,7 +15869,7 @@
 			)
 		)
 		(property "Description" "Light emitting diode"
-			(at 52.07 241.3 0)
+			(at 50.8 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15792,7 +15878,7 @@
 			)
 		)
 		(property "Sim.Pins" "1=K 2=A"
-			(at 52.07 241.3 0)
+			(at 50.8 241.3 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17009,71 +17095,6 @@
 			(project "phoenix-main-board-constant-current"
 				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
 					(reference "R10")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 25.4 130.81 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "e5c132c2-4423-4c45-bf1d-de2d39fdb04e")
-		(property "Reference" "#PWR01"
-			(at 25.4 137.16 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 25.4 134.874 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 25.4 130.81 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 25.4 130.81 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 25.4 130.81 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "6a2d597d-b374-413a-9a0a-e070051f851c")
-		)
-		(instances
-			(project "phoenix-main-board"
-				(path "/8c64b4e9-9831-47d6-b522-c6dcea8b461a"
-					(reference "#PWR01")
 					(unit 1)
 				)
 			)

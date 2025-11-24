@@ -2,3 +2,4 @@
 2025-10-07: LM7705 SD is wrong polarity so is shutdown on current enable power line, tied to GND for always on for now
 2025-11-14: Add resistors in front of LEDs to balance impedance in the driver circuit to stabilize it
 2025-11-14: Fixed PD Footprint and shortened board to match
+2025-11-24: Added LM7705_SD to a separate digital pin. Finalized board for production (V1.0.1 Tsunami)
