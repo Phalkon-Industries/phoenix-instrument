@@ -66,3 +66,6 @@ jlcpcb/
 
 # vscode stuff
 .vscode/
+
+# Freecad Backup Stuff
+*.FCBak
