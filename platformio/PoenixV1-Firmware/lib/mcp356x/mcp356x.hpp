@@ -216,6 +216,12 @@ enum class mcp356x_sampling_mode : uint8_t {
   irq      = 1u,
 };
 
+struct mcp356x_conversion_latency_entry {
+  mcp356x_osr osr;
+  float       blocking_latency_us;
+  float       irq_latency_us;
+};
+
 // IRQ mode encodings map to IRQ_MODE[1:0] and select between IRQ/MDAT output
 // behaviour and inactive-state polarity.
 enum class mcp356x_irq_mode : uint8_t {
@@ -377,6 +383,7 @@ mcp356x_data_format mcp356x_get_cached_data_format(void);
 uint8_t             mcp356x_test_last_data_length(void);
 void                mcp356x_test_reset_diagnostics(void);
 uint32_t            mcp356x_test_last_raw_word(void);
+size_t              mcp356x_test_get_conversion_latency_table(const mcp356x_conversion_latency_entry** table);
 
 /**
  * @brief Configure the ADC MUX for a single-ended channel relative to AGND.

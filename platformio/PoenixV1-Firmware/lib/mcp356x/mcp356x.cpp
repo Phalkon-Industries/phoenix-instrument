@@ -804,29 +804,27 @@ uint32_t mcp356x_test_last_raw_word(void) {
   return g_last_raw_word;
 }
 
-uint32_t mcp356x_estimate_conversion_delay(mcp356x_osr osr, mcp356x_sampling_mode mode) {
-  struct ConversionLatencyEntry {
-    mcp356x_osr osr;
-    float       blocking_latency_us;
-    float       irq_latency_us;
-  };
+namespace {
+constexpr mcp356x_conversion_latency_entry k_conversion_latency_table[] = {
+    {mcp356x_osr::osr_32, 86.32f, 86.32f},          {mcp356x_osr::osr_64, 170.55f, 170.55f},
+    {mcp356x_osr::osr_128, 338.79f, 338.79f},       {mcp356x_osr::osr_256, 675.43f, 675.43f},
+    {mcp356x_osr::osr_512, 1348.95f, 1348.95f},     {mcp356x_osr::osr_1024, 1797.65f, 1797.65f},
+    {mcp356x_osr::osr_2048, 2696.18f, 2696.18f},    {mcp356x_osr::osr_4096, 4491.84f, 4491.84f},
+    {mcp356x_osr::osr_8192, 8231.20f, 8231.20f},    {mcp356x_osr::osr_16384, 15417.49f, 15417.49f},
+    {mcp356x_osr::osr_20480, 19012.80f, 19012.80f}, {mcp356x_osr::osr_24576, 22599.34f, 22599.34f},
+    {mcp356x_osr::osr_40960, 37113.89f, 37113.89f}, {mcp356x_osr::osr_49152, 43000.34f, 43000.34f},
+    {mcp356x_osr::osr_81920, 72725.53f, 72725.53f}, {mcp356x_osr::osr_98304, 87087.29f, 87087.29f},
+};
 
+constexpr size_t k_conversion_latency_table_count =
+    sizeof(k_conversion_latency_table) / sizeof(k_conversion_latency_table[0]);
+}  // namespace
+
+uint32_t mcp356x_estimate_conversion_delay(mcp356x_osr osr, mcp356x_sampling_mode mode) {
   // Step 1: Bound conversion delays with the latest on-device measurements captured on Stormcloud v1.0.0
   // (AMCLK 4.9152 MHz). Provenance: docs/phoenix-benchmark/sample_plans/osr_latency_multiple_runs.json and
   // python/benchmark_runs/report.md, updated with the 2025-11-19 lab sweep provided by the hardware team.
-  static constexpr ConversionLatencyEntry k_conversion_latency_table[] = {
-      {mcp356x_osr::osr_32, 86.32f, 86.32f},          {mcp356x_osr::osr_64, 170.55f, 170.55f},
-      {mcp356x_osr::osr_128, 338.79f, 338.79f},       {mcp356x_osr::osr_256, 675.43f, 675.43f},
-      {mcp356x_osr::osr_512, 1348.95f, 1348.95f},     {mcp356x_osr::osr_1024, 1797.65f, 1797.65f},
-      {mcp356x_osr::osr_2048, 2696.18f, 2696.18f},    {mcp356x_osr::osr_4096, 4491.84f, 4491.84f},
-      {mcp356x_osr::osr_8192, 8231.20f, 8231.20f},    {mcp356x_osr::osr_16384, 15417.49f, 15417.49f},
-      {mcp356x_osr::osr_20480, 19012.80f, 19012.80f}, {mcp356x_osr::osr_24576, 22599.34f, 22599.34f},
-      {mcp356x_osr::osr_40960, 37113.89f, 37113.89f}, {mcp356x_osr::osr_49152, 43000.34f, 43000.34f},
-      {mcp356x_osr::osr_81920, 72725.53f, 72725.53f}, {mcp356x_osr::osr_98304, 87087.29f, 87087.29f},
-  };
-
-  for (size_t index = 0u; index < (sizeof(k_conversion_latency_table) / sizeof(k_conversion_latency_table[0]));
-       ++index) {
+  for (size_t index = 0u; index < k_conversion_latency_table_count; ++index) {
     if (k_conversion_latency_table[index].osr == osr) {
       // Step 2: Return the measured latency matching the requested sampling path (rounded to whole microseconds).
       const float latency_us = (mode == mcp356x_sampling_mode::blocking) ?
@@ -838,4 +836,13 @@ uint32_t mcp356x_estimate_conversion_delay(mcp356x_osr osr, mcp356x_sampling_mod
 
   // Step 3: Guardrail for unexpected OSR enums; zero signals a missing table entry.
   return 0u;
+}
+
+size_t mcp356x_test_get_conversion_latency_table(const mcp356x_conversion_latency_entry** table) {
+  if (table == NULL) {
+    return 0u;
+  }
+
+  *table = k_conversion_latency_table;
+  return k_conversion_latency_table_count;
 }
