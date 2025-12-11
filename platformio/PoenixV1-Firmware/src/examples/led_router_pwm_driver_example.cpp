@@ -9,7 +9,7 @@ constexpr uint32_t k_pwm_minimum_period_us = 3000u;
 }  // namespace
 
 void setup() {
-  // Step 1: Initialise the board wiring so the router pins are configured for output.
+  // Step 1: Initialise the board wiring so the router pins are configured for output
   (void) device_setup_initialize();
 
   // Step 2: Bring the LED router online and park in the drain state before enabling PWM.

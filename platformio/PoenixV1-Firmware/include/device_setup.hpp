@@ -21,8 +21,11 @@
 // ADC Chip select (MCP3564)
 #define PIN_ADC_CS 13
 
-// Power enable
-#define PIN_ENABLE_POWER 12
+// 5V Power enable
+#define PIN_ENABLE_5V_POWER 12
+
+// Negative Bias Shutdown
+#define PIN_NEG_BIAS_SHUTDOWN 10
 
 // Thermistor control
 #define PIN_THERMISTOR_ON 11

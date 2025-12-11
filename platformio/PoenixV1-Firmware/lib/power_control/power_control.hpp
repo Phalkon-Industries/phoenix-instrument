@@ -23,8 +23,9 @@ struct PowerControlConfig {
   TwoWire*               wire_bus;          /**< I2C bus instance used to communicate with the digi-pot. */
   uint8_t                digipot_address;   /**< 7-bit address assigned to the AD524x device on this board. */
   int                    power_enable_pin;  /**< GPIO that asserts the shared analog power rail when driven HIGH. */
-  int indicator_red_pin;  /**< Optional indicator LED forced low during bring-up (set -1 when unused). */
-  int indicator_blue_pin; /**< Optional indicator LED forced low during bring-up (set -1 when unused). */
+  int neg_bias_shutdown_pin; /**< Active-low shutdown pin for the negative bias generator (set -1 when unused). */
+  int indicator_red_pin;     /**< Optional indicator LED forced low during bring-up (set -1 when unused). */
+  int indicator_blue_pin;    /**< Optional indicator LED forced low during bring-up (set -1 when unused). */
 };
 
 /**

@@ -14,12 +14,13 @@
 static LightReadingsSweepSample g_test_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
 
 int power_control_prepare_power_domains_for_test(void) {
-  PowerControlConfig power_config = {};
-  power_config.led_router_config  = &g_device_led_router_config;
-  power_config.adc_config         = &g_device_adc_hal_config;
-  power_config.wire_bus           = &Wire;
-  power_config.digipot_address    = AD5242_I2C_ADDRESS;
-  power_config.power_enable_pin   = PIN_ENABLE_POWER;
+  PowerControlConfig power_config    = {};
+  power_config.led_router_config     = &g_device_led_router_config;
+  power_config.adc_config            = &g_device_adc_hal_config;
+  power_config.wire_bus              = &Wire;
+  power_config.digipot_address       = AD5242_I2C_ADDRESS;
+  power_config.power_enable_pin      = PIN_ENABLE_5V_POWER;
+  power_config.neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN;
 #if defined(LED_RED)
   power_config.indicator_red_pin = LED_RED;
 #else

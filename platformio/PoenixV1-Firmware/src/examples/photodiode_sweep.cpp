@@ -55,13 +55,14 @@ static constexpr int k_indicator_blue_pin = -1;
 #endif
 
 static PowerControlConfig g_power_control_config = {
-    .led_router_config  = &k_led_router_config,
-    .adc_config         = &k_adc_hal_config,
-    .wire_bus           = &Wire,
-    .digipot_address    = AD5242_I2C_ADDRESS,
-    .power_enable_pin   = PIN_ENABLE_POWER,
-    .indicator_red_pin  = k_indicator_red_pin,
-    .indicator_blue_pin = k_indicator_blue_pin,
+    .led_router_config     = &k_led_router_config,
+    .adc_config            = &k_adc_hal_config,
+    .wire_bus              = &Wire,
+    .digipot_address       = AD5242_I2C_ADDRESS,
+    .power_enable_pin      = PIN_ENABLE_5V_POWER,
+    .neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN,
+    .indicator_red_pin     = k_indicator_red_pin,
+    .indicator_blue_pin    = k_indicator_blue_pin,
 };
 
 static void wait_for_serial(void) {

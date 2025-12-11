@@ -32,11 +32,12 @@ static constexpr const char* k_error_adc_saturation   = "adc saturation";
 static PhoenixBenchmarkChannelMapDefaults g_defaults             = {};
 static const char*                        g_last_sample_error    = nullptr;
 static PowerControlConfig                 g_power_control_config = {
-                    .led_router_config = &g_device_led_router_config,
-                    .adc_config        = &g_device_adc_hal_config,
-                    .wire_bus          = &Wire,
-                    .digipot_address   = AD5242_I2C_ADDRESS,
-                    .power_enable_pin  = PIN_ENABLE_POWER,
+                    .led_router_config     = &g_device_led_router_config,
+                    .adc_config            = &g_device_adc_hal_config,
+                    .wire_bus              = &Wire,
+                    .digipot_address       = AD5242_I2C_ADDRESS,
+                    .power_enable_pin      = PIN_ENABLE_5V_POWER,
+                    .neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN,
 #if defined(LED_RED)
     .indicator_red_pin = LED_RED,
 #else
