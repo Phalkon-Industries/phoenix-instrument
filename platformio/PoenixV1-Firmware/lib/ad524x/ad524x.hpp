@@ -2,7 +2,6 @@
 #define AD524X_HPP
 
 #include "phoenix_guard.hpp"
-#include <AD524x.h>
 #include <stdint.h>
 
 class TwoWire;
