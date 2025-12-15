@@ -31,7 +31,7 @@ mcp356x_settings g_device_mcp356x_settings = {
 
 const LightReadingsConfig g_device_light_readings_config = {
     LedRouterState::LED_ROUTER_STATE_DRAIN,
-    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, 0xD0u},
+    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, 0xD3u},
     {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, 0xC0u},
     1000000u,
     {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, 3000u, 100000u},  // PWM configuration
