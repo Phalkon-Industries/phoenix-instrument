@@ -1,5 +1,5 @@
 #include "ad524x.hpp"
-#include "main.hpp"
+#include "device_setup.hpp"
 #include "unity_config.h"
 #include <Wire.h>
 #include <stddef.h>
