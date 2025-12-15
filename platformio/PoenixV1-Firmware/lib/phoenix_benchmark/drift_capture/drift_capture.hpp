@@ -154,6 +154,13 @@ PhoenixBenchmarkDriftCaptureDefaults phoenix_benchmark_drift_capture_defaults_fr
     const LightReadingsConfig& light_config, const PhoenixBenchmarkDriftCaptureDefaults& baseline_defaults);
 
 /**
+ * @brief Configure the router states and ADC channels used for each LED trace.
+ *
+ * @param light_config Light readings configuration describing the hardware routing for blue and green channels.
+ */
+void phoenix_benchmark_drift_capture_configure_led_paths(const LightReadingsConfig& light_config);
+
+/**
  * @brief Access the captured samples for a specific LED channel.
  * @param led Enum identifying the blue or green trace.
  * @param count_out Optional pointer that receives the number of valid samples.

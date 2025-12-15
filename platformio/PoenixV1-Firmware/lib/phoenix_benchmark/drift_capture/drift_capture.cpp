@@ -43,6 +43,16 @@ PhoenixBenchmarkDriftCaptureSample   g_samples[k_led_count][k_phoenix_benchmark_
 std::size_t                          g_sample_counts[k_led_count] = {0u, 0u};
 uint8_t                              g_warning_mask               = 0u;
 
+struct DriftCaptureLedPath {
+  LedRouterState router_state;
+  AdcHalChannel  adc_channel;
+};
+
+DriftCaptureLedPath g_led_paths[k_led_count] = {
+    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_4},
+    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_5},
+};
+
 using HardwareReadyChecker = bool (*)(void);
 using WiperSetter          = bool (*)(uint8_t, uint8_t);
 using LedSetter            = int (*)(LedRouterState);
@@ -82,13 +92,13 @@ uint32_t compute_elapsed_time(uint32_t start, uint32_t end) {
 }
 
 AdcHalChannel channel_for_led(PhoenixBenchmarkDriftCaptureLed led) {
-  return (led == PhoenixBenchmarkDriftCaptureLed::kBlue) ? AdcHalChannel::ADC_HAL_CHANNEL_4 :
-                                                           AdcHalChannel::ADC_HAL_CHANNEL_5;
+  const std::size_t index = static_cast<std::size_t>(led);
+  return g_led_paths[index].adc_channel;
 }
 
 LedRouterState router_state_for_led(PhoenixBenchmarkDriftCaptureLed led) {
-  return (led == PhoenixBenchmarkDriftCaptureLed::kBlue) ? LedRouterState::LED_ROUTER_STATE_BLUE :
-                                                           LedRouterState::LED_ROUTER_STATE_GREEN;
+  const std::size_t index = static_cast<std::size_t>(led);
+  return g_led_paths[index].router_state;
 }
 
 bool resolve_osr_value(uint32_t value, mcp356x_osr* out_osr) {
@@ -156,6 +166,13 @@ void reset_buffers(void) {
     g_sample_counts[led] = 0u;
   }
   g_warning_mask = 0u;
+}
+
+void reset_led_paths_to_defaults(void) {
+  g_led_paths[static_cast<std::size_t>(PhoenixBenchmarkDriftCaptureLed::kBlue)] = {
+      LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_4};
+  g_led_paths[static_cast<std::size_t>(PhoenixBenchmarkDriftCaptureLed::kGreen)] = {
+      LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_5};
 }
 
 const char* skip_whitespace(const char* text) {
@@ -776,6 +793,7 @@ void phoenix_benchmark_drift_capture_reset_state(void) {
   g_micros_provider        = ::micros;
   g_delay_provider         = ::delayMicroseconds;
   reset_buffers();
+  reset_led_paths_to_defaults();
 }
 
 PhoenixBenchmarkDriftCaptureParseResult phoenix_benchmark_drift_capture_parse_command(const char* line) {
@@ -870,4 +888,16 @@ PhoenixBenchmarkDriftCaptureDefaults phoenix_benchmark_drift_capture_defaults_fr
   derived_defaults.blue_wiper_code                      = light_config.blue_channel.wiper_code;
   derived_defaults.green_wiper_code                     = light_config.green_channel.wiper_code;
   return derived_defaults;
+}
+
+void phoenix_benchmark_drift_capture_configure_led_paths(const LightReadingsConfig& light_config) {
+  // Step 1: Align the green photodiode path with the supplied router state and ADC channel.
+  const std::size_t green_index         = static_cast<std::size_t>(PhoenixBenchmarkDriftCaptureLed::kGreen);
+  g_led_paths[green_index].router_state = light_config.green_channel.router_state;
+  g_led_paths[green_index].adc_channel  = light_config.green_channel.adc_channel;
+
+  // Step 2: Apply the blue photodiode routing so captures follow the board configuration.
+  const std::size_t blue_index         = static_cast<std::size_t>(PhoenixBenchmarkDriftCaptureLed::kBlue);
+  g_led_paths[blue_index].router_state = light_config.blue_channel.router_state;
+  g_led_paths[blue_index].adc_channel  = light_config.blue_channel.adc_channel;
 }

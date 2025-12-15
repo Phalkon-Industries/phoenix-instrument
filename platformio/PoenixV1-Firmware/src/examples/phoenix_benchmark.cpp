@@ -1513,6 +1513,7 @@ void setup() {
   PhoenixBenchmarkDriftCaptureDefaults drift_capture_defaults =
       phoenix_benchmark_drift_capture_defaults_from_light_config(g_device_light_readings_config,
                                                                  k_drift_capture_defaults);
+  phoenix_benchmark_drift_capture_configure_led_paths(g_device_light_readings_config);
   phoenix_benchmark_drift_capture_initialise(drift_capture_defaults);
   phoenix_benchmark_cold_sweep_reset_state();
 

@@ -532,6 +532,10 @@ static std::size_t                     g_drift_capture_osr_call_count          =
 static AdcHalChannel                   g_drift_capture_last_channel            = AdcHalChannel::ADC_HAL_CHANNEL_4;
 static char                            g_drift_capture_output_lines[32][128]   = {};
 static std::size_t                     g_drift_capture_output_count            = 0u;
+static LedRouterState                  g_drift_capture_expected_blue_state     = LedRouterState::LED_ROUTER_STATE_BLUE;
+static LedRouterState                  g_drift_capture_expected_green_state    = LedRouterState::LED_ROUTER_STATE_GREEN;
+static AdcHalChannel                   g_drift_capture_channel_log[32]         = {};
+static std::size_t                     g_drift_capture_channel_log_count       = 0u;
 
 static void drift_capture_reset_fakes(void) {
   g_drift_capture_fake_micros             = 0u;
@@ -550,6 +554,9 @@ static void drift_capture_reset_fakes(void) {
   g_drift_capture_osr_call_count          = 0u;
   g_drift_capture_last_channel            = AdcHalChannel::ADC_HAL_CHANNEL_4;
   g_drift_capture_output_count            = 0u;
+  g_drift_capture_expected_blue_state     = LedRouterState::LED_ROUTER_STATE_BLUE;
+  g_drift_capture_expected_green_state    = LedRouterState::LED_ROUTER_STATE_GREEN;
+  g_drift_capture_channel_log_count       = 0u;
   for (std::size_t index = 0u;
        index < (sizeof(g_drift_capture_router_transitions) / sizeof(g_drift_capture_router_transitions[0])); ++index) {
     g_drift_capture_router_transitions[index] = LedRouterState::LED_ROUTER_STATE_OFF;
@@ -557,6 +564,10 @@ static void drift_capture_reset_fakes(void) {
   for (std::size_t line = 0u; line < (sizeof(g_drift_capture_output_lines) / sizeof(g_drift_capture_output_lines[0]));
        ++line) {
     g_drift_capture_output_lines[line][0] = '\0';
+  }
+  for (std::size_t index = 0u; index < (sizeof(g_drift_capture_channel_log) / sizeof(g_drift_capture_channel_log[0]));
+       ++index) {
+    g_drift_capture_channel_log[index] = AdcHalChannel::ADC_HAL_CHANNEL_0;
   }
 }
 
@@ -575,11 +586,11 @@ static int drift_capture_fake_led_setter(LedRouterState state) {
       (sizeof(g_drift_capture_router_transitions) / sizeof(g_drift_capture_router_transitions[0]))) {
     g_drift_capture_router_transitions[g_drift_capture_router_transition_count++] = state;
   }
-  if (state == LedRouterState::LED_ROUTER_STATE_BLUE) {
+  if (state == g_drift_capture_expected_blue_state) {
     g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kBlue;
     g_drift_capture_led_active  = true;
   }
-  else if (state == LedRouterState::LED_ROUTER_STATE_GREEN) {
+  else if (state == g_drift_capture_expected_green_state) {
     g_drift_capture_current_led = PhoenixBenchmarkDriftCaptureLed::kGreen;
     g_drift_capture_led_active  = true;
   }
@@ -597,6 +608,10 @@ static int drift_capture_fake_osr_setter(mcp356x_osr value) {
 
 static bool drift_capture_fake_adc_reader(AdcHalChannel channel, int32_t* out_code) {
   g_drift_capture_last_channel = channel;
+  if (g_drift_capture_channel_log_count <
+      (sizeof(g_drift_capture_channel_log) / sizeof(g_drift_capture_channel_log[0]))) {
+    g_drift_capture_channel_log[g_drift_capture_channel_log_count++] = channel;
+  }
   if ((out_code == nullptr) || !g_drift_capture_led_active) {
     return false;
   }
@@ -752,10 +767,10 @@ static void test_drift_capture_parse_command_accepts_plain_token(void) {
 static void test_drift_capture_defaults_use_light_config(void) {
   // Step 1: Build a light readings configuration with distinct wiper codes per colour.
   const LightReadingsConfig light_config = {
-    .drain_state    = LedRouterState::LED_ROUTER_STATE_DRAIN,
-    .green_channel  = {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_3, 150u, 0x42u},
-    .blue_channel   = {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_0, 175u, 0xA7u},
-    .adc_timeout_us = 50000u,
+      .drain_state    = LedRouterState::LED_ROUTER_STATE_DRAIN,
+      .green_channel  = {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_3, 150u, 0x42u},
+      .blue_channel   = {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_0, 175u, 0xA7u},
+      .adc_timeout_us = 50000u,
   };
 
   // Step 2: Seed baseline drift defaults with placeholder wiper codes that should be overridden.
@@ -901,6 +916,59 @@ static void test_drift_capture_run_captures_leds_in_sequence(void) {
   TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_BLUE, g_drift_capture_router_transitions[0]);
   TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_DRAIN, g_drift_capture_router_transitions[1]);
   TEST_ASSERT_EQUAL(LedRouterState::LED_ROUTER_STATE_GREEN, g_drift_capture_router_transitions[2]);
+}
+
+static void test_drift_capture_configure_led_paths_tracks_light_config(void) {
+  // Step 1: Configure unique router states and channels to ensure the helper honours board mappings.
+  phoenix_benchmark_drift_capture_reset_state();
+  const PhoenixBenchmarkDriftCaptureDefaults defaults = {
+      .start_time_us    = 0u,
+      .end_time_us      = 0u,
+      .step_delay_us    = 0u,
+      .osr              = 4096u,
+      .blue_wiper_code  = 0x44u,
+      .green_wiper_code = 0x55u,
+  };
+  phoenix_benchmark_drift_capture_initialise(defaults);
+  drift_capture_reset_fakes();
+
+  const LightReadingsConfig light_config = {
+      .drain_state    = LedRouterState::LED_ROUTER_STATE_DRAIN,
+      .green_channel  = {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_6, 0u, 0x10u},
+      .blue_channel   = {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_7, 0u, 0x20u},
+      .adc_timeout_us = 1000u,
+  };
+  phoenix_benchmark_drift_capture_configure_led_paths(light_config);
+  g_drift_capture_expected_green_state = light_config.green_channel.router_state;
+  g_drift_capture_expected_blue_state  = light_config.blue_channel.router_state;
+
+  static const int32_t blue_codes[]  = {1000};
+  static const int32_t green_codes[] = {2000};
+  g_drift_capture_blue_codes         = blue_codes;
+  g_drift_capture_blue_length        = sizeof(blue_codes) / sizeof(blue_codes[0]);
+  g_drift_capture_green_codes        = green_codes;
+  g_drift_capture_green_length       = sizeof(green_codes) / sizeof(green_codes[0]);
+
+  drift_capture_install_fakes();
+
+  PhoenixBenchmarkDriftCaptureOptions options = {};
+  options.apply_defaults(defaults);
+  const PhoenixBenchmarkDriftCaptureOutputCallbacks callbacks = {nullptr};
+
+  const PhoenixBenchmarkDriftCaptureExecutionStatus status = phoenix_benchmark_drift_capture_run(options, callbacks);
+
+  drift_capture_uninstall_fakes();
+
+  TEST_ASSERT_TRUE(status.success);
+  TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(2u, static_cast<uint32_t>(g_drift_capture_router_transition_count),
+                                          "Expected at least three router transitions");
+  TEST_ASSERT_EQUAL(light_config.blue_channel.router_state, g_drift_capture_router_transitions[0]);
+  TEST_ASSERT_EQUAL(light_config.green_channel.router_state, g_drift_capture_router_transitions[2]);
+  TEST_ASSERT_EQUAL_UINT32(2u, static_cast<uint32_t>(g_drift_capture_channel_log_count));
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(light_config.blue_channel.adc_channel),
+                          static_cast<uint8_t>(g_drift_capture_channel_log[0]));
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(light_config.green_channel.adc_channel),
+                          static_cast<uint8_t>(g_drift_capture_channel_log[1]));
 }
 
 static void test_drift_capture_run_sets_saturation_warning(void) {
@@ -1952,6 +2020,7 @@ void setup() {
   RUN_TEST(test_drift_capture_parse_command_accepts_json_overrides);
   RUN_TEST(test_drift_capture_parse_command_rejects_invalid_range);
   RUN_TEST(test_drift_capture_run_captures_leds_in_sequence);
+  RUN_TEST(test_drift_capture_configure_led_paths_tracks_light_config);
   RUN_TEST(test_drift_capture_run_sets_saturation_warning);
   RUN_TEST(test_drift_capture_run_sets_overflow_warning);
   RUN_TEST(test_drift_capture_run_emits_nan_padding);

@@ -53,8 +53,8 @@ void setup() {
   strip.begin();
   strip.show();  // Initialize all pixels to 'off'
   // Step 2: Enable the shared power rail feeding the LED hardware.
-  pinMode(PIN_ENABLE_POWER, OUTPUT);
-  digitalWrite(PIN_ENABLE_POWER, HIGH);
+  pinMode(PIN_ENABLE_5V_POWER, OUTPUT);
+  digitalWrite(PIN_ENABLE_5V_POWER, HIGH);
 
   // Step 3: Configure on-board status LEDs and default them to off.
   pinMode(LED_RED, OUTPUT);

@@ -11,11 +11,12 @@
 static PowerControlConfig build_power_control_config(void) {
   PowerControlConfig config = {};
   // Step 1: Bind each dependency to the board-specific configuration.
-  config.led_router_config = &g_device_led_router_config;
-  config.adc_config        = &g_device_adc_hal_config;
-  config.wire_bus          = &Wire;
-  config.digipot_address   = AD5242_I2C_ADDRESS;
-  config.power_enable_pin  = PIN_ENABLE_POWER;
+  config.led_router_config     = &g_device_led_router_config;
+  config.adc_config            = &g_device_adc_hal_config;
+  config.wire_bus              = &Wire;
+  config.digipot_address       = AD5242_I2C_ADDRESS;
+  config.power_enable_pin      = PIN_ENABLE_5V_POWER;
+  config.neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN;
 #if defined(LED_RED)
   config.indicator_red_pin = LED_RED;
 #else
@@ -72,8 +73,12 @@ static void test_power_control_initialises_dependencies(void) {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(LedRouterState::LED_ROUTER_STATE_DRAIN), static_cast<int>(observed_state));
 
   // Step 4: Verify board-level GPIOs settle into the expected levels.
-  if (PIN_ENABLE_POWER >= 0) {
-    TEST_ASSERT_EQUAL_MESSAGE(HIGH, digitalRead(PIN_ENABLE_POWER), "Expected power enable pin to assert HIGH");
+  if (PIN_ENABLE_5V_POWER >= 0) {
+    TEST_ASSERT_EQUAL_MESSAGE(HIGH, digitalRead(PIN_ENABLE_5V_POWER), "Expected power enable pin to assert HIGH");
+  }
+  if (PIN_NEG_BIAS_SHUTDOWN >= 0) {
+    TEST_ASSERT_EQUAL_MESSAGE(LOW, digitalRead(PIN_NEG_BIAS_SHUTDOWN),
+                              "Expected negative bias shutdown pin to assert LOW");
   }
 
 #if defined(LED_RED)
@@ -94,8 +99,12 @@ static void test_power_control_enters_low_power(void) {
   bring_power_domains_online();
   // Step 2: Ask the helper to enter low power and verify the rail drops.
   TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_enter_low_power());
-  if (PIN_ENABLE_POWER >= 0) {
-    TEST_ASSERT_EQUAL_MESSAGE(LOW, digitalRead(PIN_ENABLE_POWER), "Expected power enable pin to drive LOW");
+  if (PIN_ENABLE_5V_POWER >= 0) {
+    TEST_ASSERT_EQUAL_MESSAGE(LOW, digitalRead(PIN_ENABLE_5V_POWER), "Expected power enable pin to drive LOW");
+  }
+  if (PIN_NEG_BIAS_SHUTDOWN >= 0) {
+    TEST_ASSERT_EQUAL_MESSAGE(HIGH, digitalRead(PIN_NEG_BIAS_SHUTDOWN),
+                              "Expected low-power to drive the negative bias shutdown pin HIGH");
   }
 }
 
@@ -104,8 +113,12 @@ static void test_power_control_shutdown_disables_power(void) {
   bring_power_domains_online();
   // Step 2: Request shutdown and confirm the enable pin deasserts.
   TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_shutdown());
-  if (PIN_ENABLE_POWER >= 0) {
-    TEST_ASSERT_EQUAL_MESSAGE(LOW, digitalRead(PIN_ENABLE_POWER), "Expected shutdown to drive LOW on power enable");
+  if (PIN_ENABLE_5V_POWER >= 0) {
+    TEST_ASSERT_EQUAL_MESSAGE(LOW, digitalRead(PIN_ENABLE_5V_POWER), "Expected shutdown to drive LOW on power enable");
+  }
+  if (PIN_NEG_BIAS_SHUTDOWN >= 0) {
+    TEST_ASSERT_EQUAL_MESSAGE(HIGH, digitalRead(PIN_NEG_BIAS_SHUTDOWN),
+                              "Expected shutdown to drive the negative bias shutdown pin HIGH");
   }
   // Step 3: Subsequent low-power calls should fail until reinitialised.
   TEST_ASSERT_EQUAL_INT(POWER_CONTROL_ERR_NOT_INITIALIZED, power_control_enter_low_power());

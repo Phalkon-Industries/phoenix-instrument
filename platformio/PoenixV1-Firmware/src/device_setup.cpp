@@ -30,15 +30,16 @@ mcp356x_settings g_device_mcp356x_settings = {
 };
 
 const LightReadingsConfig g_device_light_readings_config = {
-    LedRouterState::LED_ROUTER_STATE_DRAIN,                                                   // Drain
-    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, 0xDEu},  // Blue LED
-    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, 0xB0u},   // Green LED
+    LedRouterState::LED_ROUTER_STATE_DRAIN,
+    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, 0xD3u},
+    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, 0xC0u},
     1000000u,
     {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, 3000u, 100000u},  // PWM configuration
 };
 
 const PowerControlConfig g_device_power_control_config = {
-    &g_device_led_router_config, &g_device_adc_hal_config, &Wire, AD5242_I2C_ADDRESS, PIN_ENABLE_POWER, -1, -1,
+    &g_device_led_router_config, &g_device_adc_hal_config, &Wire, AD5242_I2C_ADDRESS,
+    PIN_ENABLE_5V_POWER,         PIN_NEG_BIAS_SHUTDOWN,    -1,    -1,
 };
 
 int device_setup_initialize(void) {

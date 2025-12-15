@@ -2,6 +2,7 @@
 
 #include "ad524x.hpp"
 #include <Arduino.h>
+#include <Wire.h>
 
 namespace {
 
@@ -13,6 +14,7 @@ bool               g_indicator_leds_configured = false;
 bool               g_led_router_ready          = false;
 bool               g_adc_ready                 = false;
 bool               g_digipot_ready             = false;
+bool               g_neg_bias_generator_on     = false;
 
 // Force indicator pins low so measurements happen without stray LED current.
 void configure_indicator_pin(int pin) {
@@ -23,8 +25,35 @@ void configure_indicator_pin(int pin) {
   digitalWrite(pin, LOW);
 }
 
+// Drive the active-low shutdown pin so the negative bias generator turns on.
+void enable_negative_bias_generator(void) {
+  if (g_power_config.neg_bias_shutdown_pin < 0) {
+    g_neg_bias_generator_on = false;
+    return;
+  }
+  if (g_neg_bias_generator_on) {
+    return;
+  }
+  pinMode(g_power_config.neg_bias_shutdown_pin, OUTPUT);
+  digitalWrite(g_power_config.neg_bias_shutdown_pin, LOW);
+  g_neg_bias_generator_on = true;
+}
+
+// Force the shutdown pin high so the negative bias generator stops sourcing current.
+void disable_negative_bias_generator(void) {
+  if (g_power_config.neg_bias_shutdown_pin < 0) {
+    g_neg_bias_generator_on = false;
+    return;
+  }
+  if (!g_neg_bias_generator_on) {
+    return;
+  }
+  digitalWrite(g_power_config.neg_bias_shutdown_pin, HIGH);
+  g_neg_bias_generator_on = false;
+}
+
 // Raise the shared analog rail, accounting for boards that omit a dedicated enable GPIO.
-void drive_power_enable_high(void) {
+void drive_5v_power_enable_high(void) {
   if (g_power_config.power_enable_pin < 0) {
     g_power_domains_energised = false;
     return;
@@ -53,7 +82,16 @@ int power_control_prepare_power_domains(const PowerControlConfig* config) {
   g_power_config = *config;
 
   // Step 2: Enable the shared rail before toggling any dependent peripherals.
-  drive_power_enable_high();
+  /* The delays are vitally important and allow the 5V to stabilize before continuing on.
+    Without them, the system becomes very unstable and the light readings unusable since a big
+    sawtooth wave dominates the signal.
+  */
+  delay(5);
+  drive_5v_power_enable_high();
+  delay(5);
+
+  // Step 2.5: Assert the active-low shutdown pin so the negative bias generator wakes up cleanly.
+  enable_negative_bias_generator();
 
   // Step 3: Pull the indicator LEDs dark exactly once per boot so sweeps start from a quiet baseline.
   if (!g_indicator_leds_configured) {
@@ -100,6 +138,9 @@ int power_control_enter_low_power(void) {
   // Step 2: Drop the power rail to place downstream hardware in a reduced-power state.
   drive_power_enable_low();
 
+  // Step 3: Latch the negative bias generator off so the active-low pin idles high.
+  disable_negative_bias_generator();
+
   return POWER_CONTROL_OK;
 }
 
@@ -110,28 +151,32 @@ int power_control_shutdown(void) {
   // Step 2: Immediately drop the rail before deinitialising peripherals.
   drive_power_enable_low();
 
-  // Step 3: Release LED routing resources so future tests see a cold-started helper.
+  // Step 3: Shut down the negative bias generator so analog domains fully discharge.
+  disable_negative_bias_generator();
+
+  // Step 4: Release LED routing resources so future tests see a cold-started helper.
   if (g_led_router_ready) {
     GUARD(led_router_shutdown());
     g_led_router_ready = false;
   }
 
-  // Step 4: Ask the ADC to shut down completely so subsequent runs reapply configuration.
+  // Step 5: Ask the ADC to shut down completely so subsequent runs reapply configuration.
   if (g_adc_ready) {
     GUARD(adc_hal_shutdown());
     g_adc_ready = false;
   }
 
-  // Step 5: Clear the digi-pot driver so future runs perform a full initialisation sequence.
+  // Step 6: Clear the digi-pot driver so future runs perform a full initialisation sequence.
   if (g_digipot_ready) {
     ad524x_deinitialize();
     g_digipot_ready = false;
   }
 
-  // Step 6: Reset cached state so Unity hooks observe a clean helper.
+  // Step 7: Reset cached state so Unity hooks observe a clean helper.
   g_indicator_leds_configured = false;
   g_is_initialized            = false;
   g_power_domains_energised   = false;
+  g_neg_bias_generator_on     = false;
   g_power_config              = {};
 
   return POWER_CONTROL_OK;
@@ -146,4 +191,5 @@ void power_control_reset_for_test(void) {
   g_led_router_ready          = false;
   g_adc_ready                 = false;
   g_digipot_ready             = false;
+  g_neg_bias_generator_on     = false;
 }
