@@ -55,7 +55,7 @@ static LightReadingsSweepStats g_baseline_stats = {0u,
                                                    {0u, 0.0, 0.0, 0, 0, 0.0, false}};
 
 static const CliMeasurementHooks k_default_measurement_hooks = {
-    light_readings_sweep_n, light_readings_compute_sweep_stats, thermistor_reader_measure_celsius};
+    light_readings_pwm_sweep_n, light_readings_compute_sweep_stats, thermistor_reader_measure_celsius};
 
 static CliMeasurementHooks g_measurement_hooks = k_default_measurement_hooks;
 

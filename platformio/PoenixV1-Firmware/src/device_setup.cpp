@@ -29,12 +29,16 @@ mcp356x_settings g_device_mcp356x_settings = {
     false,
 };
 
+static const uint32_t k_light_readings_pwm_minimum_period_us = 50000u;
+static const uint32_t k_light_readings_pwm_period_timeout_us = 100000u;
+
 const LightReadingsConfig g_device_light_readings_config = {
     LedRouterState::LED_ROUTER_STATE_DRAIN,
     {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, 0xD3u},
     {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, 0xC0u},
     1000000u,
-    {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, 3000u, 100000u},  // PWM configuration
+    {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, k_light_readings_pwm_minimum_period_us,
+     k_light_readings_pwm_period_timeout_us},
 };
 
 const PowerControlConfig g_device_power_control_config = {
