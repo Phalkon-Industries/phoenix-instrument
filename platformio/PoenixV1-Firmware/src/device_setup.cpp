@@ -42,10 +42,26 @@ const PowerControlConfig g_device_power_control_config = {
     PIN_ENABLE_5V_POWER,         PIN_NEG_BIAS_SHUTDOWN,    -1,    -1,
 };
 
-int device_setup_initialize(void) {
-  static bool light_readings_ready = false;
+const ThermistorReaderConfig g_device_thermistor_reader_config = {
+    AdcHalChannel::ADC_HAL_CHANNEL_0,  // reference divider
+    AdcHalChannel::ADC_HAL_CHANNEL_1,  // board thermistor
+    AdcHalChannel::ADC_HAL_CHANNEL_2,  // water thermistor
+    PIN_THERMISTOR_ON,
+    10000u,
+    10000u,
+    100000u,
+    2000u,
+    3380.0f,
+    10000.0f,
+    0.0f,
+    10000.0f,
+    0.0f,
+};
 
-  if (light_readings_ready) {
+int device_setup_initialize(void) {
+  static bool g_device_setup_ready = false;
+
+  if (g_device_setup_ready) {
     return LIGHT_READINGS_OK;
   }
 
@@ -58,6 +74,9 @@ int device_setup_initialize(void) {
   // Step 3: Bring the light readings helper online so batches can run immediately.
   GUARD(light_readings_initialize(&g_device_light_readings_config));
 
-  light_readings_ready = true;
+  // Step 4: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
+  GUARD(thermistor_reader_initialize(&g_device_thermistor_reader_config));
+
+  g_device_setup_ready = true;
   return LIGHT_READINGS_OK;
 }
