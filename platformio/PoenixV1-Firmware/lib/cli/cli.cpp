@@ -78,9 +78,23 @@ static int handle_help(void) {
   return PHX_OK;
 }
 
-// Reports firmware version for host sanity checks and diagnostic logging.
+// Reports firmware version and current settings for host sanity checks and diagnostic logging.
 static int handle_version(void) {
   g_cli_output->println(k_firmware_version);
+
+  // Step 1: Display current calibration settings from flash.
+  const PhoenixSettings* settings = phoenix_settings_get();
+  if (settings != nullptr) {
+    char line[80];
+    snprintf(line, sizeof(line), "blue_wiper_code:  0x%02X", static_cast<unsigned>(settings->blue_wiper_code));
+    g_cli_output->println(line);
+    snprintf(line, sizeof(line), "green_wiper_code: 0x%02X", static_cast<unsigned>(settings->green_wiper_code));
+    g_cli_output->println(line);
+  }
+  else {
+    g_cli_output->println("settings: not initialized");
+  }
+
   return PHX_OK;
 }
 
