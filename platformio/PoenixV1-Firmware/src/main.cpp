@@ -20,11 +20,7 @@
 
 void setup() {
   Serial.begin(115200);
-
-  // Step 1: Wait for the USB serial link to enumerate so logs and CLI output are visible.
-  while (!Serial) {
-    delay(10);
-  }
+  delay(100);  // short delay to allow serial to set up
 
   // Step 2: Configure the instrument before accepting CLI commands.
   uint32_t setup_attempt_count = 0u;

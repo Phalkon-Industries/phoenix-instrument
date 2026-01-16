@@ -52,13 +52,15 @@ constexpr CliCommandEntry k_cli_commands[] = {
     {"help", handle_help, "List commands"},           {NULL, NULL, NULL},
 };
 
-static bool                    g_cli_ready      = false;
-static bool                    g_baseline_valid = false;
-static LightReadingsSweepStats g_baseline_stats = {0u,
-                                                   {0u, 0.0, 0.0, 0, 0, 0.0, false},
-                                                   {0u, 0.0, 0.0, 0, 0, 0.0, false},
-                                                   {0u, 0.0, 0.0, 0, 0, 0.0, false},
-                                                   {0u, 0.0, 0.0, 0, 0, 0.0, false}};
+static bool                    g_cli_ready            = false;
+static bool                    g_ready_banner_sent    = false;
+static bool                    g_serial_was_connected = false;
+static bool                    g_baseline_valid       = false;
+static LightReadingsSweepStats g_baseline_stats       = {0u,
+                                                         {0u, 0.0, 0.0, 0, 0, 0.0, false},
+                                                         {0u, 0.0, 0.0, 0, 0, 0.0, false},
+                                                         {0u, 0.0, 0.0, 0, 0, 0.0, false},
+                                                         {0u, 0.0, 0.0, 0, 0, 0.0, false}};
 
 static const CliMeasurementHooks k_default_measurement_hooks = {
     light_readings_pwm_sweep_n, light_readings_compute_sweep_stats, thermistor_reader_measure_celsius};
@@ -360,8 +362,9 @@ void cli_initialize(void) {
   reset_baseline_cache();
   g_measurement_hooks = k_default_measurement_hooks;
   g_cli_ready         = true;
+  g_ready_banner_sent = false;
   g_cli_output        = &Serial;
-  g_cli_output->println("phoenix-cli ready (commands: b, s, c, v, help)");
+  // Ready banner deferred until Serial is connected (checked in cli_poll).
 }
 
 bool cli_test_is_baseline_cached(void) {
@@ -397,6 +400,20 @@ void cli_test_set_output(Print* output) {
 void cli_poll(void) {
   if (!g_cli_ready) {
     return;
+  }
+
+  // Step 1: Detect Serial reconnection and reset banner flag.
+  const bool serial_connected = static_cast<bool>(Serial);
+  if (!serial_connected && g_serial_was_connected) {
+    // Serial just disconnected; reset banner so it re-sends on next connection.
+    g_ready_banner_sent = false;
+  }
+  g_serial_was_connected = serial_connected;
+
+  // Step 2: Send ready banner when Serial connection is established.
+  if (!g_ready_banner_sent && serial_connected) {
+    g_cli_output->println("phoenix-cli ready (commands: b, s, c, v, help)");
+    g_ready_banner_sent = true;
   }
 
   static char   command_buffer[k_cli_max_command_length] = {0};
