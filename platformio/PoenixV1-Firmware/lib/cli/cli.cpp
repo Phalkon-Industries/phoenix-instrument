@@ -10,6 +10,9 @@ constexpr size_t   k_cli_max_command_length   = 32u;
 constexpr uint32_t k_baseline_sweep_count     = 500u;
 constexpr double   k_cli_default_salinity_psu = 35.0;
 
+// Firmware version string reported by the 'v' command for host sanity checks.
+constexpr const char* k_firmware_version = "phoenix-cli 1.0.0";
+
 struct CliCommandEntry {
   const char* name;
   int (*handler)(void);
@@ -23,14 +26,15 @@ static void cli_emit_error(const char* label, int error_code);
 #define CLI_GUARD_EMIT(label, expression) GUARD_EMIT(cli_emit_error, label, expression)
 
 static int  handle_help(void);
+static int  handle_version(void);
 static int  handle_baseline(void);
 static int  handle_sample(void);
 static void reset_baseline_cache(void);
-static void emit_channel_summary(const LightReadingsStatisticSummary& summary);
+static void emit_channel_summary(const char* channel_name, const LightReadingsStatisticSummary& summary);
 static void emit_baseline_success(const LightReadingsSweepStats& stats);
 static void emit_sample_success(const LightReadingsSweepStats& stats, float sample_temperature_c,
                                 float enclosure_temperature_c, double absorbance_blue, double absorbance_green,
-                                double r_ratio, double ph_value);
+                                double r_ratio, double ph_value, bool ph_valid);
 static int  compute_channel_absorbance(const LightReadingsStatisticSummary& reference_channel,
                                        const LightReadingsStatisticSummary& reference_drain,
                                        const LightReadingsStatisticSummary& sample_channel,
@@ -42,6 +46,7 @@ static int  compute_absorbance_pair(const LightReadingsSweepStats& baseline_stat
 constexpr CliCommandEntry k_cli_commands[] = {
     {"b", handle_baseline, "Capture baseline sweep"},
     {"s", handle_sample, "Capture sample sweep + pH"},
+    {"v", handle_version, "Print firmware version"},
     {"help", handle_help, "List commands"},
     {NULL, NULL, NULL},
 };
@@ -70,8 +75,17 @@ static int handle_help(void) {
   return PHX_OK;
 }
 
+// Reports firmware version for host sanity checks and diagnostic logging.
+static int handle_version(void) {
+  g_cli_output->println(k_firmware_version);
+  return PHX_OK;
+}
+
 // Captures a baseline sweep and caches the resulting statistics for later samples.
 static int handle_baseline(void) {
+  g_cli_output->println("Taking baseline...");
+  delay(1);  // needed for print to happen when it needs to and not after measurement is finished. I think compiler
+             // overoptimizes
   LightReadingsSweepCollection sweeps = {0u, g_light_readings_sweep_storage};
   CLI_GUARD_EMIT("sweep", g_measurement_hooks.sweep_n(k_baseline_sweep_count, &sweeps));
 
@@ -92,6 +106,9 @@ static int handle_sample(void) {
     return PHX_ERR_NOT_INITIALIZED;
   }
 
+  g_cli_output->println("Taking sample...");
+  delay(1);  // needed for print to happen when it needs to and not after measurement is finished. I think compiler
+             // overoptimizes
   LightReadingsSweepCollection sweeps       = {0u, g_light_readings_sweep_storage};
   LightReadingsSweepStats      sample_stats = {};
 
@@ -118,16 +135,26 @@ static int handle_sample(void) {
                  compute_absorbance_pair(g_baseline_stats, sample_stats, &absorbance_blue, &absorbance_green));
 
   // Step 7: Convert the absorbance pair into the r-ratio expected by the pH library.
-  double r_ratio = 0.0;
-  CLI_GUARD_EMIT("r_ratio", ph_equations_calc_r_ratio(absorbance_green, absorbance_blue, &r_ratio));
+  // If this fails (e.g. negative ratio), we still emit the measurements for diagnostics.
+  double r_ratio        = 0.0;
+  bool   ph_valid       = true;
+  int    r_ratio_result = ph_equations_calc_r_ratio(absorbance_green, absorbance_blue, &r_ratio);
+  if (r_ratio_result != PH_EQUATIONS_OK) {
+    ph_valid = false;
+  }
 
   // Step 8: Use the r-ratio plus temperature and salinity to produce the final pH reading.
   double ph_value = 0.0;
-  CLI_GUARD_EMIT("ph", ph_equations_compute_ph(r_ratio, static_cast<double>(sample_temperature_c),
-                                               k_cli_default_salinity_psu, &ph_value));
+  if (ph_valid) {
+    int ph_result = ph_equations_compute_ph(r_ratio, static_cast<double>(sample_temperature_c),
+                                            k_cli_default_salinity_psu, &ph_value);
+    if (ph_result != PH_EQUATIONS_OK) {
+      ph_valid = false;
+    }
+  }
 
   emit_sample_success(sample_stats, sample_temperature_c, enclosure_temperature_c, absorbance_blue, absorbance_green,
-                      r_ratio, ph_value);
+                      r_ratio, ph_value, ph_valid);
 
   return PHX_OK;
 }
@@ -139,35 +166,23 @@ static void reset_baseline_cache(void) {
   memset(&g_baseline_stats, 0, sizeof(g_baseline_stats));
 }
 
-// Emits tab-delimited summary stats for a single channel to keep formatting consistent.
-static void emit_channel_summary(const LightReadingsStatisticSummary& summary) {
-  g_cli_output->print(summary.sample_count);
-  g_cli_output->print("\t");
-  g_cli_output->print(summary.mean, 6);
-  g_cli_output->print("\t");
-  g_cli_output->print(summary.standard_deviation, 6);
-  g_cli_output->print("\t");
-  g_cli_output->print(summary.min_value);
-  g_cli_output->print("\t");
-  g_cli_output->print(summary.max_value);
-  g_cli_output->print("\t");
-  g_cli_output->print(summary.drift_slope, 6);
+// Emits fixed-width summary stats for a single channel to ensure columns align.
+static void emit_channel_summary(const char* channel_name, const LightReadingsStatisticSummary& summary) {
+  char line[120];
+  snprintf(line, sizeof(line), "%-12s %5lu %14.2f %10.2f %10ld %10ld %10.4f", channel_name,
+           (unsigned long) summary.sample_count, summary.mean, summary.standard_deviation, (long) summary.min_value,
+           (long) summary.max_value, summary.drift_slope);
+  g_cli_output->println(line);
 }
 
-// Emits a baseline success row that mirrors the sample payload without pH columns.
+// Emits a baseline success row with a header for readability.
 static void emit_baseline_success(const LightReadingsSweepStats& stats) {
-  g_cli_output->print("b\tok\t");
-  g_cli_output->print(stats.sweep_count);
-  g_cli_output->print("\t");
+  g_cli_output->println("channel      count           mean     stddev        min        max      drift");
 
-  emit_channel_summary(stats.drain_blue);
-  g_cli_output->print("\t");
-  emit_channel_summary(stats.drain_green);
-  g_cli_output->print("\t");
-  emit_channel_summary(stats.blue);
-  g_cli_output->print("\t");
-  emit_channel_summary(stats.green);
-  g_cli_output->println();
+  emit_channel_summary("drain_blue", stats.drain_blue);
+  emit_channel_summary("drain_green", stats.drain_green);
+  emit_channel_summary("blue", stats.blue);
+  emit_channel_summary("green", stats.green);
 }
 
 // Emits the shared error format used by GUARD_EMIT callers.
@@ -216,34 +231,31 @@ static int compute_absorbance_pair(const LightReadingsSweepStats& baseline_stats
                                     sample_stats.drain_green, absorbance_green_out);
 }
 
-// Emits the full sample success payload, including stats, temperatures, absorbance, and pH.
+// Emits the full sample success payload with headers for readability.
 static void emit_sample_success(const LightReadingsSweepStats& stats, float sample_temperature_c,
                                 float enclosure_temperature_c, double absorbance_blue, double absorbance_green,
-                                double r_ratio, double ph_value) {
-  g_cli_output->print("s\tok\t");
-  g_cli_output->print(stats.sweep_count);
-  g_cli_output->print("\t");
+                                double r_ratio, double ph_value, bool ph_valid) {
+  g_cli_output->println("channel      count           mean     stddev        min        max      drift");
 
-  emit_channel_summary(stats.drain_blue);
-  g_cli_output->print("\t");
-  emit_channel_summary(stats.drain_green);
-  g_cli_output->print("\t");
-  emit_channel_summary(stats.blue);
-  g_cli_output->print("\t");
-  emit_channel_summary(stats.green);
-  g_cli_output->print("\t");
+  emit_channel_summary("drain_blue", stats.drain_blue);
+  emit_channel_summary("drain_green", stats.drain_green);
+  emit_channel_summary("blue", stats.blue);
+  emit_channel_summary("green", stats.green);
 
-  g_cli_output->print(sample_temperature_c, 2);
-  g_cli_output->print("\t");
-  g_cli_output->print(enclosure_temperature_c, 2);
-  g_cli_output->print("\t");
-  g_cli_output->print(absorbance_blue, 6);
-  g_cli_output->print("\t");
-  g_cli_output->print(absorbance_green, 6);
-  g_cli_output->print("\t");
-  g_cli_output->print(r_ratio, 6);
-  g_cli_output->print("\t");
-  g_cli_output->println(ph_value, 6);
+  g_cli_output->println();
+  g_cli_output->println("temp_sample  temp_encl   abs_blue   abs_green    r_ratio        pH");
+  char result_line[120];
+  if (ph_valid) {
+    snprintf(result_line, sizeof(result_line), "%11.2f %10.2f %10.6f %11.6f %10.6f %9.4f",
+             static_cast<double>(sample_temperature_c), static_cast<double>(enclosure_temperature_c), absorbance_blue,
+             absorbance_green, r_ratio, ph_value);
+  }
+  else {
+    snprintf(result_line, sizeof(result_line), "%11.2f %10.2f %10.6f %11.6f %10.6f     ERROR",
+             static_cast<double>(sample_temperature_c), static_cast<double>(enclosure_temperature_c), absorbance_blue,
+             absorbance_green, r_ratio);
+  }
+  g_cli_output->println(result_line);
 }
 }  // namespace
 
@@ -269,7 +281,7 @@ void cli_initialize(void) {
   g_measurement_hooks = k_default_measurement_hooks;
   g_cli_ready         = true;
   g_cli_output        = &Serial;
-  g_cli_output->println("phoenix-cli ready (commands: b, s, help)");
+  g_cli_output->println("phoenix-cli ready (commands: b, s, v, help)");
 }
 
 bool cli_test_is_baseline_cached(void) {

@@ -1,0 +1,11 @@
+{
+    "commands": [
+        {
+            "command": "pot_sweep",
+            "parameters": {
+                "sweeps": 5,
+                "dwell_us": 100
+            }
+        }
+    ]
+}
