@@ -1,0 +1,9 @@
+{
+    "name": "phoenix_settings",
+    "version": "1.0.0",
+    "description": "Persistent device settings storage for Phoenix instrument firmware",
+    "dependencies": {
+        "ad524x": "*",
+        "phoenix_common": "*"
+    }
+}

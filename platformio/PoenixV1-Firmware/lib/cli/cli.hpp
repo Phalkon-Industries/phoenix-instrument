@@ -1,7 +1,9 @@
 #ifndef CLI_HPP
 #define CLI_HPP
 
+#include "light_calibration.hpp"
 #include "light_readings.hpp"
+#include "phoenix_settings.hpp"
 #include "thermistor_reader.hpp"
 #include <stdbool.h>
 #include <stddef.h>

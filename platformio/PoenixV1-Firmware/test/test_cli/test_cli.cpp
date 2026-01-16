@@ -206,9 +206,9 @@ static int stub_measure_temperature_error(ThermistorId id, float* temperature_c_
 }
 
 static const CliMeasurementHooks k_stub_hooks_success           = {stub_sweep_success, stub_compute_success,
-                                                         stub_measure_temperature_success};
+                                                                   stub_measure_temperature_success};
 static const CliMeasurementHooks k_stub_hooks_error             = {stub_sweep_error, stub_compute_success,
-                                                       stub_measure_temperature_success};
+                                                                   stub_measure_temperature_success};
 static const CliMeasurementHooks k_stub_hooks_temperature_error = {stub_sweep_success, stub_compute_success,
                                                                    stub_measure_temperature_error};
 

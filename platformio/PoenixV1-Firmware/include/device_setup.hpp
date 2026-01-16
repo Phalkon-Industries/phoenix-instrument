@@ -6,6 +6,7 @@
 #include "led_router.hpp"
 #include "light_readings.hpp"
 #include "mcp356x.hpp"
+#include "phoenix_settings.hpp"
 #include "power_control.hpp"
 #include "thermistor_reader.hpp"
 #include <Adafruit_TinyUSB.h>

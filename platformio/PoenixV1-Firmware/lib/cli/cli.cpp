@@ -1,7 +1,9 @@
 #include "cli.hpp"
 
+#include "light_calibration.hpp"
 #include "ph_equations.hpp"
 #include "phoenix_guard.hpp"
+#include "phoenix_settings.hpp"
 #include <Arduino.h>
 #include <string.h>
 
@@ -29,6 +31,7 @@ static int  handle_help(void);
 static int  handle_version(void);
 static int  handle_baseline(void);
 static int  handle_sample(void);
+static int  handle_calibrate(void);
 static void reset_baseline_cache(void);
 static void emit_channel_summary(const char* channel_name, const LightReadingsStatisticSummary& summary);
 static void emit_baseline_success(const LightReadingsSweepStats& stats);
@@ -44,11 +47,9 @@ static int  compute_absorbance_pair(const LightReadingsSweepStats& baseline_stat
                                     double* absorbance_green_out);
 
 constexpr CliCommandEntry k_cli_commands[] = {
-    {"b", handle_baseline, "Capture baseline sweep"},
-    {"s", handle_sample, "Capture sample sweep + pH"},
-    {"v", handle_version, "Print firmware version"},
-    {"help", handle_help, "List commands"},
-    {NULL, NULL, NULL},
+    {"b", handle_baseline, "Capture baseline sweep"}, {"s", handle_sample, "Capture sample sweep + pH"},
+    {"c", handle_calibrate, "Run light calibration"}, {"v", handle_version, "Print firmware version"},
+    {"help", handle_help, "List commands"},           {NULL, NULL, NULL},
 };
 
 static bool                    g_cli_ready      = false;
@@ -166,6 +167,85 @@ static void reset_baseline_cache(void) {
   memset(&g_baseline_stats, 0, sizeof(g_baseline_stats));
 }
 
+// Progress callback for calibration; prints each wiper result in a table row.
+static void calibration_progress_callback(uint8_t wiper_code, int32_t blue_max, int32_t green_max, bool blue_sat,
+                                          bool green_sat) {
+  char line[80];
+  snprintf(line, sizeof(line), "%5u %10ld %10ld   %s   %s", static_cast<unsigned>(wiper_code), (long) blue_max,
+           (long) green_max, blue_sat ? "YES" : " NO", green_sat ? "YES" : " NO");
+  g_cli_output->println(line);
+}
+
+// Runs a light calibration sweep and saves the recommended wiper codes to flash.
+static int handle_calibrate(void) {
+  g_cli_output->println("Running light calibration...");
+  delay(1);  // Allow print to flush before long operation.
+
+  // Step 1: Print table header.
+  g_cli_output->println("wiper   blue_max  green_max  b_sat  g_sat");
+
+  // Step 2: Run calibration with progress reporting.
+  LightCalibrationResult result = light_calibration_run_with_progress(nullptr, calibration_progress_callback);
+
+  // Step 3: Check for errors.
+  if (!result.success) {
+    g_cli_output->print("error\tcalibration_failed\t");
+    g_cli_output->println(result.error_message != nullptr ? result.error_message : "unknown");
+    return PHX_ERR_COMMUNICATION;
+  }
+
+  // Step 4: Print recommendations.
+  g_cli_output->println();
+  g_cli_output->println("Recommended wiper codes:");
+  char line[80];
+  if (result.blue_valid) {
+    snprintf(line, sizeof(line), "  blue:  0x%02X (max code: %ld)", static_cast<unsigned>(result.blue_wiper_code),
+             (long) result.blue_max_code);
+  }
+  else {
+    snprintf(line, sizeof(line), "  blue:  0x%02X (all saturated, using fallback)",
+             static_cast<unsigned>(result.blue_wiper_code));
+  }
+  g_cli_output->println(line);
+
+  if (result.green_valid) {
+    snprintf(line, sizeof(line), "  green: 0x%02X (max code: %ld)", static_cast<unsigned>(result.green_wiper_code),
+             (long) result.green_max_code);
+  }
+  else {
+    snprintf(line, sizeof(line), "  green: 0x%02X (all saturated, using fallback)",
+             static_cast<unsigned>(result.green_wiper_code));
+  }
+  g_cli_output->println(line);
+
+  // Step 5: Save calibrated values to flash.
+  g_cli_output->print("Saving calibration... ");
+  PhoenixSettings new_settings  = *phoenix_settings_get();
+  new_settings.blue_wiper_code  = result.blue_wiper_code;
+  new_settings.green_wiper_code = result.green_wiper_code;
+  int save_result               = phoenix_settings_save(&new_settings);
+  if (save_result != PHOENIX_SETTINGS_OK) {
+    g_cli_output->println("FAILED");
+    return save_result;
+  }
+  g_cli_output->println("OK");
+
+  // Step 6: Apply new wiper codes to hardware.
+  g_cli_output->print("Applying wiper codes... ");
+  int apply_result = phoenix_settings_apply_wiper_codes();
+  if (apply_result != PHOENIX_SETTINGS_OK) {
+    g_cli_output->println("FAILED");
+    return apply_result;
+  }
+  g_cli_output->println("OK");
+
+  // Step 7: Invalidate baseline since wiper codes changed.
+  reset_baseline_cache();
+  g_cli_output->println("Note: Baseline cleared. Run 'b' before next sample.");
+
+  return PHX_OK;
+}
+
 // Emits fixed-width summary stats for a single channel to ensure columns align.
 static void emit_channel_summary(const char* channel_name, const LightReadingsStatisticSummary& summary) {
   char line[120];
@@ -281,7 +361,7 @@ void cli_initialize(void) {
   g_measurement_hooks = k_default_measurement_hooks;
   g_cli_ready         = true;
   g_cli_output        = &Serial;
-  g_cli_output->println("phoenix-cli ready (commands: b, s, v, help)");
+  g_cli_output->println("phoenix-cli ready (commands: b, s, c, v, help)");
 }
 
 bool cli_test_is_baseline_cached(void) {

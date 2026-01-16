@@ -72,13 +72,19 @@ int device_setup_initialize(void) {
   // Step 1: Energise shared power domains and initialise peripheral drivers.
   GUARD(power_control_prepare_power_domains(&g_device_power_control_config));
 
-  // Step 2: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
+  // Step 2: Initialize settings storage and load calibrated wiper codes from flash.
+  GUARD(phoenix_settings_initialize());
+
+  // Step 3: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
   GUARD(mcp356x_apply_settings(&g_device_mcp356x_settings));
 
-  // Step 3: Bring the light readings helper online so batches can run immediately.
+  // Step 4: Bring the light readings helper online so batches can run immediately.
   GUARD(light_readings_initialize(&g_device_light_readings_config));
 
-  // Step 4: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
+  // Step 5: Apply calibrated wiper codes from settings to the digipot hardware.
+  GUARD(phoenix_settings_apply_wiper_codes());
+
+  // Step 6: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
   GUARD(thermistor_reader_initialize(&g_device_thermistor_reader_config));
 
   g_device_setup_ready = true;
