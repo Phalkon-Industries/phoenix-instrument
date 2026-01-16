@@ -90,7 +90,8 @@ void configure_channel_means(LightReadingsSweepStats* stats, double drain_blue_m
   stats->green.mean       = green_mean;
 }
 
-size_t split_tabs(const String& line, String* tokens, size_t max_tokens) {
+// Helper for parsing tab-delimited output; reserved for future test expansion.
+__attribute__((unused)) size_t split_tabs(const String& line, String* tokens, size_t max_tokens) {
   size_t    token_count = 0u;
   int       start_index = 0;
   const int length      = line.length();
@@ -205,9 +206,9 @@ static int stub_measure_temperature_error(ThermistorId id, float* temperature_c_
 }
 
 static const CliMeasurementHooks k_stub_hooks_success           = {stub_sweep_success, stub_compute_success,
-                                                                   stub_measure_temperature_success};
+                                                         stub_measure_temperature_success};
 static const CliMeasurementHooks k_stub_hooks_error             = {stub_sweep_error, stub_compute_success,
-                                                                   stub_measure_temperature_success};
+                                                       stub_measure_temperature_success};
 static const CliMeasurementHooks k_stub_hooks_temperature_error = {stub_sweep_success, stub_compute_success,
                                                                    stub_measure_temperature_error};
 
@@ -299,12 +300,12 @@ static void test_cli_sample_command_emits_stats_and_ph_after_baseline(void) {
   g_recording_print.reset();
   TEST_ASSERT_EQUAL_INT((int) CLI_DISPATCH_OK, (int) cli_dispatch_command("s"));
 
-  // Step 1: Verify the output contains the expected status messages and key values.
+  // Step 1: Verify the output contains the expected status messages and table headers.
   String output = g_recording_print.buffer();
   TEST_ASSERT_TRUE(output.indexOf("Taking sample...") >= 0);
-  TEST_ASSERT_TRUE(output.indexOf("temp_sample=") >= 0);
-  TEST_ASSERT_TRUE(output.indexOf("abs_blue=") >= 0);
-  TEST_ASSERT_TRUE(output.indexOf("pH=") >= 0);
+  TEST_ASSERT_TRUE(output.indexOf("temp_sample") >= 0);
+  TEST_ASSERT_TRUE(output.indexOf("abs_blue") >= 0);
+  TEST_ASSERT_TRUE(output.indexOf("pH") >= 0);
 
   // Step 2: Compute expected values for comparison.
   const double reference_blue =
@@ -331,11 +332,16 @@ static void test_cli_sample_command_emits_stats_and_ph_after_baseline(void) {
                         ph_equations_compute_ph(expected_r_ratio, static_cast<double>(g_stub_water_temperature_c),
                                                 k_test_default_salinity_psu, &expected_ph));
 
-  // Step 3: Verify the pH line contains the expected value (last line is "pH=X.XXXX").
+  // Step 3: Verify the last line contains the pH value (tabular format: values row).
+  // The last line is the data row with whitespace-separated values ending with pH.
   String last_line = g_recording_print.last_line();
   last_line.trim();
-  TEST_ASSERT_TRUE(last_line.startsWith("pH="));
-  float parsed_ph = last_line.substring(3).toFloat();
+  // The pH value is the last whitespace-delimited field in the result row.
+  int last_space = last_line.lastIndexOf(' ');
+  TEST_ASSERT_TRUE(last_space > 0);
+  String ph_field = last_line.substring(last_space + 1);
+  ph_field.trim();
+  float parsed_ph = ph_field.toFloat();
   TEST_ASSERT_FLOAT_WITHIN(1e-3f, static_cast<float>(expected_ph), parsed_ph);
 }
 
