@@ -1,7 +1,10 @@
+#include "ad524x.hpp"
+#include "device_setup.hpp"
 #include "phoenix_settings.hpp"
 #include "unity_config.h"
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
+#include <Wire.h>
 #include <unity.h>
 
 namespace {
@@ -120,6 +123,36 @@ static void test_settings_reset_to_defaults(void) {
   TEST_ASSERT_EQUAL_UINT8(k_test_default_green_wiper, reloaded->green_wiper_code);
 }
 
+// Test that apply_wiper_codes writes blue to channel 0 and green to channel 1.
+static void test_settings_apply_wiper_codes_writes_to_digipot(void) {
+  // Step 1: Initialize digipot driver (requires Wire bus already started).
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
+
+  // Step 2: Initialize settings with known distinctive wiper codes.
+  phoenix_settings_deinitialize();
+  const uint8_t         test_blue_wiper  = 0x3Au;  // Distinctive value for blue.
+  const uint8_t         test_green_wiper = 0x5Cu;  // Distinctive value for green.
+  const PhoenixSettings test_settings    = {test_blue_wiper, test_green_wiper, {0}};
+  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize(&test_settings));
+
+  // Step 3: Apply wiper codes to hardware.
+  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_apply_wiper_codes());
+
+  // Step 4: Read back wiper codes from digipot and verify channel mapping.
+  // Blue LED uses digipot channel 0, green LED uses digipot channel 1.
+  uint8_t readback_channel_0 = 0u;
+  uint8_t readback_channel_1 = 0u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &readback_channel_0));
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(1u, &readback_channel_1));
+
+  // Step 5: Assert correct channel mapping: blue->channel 0, green->channel 1.
+  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_blue_wiper, readback_channel_0, "Blue wiper should be written to channel 0");
+  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_green_wiper, readback_channel_1, "Green wiper should be written to channel 1");
+
+  // Step 6: Clean up digipot state.
+  ad524x_deinitialize();
+}
+
 }  // namespace
 
 void setUp(void) {
@@ -133,12 +166,17 @@ void tearDown(void) {
 
 void setup(void) {
   UNITY_SETUP_SERIAL_DEFAULT();
+
+  // Step 1: Initialize Wire bus for digipot tests.
+  Wire.begin();
+
   RUN_TEST(test_settings_default_values_on_first_load);
   RUN_TEST(test_settings_save_and_load_round_trip);
   RUN_TEST(test_settings_get_cached_values);
   RUN_TEST(test_settings_save_rejects_null);
   RUN_TEST(test_settings_operations_require_init);
   RUN_TEST(test_settings_reset_to_defaults);
+  RUN_TEST(test_settings_apply_wiper_codes_writes_to_digipot);
   UNITY_END();
 }
 

@@ -172,11 +172,11 @@ int phoenix_settings_apply_wiper_codes(void) {
   // Step 1: Ensure module is initialized.
   GUARD_INITIALIZED(g_initialized);
 
-  // Step 2: Apply blue wiper code to channel 1.
-  GUARD(ad524x_set_wiper(1u, g_cached_settings.blue_wiper_code));
+  // Step 2: Apply blue wiper code to channel 0 (matches light_readings mapping).
+  GUARD(ad524x_set_wiper(0u, g_cached_settings.blue_wiper_code));
 
-  // Step 3: Apply green wiper code to channel 0.
-  GUARD(ad524x_set_wiper(0u, g_cached_settings.green_wiper_code));
+  // Step 3: Apply green wiper code to channel 1 (matches light_readings mapping).
+  GUARD(ad524x_set_wiper(1u, g_cached_settings.green_wiper_code));
 
   return PHOENIX_SETTINGS_OK;
 }
