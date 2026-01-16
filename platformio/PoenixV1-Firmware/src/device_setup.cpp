@@ -34,8 +34,8 @@ static const uint32_t k_light_readings_pwm_period_timeout_us = 100000u;
 
 const LightReadingsConfig g_device_light_readings_config = {
     LedRouterState::LED_ROUTER_STATE_DRAIN,
-    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, 0xD3u},
-    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, 0xFFu},
+    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, PHOENIX_DEFAULT_GREEN_WIPER},
+    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, PHOENIX_DEFAULT_BLUE_WIPER},
     1000000u,
     {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, k_light_readings_pwm_minimum_period_us,
      k_light_readings_pwm_period_timeout_us},
@@ -62,6 +62,13 @@ const ThermistorReaderConfig g_device_thermistor_reader_config = {
     0.0f,
 };
 
+// Default settings applied when flash is empty or corrupt.
+static const PhoenixSettings k_default_settings = {
+    PHOENIX_DEFAULT_BLUE_WIPER,
+    PHOENIX_DEFAULT_GREEN_WIPER,
+    {0},  // reserved
+};
+
 int device_setup_initialize(void) {
   static bool g_device_setup_ready = false;
 
@@ -73,7 +80,7 @@ int device_setup_initialize(void) {
   GUARD(power_control_prepare_power_domains(&g_device_power_control_config));
 
   // Step 2: Initialize settings storage and load calibrated wiper codes from flash.
-  GUARD(phoenix_settings_initialize());
+  GUARD(phoenix_settings_initialize(&k_default_settings));
 
   // Step 3: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
   GUARD(mcp356x_apply_settings(&g_device_mcp356x_settings));

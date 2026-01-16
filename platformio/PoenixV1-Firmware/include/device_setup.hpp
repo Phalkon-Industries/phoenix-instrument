@@ -45,6 +45,12 @@ H   L   NO1 (Blue LED)
 H   H   NO2 (Drain)
 */
 
+// ===================== Default Settings ======================================
+// Factory default settings used at boot when flash is empty or corrupt.
+// These values are persisted to flash by phoenix_settings on first run.
+#define PHOENIX_DEFAULT_BLUE_WIPER 0xFFu
+#define PHOENIX_DEFAULT_GREEN_WIPER 0xD3u
+
 extern const LedRouterConfig        g_device_led_router_config;
 extern const LedRouterPwmConfig     g_device_led_router_pwm_backend;
 extern const AdcHalConfig           g_device_adc_hal_config;

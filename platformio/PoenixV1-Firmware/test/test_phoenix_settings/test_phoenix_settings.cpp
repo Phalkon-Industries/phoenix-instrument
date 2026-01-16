@@ -6,27 +6,38 @@
 
 namespace {
 
+// Test default wiper codes used when flash is empty or corrupt.
+static const uint8_t k_test_default_blue_wiper  = 0xFFu;
+static const uint8_t k_test_default_green_wiper = 0xD3u;
+
+// Default settings struct passed to initialize.
+static const PhoenixSettings k_test_defaults = {
+    k_test_default_blue_wiper,
+    k_test_default_green_wiper,
+    {0},  // reserved
+};
+
 // Test that default values are returned when no settings file exists.
 static void test_settings_default_values_on_first_load(void) {
   // Step 1: Reset settings to ensure clean state (deletes any existing file).
   phoenix_settings_deinitialize();
 
   // Step 2: Initialize settings module; should create defaults since no file exists.
-  const int init_result = phoenix_settings_initialize();
+  const int init_result = phoenix_settings_initialize(&k_test_defaults);
   TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, init_result);
 
-  // Step 3: Retrieve cached settings and verify they match compile-time defaults.
+  // Step 3: Retrieve cached settings and verify they match the provided defaults.
   const PhoenixSettings* settings = phoenix_settings_get();
   TEST_ASSERT_NOT_NULL(settings);
-  TEST_ASSERT_EQUAL_UINT8(PHOENIX_SETTINGS_DEFAULT_BLUE_WIPER, settings->blue_wiper_code);
-  TEST_ASSERT_EQUAL_UINT8(PHOENIX_SETTINGS_DEFAULT_GREEN_WIPER, settings->green_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(k_test_default_blue_wiper, settings->blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(k_test_default_green_wiper, settings->green_wiper_code);
 }
 
 // Test that saved settings can be read back correctly after a round trip.
 static void test_settings_save_and_load_round_trip(void) {
   // Step 1: Initialize settings module with defaults.
   phoenix_settings_deinitialize();
-  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize());
+  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize(&k_test_defaults));
 
   // Step 2: Modify settings and save to flash.
   PhoenixSettings modified  = *phoenix_settings_get();
@@ -36,7 +47,7 @@ static void test_settings_save_and_load_round_trip(void) {
 
   // Step 3: Deinitialize and reinitialize to force reload from flash.
   phoenix_settings_deinitialize();
-  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize());
+  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize(&k_test_defaults));
 
   // Step 4: Verify reloaded settings match the values we saved.
   const PhoenixSettings* reloaded = phoenix_settings_get();
@@ -49,7 +60,7 @@ static void test_settings_save_and_load_round_trip(void) {
 static void test_settings_get_cached_values(void) {
   // Step 1: Initialize settings module.
   phoenix_settings_deinitialize();
-  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize());
+  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize(&k_test_defaults));
 
   // Step 2: Get settings pointer twice and verify they point to same data.
   const PhoenixSettings* first_get  = phoenix_settings_get();
@@ -62,7 +73,7 @@ static void test_settings_get_cached_values(void) {
 static void test_settings_save_rejects_null(void) {
   // Step 1: Initialize settings module.
   phoenix_settings_deinitialize();
-  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize());
+  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize(&k_test_defaults));
 
   // Step 2: Attempt to save null settings and expect error.
   const int result = phoenix_settings_save(NULL);
@@ -86,7 +97,7 @@ static void test_settings_operations_require_init(void) {
 static void test_settings_reset_to_defaults(void) {
   // Step 1: Initialize and modify settings.
   phoenix_settings_deinitialize();
-  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize());
+  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize(&k_test_defaults));
 
   PhoenixSettings modified  = *phoenix_settings_get();
   modified.blue_wiper_code  = 0x11u;
@@ -98,15 +109,15 @@ static void test_settings_reset_to_defaults(void) {
 
   // Step 3: Verify settings match defaults.
   const PhoenixSettings* settings = phoenix_settings_get();
-  TEST_ASSERT_EQUAL_UINT8(PHOENIX_SETTINGS_DEFAULT_BLUE_WIPER, settings->blue_wiper_code);
-  TEST_ASSERT_EQUAL_UINT8(PHOENIX_SETTINGS_DEFAULT_GREEN_WIPER, settings->green_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(k_test_default_blue_wiper, settings->blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(k_test_default_green_wiper, settings->green_wiper_code);
 
   // Step 4: Reload and verify defaults persisted.
   phoenix_settings_deinitialize();
-  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize());
+  TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize(&k_test_defaults));
   const PhoenixSettings* reloaded = phoenix_settings_get();
-  TEST_ASSERT_EQUAL_UINT8(PHOENIX_SETTINGS_DEFAULT_BLUE_WIPER, reloaded->blue_wiper_code);
-  TEST_ASSERT_EQUAL_UINT8(PHOENIX_SETTINGS_DEFAULT_GREEN_WIPER, reloaded->green_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(k_test_default_blue_wiper, reloaded->blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT8(k_test_default_green_wiper, reloaded->green_wiper_code);
 }
 
 }  // namespace

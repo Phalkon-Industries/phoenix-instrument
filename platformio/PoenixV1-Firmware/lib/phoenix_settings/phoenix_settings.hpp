@@ -10,13 +10,6 @@
 #define PHOENIX_SETTINGS_ERR_NOT_INITIALIZED PHX_ERR_NOT_INITIALIZED
 #define PHOENIX_SETTINGS_ERR_STORAGE PHX_ERR_COMMUNICATION
 
-// ===================== Default Wiper Codes ======================================
-// Factory default digipot wiper codes. These values are used when no settings file
-// exists or when settings are explicitly reset. They match the compile-time defaults
-// in device_setup.cpp for consistency.
-#define PHOENIX_SETTINGS_DEFAULT_BLUE_WIPER 0xFFu
-#define PHOENIX_SETTINGS_DEFAULT_GREEN_WIPER 0xD3u
-
 // ===================== Settings Version =========================================
 // Hardcoded settings format version. Increment this when the PhoenixSettings struct
 // changes in a way that requires migration. Settings files with a different version
@@ -40,12 +33,13 @@ struct PhoenixSettings {
  * @brief Initialize the settings module and load from flash.
  *
  * If no settings file exists or the stored version differs from the current format
- * version, default settings are created and persisted. This function must be called
- * before any other settings API.
+ * version, the provided default settings are created and persisted. This function
+ * must be called before any other settings API.
  *
+ * @param defaults Pointer to default settings to use when flash is empty/invalid.
  * @return PHOENIX_SETTINGS_OK on success, or a negative error code on failure.
  */
-int phoenix_settings_initialize(void);
+int phoenix_settings_initialize(const PhoenixSettings* defaults);
 
 /**
  * @brief Check whether the settings module has been initialized.

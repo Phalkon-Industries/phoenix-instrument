@@ -21,15 +21,16 @@ namespace {
 // ===================== Module State =============================================
 static bool            g_initialized     = false;
 static PhoenixSettings g_cached_settings = {};
+static PhoenixSettings g_defaults        = {};  // Caller-provided defaults.
 
-// Populates the settings struct with compile-time default values.
+// Populates the settings struct with caller-provided default values.
 static void apply_defaults(PhoenixSettings* settings) {
   if (settings == nullptr) {
     return;
   }
   memset(settings, 0, sizeof(PhoenixSettings));
-  settings->blue_wiper_code  = PHOENIX_SETTINGS_DEFAULT_BLUE_WIPER;
-  settings->green_wiper_code = PHOENIX_SETTINGS_DEFAULT_GREEN_WIPER;
+  settings->blue_wiper_code  = g_defaults.blue_wiper_code;
+  settings->green_wiper_code = g_defaults.green_wiper_code;
 }
 
 // Attempts to read settings from flash storage. Returns true if successful.
@@ -112,19 +113,25 @@ static bool save_to_flash(const PhoenixSettings* settings) {
 
 }  // namespace
 
-int phoenix_settings_initialize(void) {
-  // Step 1: Initialize the internal filesystem if not already mounted.
+int phoenix_settings_initialize(const PhoenixSettings* defaults) {
+  // Step 1: Validate defaults pointer.
+  GUARD_NONNULL(defaults);
+
+  // Step 2: Store defaults for later use in apply_defaults and reset_to_defaults.
+  memcpy(&g_defaults, defaults, sizeof(PhoenixSettings));
+
+  // Step 3: Initialize the internal filesystem if not already mounted.
   if (!InternalFS.begin()) {
     return PHOENIX_SETTINGS_ERR_STORAGE;
   }
 
-  // Step 2: Attempt to load settings from flash.
+  // Step 4: Attempt to load settings from flash.
   if (load_from_flash(&g_cached_settings)) {
     g_initialized = true;
     return PHOENIX_SETTINGS_OK;
   }
 
-  // Step 3: No valid settings found; create defaults and persist.
+  // Step 5: No valid settings found; create defaults and persist.
   apply_defaults(&g_cached_settings);
   if (!save_to_flash(&g_cached_settings)) {
     return PHOENIX_SETTINGS_ERR_STORAGE;
