@@ -1,0 +1,15 @@
+{
+    "name": "phoenix_benchmark",
+    "version": "1.0.0",
+    "description": "Phoenix instrument benchmark scenarios for characterizing hardware performance",
+    "dependencies": {
+        "mcp356x": "*",
+        "light_readings": "*",
+        "phoenix_settings": "*",
+        "thermistor_reader": "*",
+        "power_control": "*",
+        "led_router": "*",
+        "adc_hal": "*",
+        "ad524x": "*"
+    }
+}
