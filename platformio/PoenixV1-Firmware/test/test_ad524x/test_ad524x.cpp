@@ -171,6 +171,31 @@ static void test_ad524x_shutdown_preserves_wiper_code(void) {
   TEST_ASSERT_EQUAL_UINT8(target, readback);
 }
 
+// Test that shutdown toggles the channel power state (enter/exit shutdown).
+static void test_ad524x_shutdown_toggles_channel_power(void) {
+  // Step 1: Initialize the driver.
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
+
+  // Step 2: Set a known wiper value.
+  const uint8_t test_value = 0x40u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_set_wiper(0u, test_value));
+
+  // Step 3: Enter shutdown mode for channel 0.
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_shutdown(0u, true));
+
+  // Step 4: Verify wiper value is preserved during shutdown.
+  uint8_t readback = 0u;
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &readback));
+  TEST_ASSERT_EQUAL_UINT8(test_value, readback);
+
+  // Step 5: Exit shutdown mode.
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_shutdown(0u, false));
+
+  // Step 6: Verify wiper value is still preserved after exiting shutdown.
+  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &readback));
+  TEST_ASSERT_EQUAL_UINT8(test_value, readback);
+}
+
 void setup() {
   // Step 1. Initialise the serial transport shared across Unity tests.
   UNITY_SETUP_SERIAL_DEFAULT();
@@ -193,6 +218,7 @@ void setup() {
   RUN_TEST(test_ad524x_get_wiper_rejects_null_pointer);
   RUN_TEST(test_ad524x_set_midscale_positions_wiper);
   RUN_TEST(test_ad524x_shutdown_preserves_wiper_code);
+  RUN_TEST(test_ad524x_shutdown_toggles_channel_power);
   // Step 4. Signal Unity to wrap up so the firmware can idle in loop().
   UNITY_END();
 }

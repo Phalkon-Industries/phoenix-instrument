@@ -217,6 +217,29 @@ static void test_calibration_null_config_uses_defaults(void) {
   light_calibration_clear_test_hooks();
 }
 
+// Test that calibration handles restricted wiper range correctly.
+static void test_calibration_wiper_range_boundary(void) {
+  reset_test_state();
+
+  // Step 1: Configure test hooks.
+  light_calibration_set_sweep_runner_for_test(mock_sweep_n);
+  light_calibration_set_wiper_setter_for_test(mock_set_wiper);
+
+  // Step 2: Configure a narrow wiper range (start to end inclusive).
+  LightCalibrationConfig config = k_light_calibration_default_config;
+  config.start_wiper            = 100u;
+  config.end_wiper              = 105u;  // Only 6 wiper values: 100, 101, 102, 103, 104, 105
+
+  // Step 3: Run calibration with restricted range.
+  LightCalibrationResult result = light_calibration_run(&config);
+
+  // Step 4: Verify correct number of wiper values were tested.
+  TEST_ASSERT_TRUE(result.success);
+  TEST_ASSERT_EQUAL_UINT32(6u, g_test_sweep_call_count);
+
+  light_calibration_clear_test_hooks();
+}
+
 }  // namespace
 
 void setUp(void) {
@@ -235,6 +258,7 @@ void setup(void) {
   RUN_TEST(test_calibration_reports_per_channel_results);
   RUN_TEST(test_calibration_aborts_on_hardware_error);
   RUN_TEST(test_calibration_null_config_uses_defaults);
+  RUN_TEST(test_calibration_wiper_range_boundary);
   UNITY_END();
 }
 
