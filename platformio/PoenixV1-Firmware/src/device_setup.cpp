@@ -29,7 +29,7 @@ mcp356x_settings g_device_mcp356x_settings = {
     false,
 };
 
-static const uint32_t k_light_readings_pwm_minimum_period_us = 30000u;
+static const uint32_t k_light_readings_pwm_minimum_period_us = 10000u;
 static const uint32_t k_light_readings_pwm_period_timeout_us = 100000u;
 
 const LightReadingsConfig g_device_light_readings_config = {

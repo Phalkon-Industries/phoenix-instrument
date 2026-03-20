@@ -91,22 +91,22 @@ LightCalibrationResult light_calibration_run_with_progress(const LightCalibratio
   // Step 1: Use defaults if no config provided.
   LightCalibrationConfig effective_config = (config != nullptr) ? *config : k_light_calibration_default_config;
 
-  // Step 2: Initialize result structure.
+  // Step 2: Initialize result structure with fallback wiper codes at full scale (0xFF).
   LightCalibrationResult result = {};
   result.success                = false;
   result.blue_valid             = false;
-  result.blue_wiper_code        = 0u;
+  result.blue_wiper_code        = 0xFFu;
   result.blue_max_code          = 0;
   result.green_valid            = false;
-  result.green_wiper_code       = 0u;
+  result.green_wiper_code       = 0xFFu;
   result.green_max_code         = 0;
   result.error_message          = nullptr;
 
   // Step 3: Allocate sweep storage on stack.
   static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
   LightReadingsSweepCollection    sweeps = {
-      .sweep_count = 0u,
-      .sweeps      = sweep_storage,
+         .sweep_count = 0u,
+         .sweeps      = sweep_storage,
   };
 
   // Step 4: Track best (highest non-saturated) wiper per channel.
