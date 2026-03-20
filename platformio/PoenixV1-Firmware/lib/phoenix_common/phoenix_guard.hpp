@@ -24,6 +24,19 @@
     }                                       \
   } while (0)
 
+// Returns when @p expression evaluates to a non-zero error code, emitting a labelled
+// error via @p emit_fn before returning.
+//
+// @p emit_fn must be callable as emit_fn(label, error_code).
+#define GUARD_EMIT(emit_fn, label, expression) \
+  do {                                         \
+    const int guard_result_ = (expression);    \
+    if (guard_result_ != PHX_OK) {             \
+      (emit_fn)((label), guard_result_);       \
+      return guard_result_;                    \
+    }                                          \
+  } while (0)
+
 // Ensures pointer arguments are not NULL before the function dereferences them.
 #define GUARD_NONNULL(pointer)    \
   do {                            \

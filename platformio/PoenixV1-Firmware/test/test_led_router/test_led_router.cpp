@@ -1,5 +1,5 @@
+#include "device_setup.hpp"
 #include "led_router.hpp"
-#include "main.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
 #include <nrf_pwm.h>

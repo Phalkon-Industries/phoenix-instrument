@@ -1,7 +1,7 @@
 #include "ad524x.hpp"
 #include "channel_map/channel_map.hpp"
+#include "device_setup.hpp"
 #include "light_readings.hpp"
-#include "main.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
 #include <cstring>

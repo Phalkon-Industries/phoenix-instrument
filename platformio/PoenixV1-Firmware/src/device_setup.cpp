@@ -29,12 +29,16 @@ mcp356x_settings g_device_mcp356x_settings = {
     false,
 };
 
+static const uint32_t k_light_readings_pwm_minimum_period_us = 10000u;
+static const uint32_t k_light_readings_pwm_period_timeout_us = 100000u;
+
 const LightReadingsConfig g_device_light_readings_config = {
     LedRouterState::LED_ROUTER_STATE_DRAIN,
-    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, 0xD3u},
-    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, 0xC0u},
+    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, PHOENIX_DEFAULT_GREEN_WIPER},
+    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, PHOENIX_DEFAULT_BLUE_WIPER},
     1000000u,
-    {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, 3000u, 100000u},  // PWM configuration
+    {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, k_light_readings_pwm_minimum_period_us,
+     k_light_readings_pwm_period_timeout_us},
 };
 
 const PowerControlConfig g_device_power_control_config = {
@@ -42,22 +46,54 @@ const PowerControlConfig g_device_power_control_config = {
     PIN_ENABLE_5V_POWER,         PIN_NEG_BIAS_SHUTDOWN,    -1,    -1,
 };
 
-int device_setup_initialize(void) {
-  static bool light_readings_ready = false;
+const ThermistorReaderConfig g_device_thermistor_reader_config = {
+    AdcHalChannel::ADC_HAL_CHANNEL_0,  // reference divider
+    AdcHalChannel::ADC_HAL_CHANNEL_1,  // board thermistor
+    AdcHalChannel::ADC_HAL_CHANNEL_2,  // water thermistor
+    PIN_THERMISTOR_ON,
+    10000u,
+    10000u,
+    100000u,
+    2000u,
+    3380.0f,
+    10000.0f,
+    0.0f,
+    10000.0f,
+    0.0f,
+};
 
-  if (light_readings_ready) {
+// Default settings applied when flash is empty or corrupt.
+static const PhoenixSettings k_default_settings = {
+    PHOENIX_DEFAULT_BLUE_WIPER,
+    PHOENIX_DEFAULT_GREEN_WIPER,
+    {0},  // reserved
+};
+
+int device_setup_initialize(void) {
+  static bool g_device_setup_ready = false;
+
+  if (g_device_setup_ready) {
     return LIGHT_READINGS_OK;
   }
 
   // Step 1: Energise shared power domains and initialise peripheral drivers.
   GUARD(power_control_prepare_power_domains(&g_device_power_control_config));
 
-  // Step 2: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
+  // Step 2: Initialize settings storage and load calibrated wiper codes from flash.
+  GUARD(phoenix_settings_initialize(&k_default_settings));
+
+  // Step 3: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
   GUARD(mcp356x_apply_settings(&g_device_mcp356x_settings));
 
-  // Step 3: Bring the light readings helper online so batches can run immediately.
+  // Step 4: Bring the light readings helper online so batches can run immediately.
   GUARD(light_readings_initialize(&g_device_light_readings_config));
 
-  light_readings_ready = true;
+  // Step 5: Apply calibrated wiper codes from settings to the digipot hardware.
+  GUARD(phoenix_settings_apply_wiper_codes());
+
+  // Step 6: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
+  GUARD(thermistor_reader_initialize(&g_device_thermistor_reader_config));
+
+  g_device_setup_ready = true;
   return LIGHT_READINGS_OK;
 }

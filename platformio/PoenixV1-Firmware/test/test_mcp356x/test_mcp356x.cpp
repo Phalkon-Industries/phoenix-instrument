@@ -1,7 +1,7 @@
 // test_mcp356x.cpp (Fast command initial test)
 // Goal: verify that sending FAST START command (0b01101000) returns STATUS 0b00010111.
 
-#include "main.hpp"
+#include "device_setup.hpp"
 #include "unity_config.h"
 #include <limits.h>
 #include <unity.h>

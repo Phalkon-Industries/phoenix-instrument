@@ -1,5 +1,5 @@
 #include "adc_hal.hpp"
-#include "main.hpp"
+#include "device_setup.hpp"
 #include "unity_config.h"
 #include <Arduino.h>
 #include <limits.h>

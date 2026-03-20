@@ -6,7 +6,9 @@
 #include "led_router.hpp"
 #include "light_readings.hpp"
 #include "mcp356x.hpp"
+#include "phoenix_settings.hpp"
 #include "power_control.hpp"
+#include "thermistor_reader.hpp"
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
 #include <SPI.h>
@@ -43,12 +45,19 @@ H   L   NO1 (Blue LED)
 H   H   NO2 (Drain)
 */
 
-extern const LedRouterConfig     g_device_led_router_config;
-extern const LedRouterPwmConfig  g_device_led_router_pwm_backend;
-extern const AdcHalConfig        g_device_adc_hal_config;
-extern mcp356x_settings          g_device_mcp356x_settings;
-extern const LightReadingsConfig g_device_light_readings_config;
-extern const PowerControlConfig  g_device_power_control_config;
+// ===================== Default Settings ======================================
+// Factory default settings used at boot when flash is empty or corrupt.
+// These values are persisted to flash by phoenix_settings on first run.
+#define PHOENIX_DEFAULT_BLUE_WIPER 0xFFu
+#define PHOENIX_DEFAULT_GREEN_WIPER 0xD3u
+
+extern const LedRouterConfig        g_device_led_router_config;
+extern const LedRouterPwmConfig     g_device_led_router_pwm_backend;
+extern const AdcHalConfig           g_device_adc_hal_config;
+extern mcp356x_settings             g_device_mcp356x_settings;
+extern const LightReadingsConfig    g_device_light_readings_config;
+extern const PowerControlConfig     g_device_power_control_config;
+extern const ThermistorReaderConfig g_device_thermistor_reader_config;
 
 int device_setup_initialize(void);
 
