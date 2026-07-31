@@ -15,10 +15,6 @@ static LightReadingsSweepSample g_test_sweep_storage[LIGHT_READINGS_MAX_SWEEP_CO
 
 int power_control_prepare_power_domains_for_test(void) {
   PowerControlConfig power_config    = {};
-  power_config.led_router_config     = &g_device_led_router_config;
-  power_config.adc_config            = &g_device_adc_hal_config;
-  power_config.wire_bus              = &Wire;
-  power_config.digipot_address       = AD5242_I2C_ADDRESS;
   power_config.power_enable_pin      = PIN_ENABLE_5V_POWER;
   power_config.neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN;
 #if defined(LED_RED)
@@ -607,6 +603,8 @@ void setup() {
   UNITY_SETUP_SERIAL_DEFAULT();
   // Step 2: Start Unity and register each light readings test case.
   UNITY_BEGIN();
+  power_control_prepare_power_domains(&g_device_power_control_config);
+  Wire.begin();
   RUN_TEST(test_light_readings_initialize_rejects_null_config);
   RUN_TEST(test_light_readings_initialize_parks_router_in_drain_state);
   RUN_TEST(test_light_readings_sweep_requires_initialization);

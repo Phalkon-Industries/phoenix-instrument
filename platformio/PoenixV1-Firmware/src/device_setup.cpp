@@ -97,23 +97,25 @@ int device_setup_initialize(void) {
   // Step 4: Initialize settings storage and load calibrated wiper codes from flash.
   GUARD(phoenix_settings_initialize(&k_default_settings));
   Serial.println("test4");
-  // Step 5: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
-  GUARD(mcp356x_apply_settings(&g_device_mcp356x_settings));
-  Serial.println("test5");
-  // Step 6: Initialize ADC HAL.
+  // Step 5: Initialize ADC HAL (which calls mcp356x_initialize internally).
   GUARD(adc_hal_initialize(&g_device_adc_hal_config));
+
+  // Step 6: Program the ADC with working defaults so CONFIG registers are valid.
   GUARD(adc_hal_apply_default_configuration());
+
+  // Step 7: Override with board-specific MCP356x settings (OSR, conversion mode, etc.).
+  GUARD(mcp356x_apply_settings(&g_device_mcp356x_settings));
   Serial.println("test6");
-  // Step 7: Initialize LED router.
+  // Step 8: Initialize LED router.
   GUARD(led_router_initialize(&g_device_led_router_config));
   Serial.println("test7");
-  // Step 8: Bring the light readings helper online so batches can run immediately.
-  // GUARD(light_readings_initialize(&g_device_light_readings_config));
+  // Step 9: Bring the light readings helper online so batches can run immediately.
+  GUARD(light_readings_initialize(&g_device_light_readings_config));
   Serial.println("test8");
-  // Step 9: Apply calibrated wiper codes from settings to the digipot hardware.
-  // GUARD(phoenix_settings_apply_wiper_codes());
+  // Step 10: Apply calibrated wiper codes from settings to the digipot hardware.
+  GUARD(phoenix_settings_apply_wiper_codes());
   Serial.println("test9");
-  // Step 10: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
+  // Step 11: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
   GUARD(thermistor_reader_initialize(&g_device_thermistor_reader_config));
   Serial.println("test0");
   g_device_setup_ready = true;
