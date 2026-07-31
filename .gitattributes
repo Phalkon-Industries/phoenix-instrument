@@ -1,0 +1,13 @@
+# Enforce LF line endings for all text files in the repo.
+# This ensures consistent line endings regardless of OS.
+* text=auto eol=lf
+
+# Explicitly mark binary files to prevent conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.bin binary
+*.hex binary
+*.svd binary
