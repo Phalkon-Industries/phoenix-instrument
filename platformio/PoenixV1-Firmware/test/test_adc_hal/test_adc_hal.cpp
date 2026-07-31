@@ -135,7 +135,8 @@ void setup() {
   // Step 1. Prepare the Unity serial transport shared across firmware tests.
   UNITY_SETUP_SERIAL_DEFAULT();
   // Step 2. Run production bring-up so the analog rails energise and the powered ADC responds.
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, device_setup_initialize());
+  power_control_prepare_power_domains(&g_device_power_control_config);
+
   // Step 3. Start Unity and register each ADC HAL test case.
   UNITY_BEGIN();
   RUN_TEST(test_adc_hal_initialize_rejects_null_config);

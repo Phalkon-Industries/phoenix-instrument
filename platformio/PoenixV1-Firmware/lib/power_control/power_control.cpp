@@ -1,8 +1,6 @@
 #include "power_control.hpp"
 
-#include "ad524x.hpp"
 #include <Arduino.h>
-#include <Wire.h>
 
 namespace {
 
@@ -11,9 +9,6 @@ PowerControlConfig g_power_config              = {};
 bool               g_is_initialized            = false;
 bool               g_power_domains_energised   = false;
 bool               g_indicator_leds_configured = false;
-bool               g_led_router_ready          = false;
-bool               g_adc_ready                 = false;
-bool               g_digipot_ready             = false;
 bool               g_neg_bias_generator_on     = false;
 
 // Force indicator pins low so measurements happen without stray LED current.
@@ -90,42 +85,17 @@ int power_control_prepare_power_domains(const PowerControlConfig* config) {
   drive_5v_power_enable_high();
   delay(5);
 
-  // Step 2.5: Assert the active-low shutdown pin so the negative bias generator wakes up cleanly.
+  // Step 3: Assert the active-low shutdown pin so the negative bias generator wakes up cleanly.
   enable_negative_bias_generator();
 
-  // Step 3: Pull the indicator LEDs dark exactly once per boot so sweeps start from a quiet baseline.
+  // Step 4: Pull the indicator LEDs dark exactly once per boot so sweeps start from a quiet baseline.
   if (!g_indicator_leds_configured) {
     configure_indicator_pin(config->indicator_red_pin);
     configure_indicator_pin(config->indicator_blue_pin);
     g_indicator_leds_configured = true;
   }
 
-  // Step 4: Bring up the digipot driver if the board has not initialised it already.
-  if (!g_digipot_ready) {
-    if (!ad524x_is_initialized()) {
-      GUARD_NONNULL(config->wire_bus);
-      config->wire_bus->begin();
-      GUARD(ad524x_initialize(config->digipot_address, config->wire_bus));
-    }
-    g_digipot_ready = true;
-  }
-
-  // Step 5: Initialise the LED router helper on first use so routes can be commanded safely.
-  if (!g_led_router_ready) {
-    GUARD_NONNULL(config->led_router_config);
-    GUARD(led_router_initialize(config->led_router_config));
-    g_led_router_ready = true;
-  }
-
-  // Step 6: Initialise the ADC HAL and apply defaults before any conversions run.
-  if (!g_adc_ready) {
-    GUARD_NONNULL(config->adc_config);
-    GUARD(adc_hal_initialize(config->adc_config));
-    GUARD(adc_hal_apply_default_configuration());
-    g_adc_ready = true;
-  }
-
-  // Step 7: Record that the helper is live so low-power and shutdown calls can enforce ordering.
+  // Step 5: Record that the helper is live so low-power and shutdown calls can enforce ordering.
   g_is_initialized = true;
 
   return POWER_CONTROL_OK;
@@ -154,25 +124,7 @@ int power_control_shutdown(void) {
   // Step 3: Shut down the negative bias generator so analog domains fully discharge.
   disable_negative_bias_generator();
 
-  // Step 4: Release LED routing resources so future tests see a cold-started helper.
-  if (g_led_router_ready) {
-    GUARD(led_router_shutdown());
-    g_led_router_ready = false;
-  }
-
-  // Step 5: Ask the ADC to shut down completely so subsequent runs reapply configuration.
-  if (g_adc_ready) {
-    GUARD(adc_hal_shutdown());
-    g_adc_ready = false;
-  }
-
-  // Step 6: Clear the digi-pot driver so future runs perform a full initialisation sequence.
-  if (g_digipot_ready) {
-    ad524x_deinitialize();
-    g_digipot_ready = false;
-  }
-
-  // Step 7: Reset cached state so Unity hooks observe a clean helper.
+  // Step 4: Reset cached state so Unity hooks observe a clean helper.
   g_indicator_leds_configured = false;
   g_is_initialized            = false;
   g_power_domains_energised   = false;
@@ -188,9 +140,6 @@ void power_control_reset_for_test(void) {
   g_is_initialized            = false;
   g_power_domains_energised   = false;
   g_indicator_leds_configured = false;
-  g_led_router_ready          = false;
-  g_adc_ready                 = false;
-  g_digipot_ready             = false;
   g_neg_bias_generator_on     = false;
 }
 bool power_control_led_power_is_ready(void) {

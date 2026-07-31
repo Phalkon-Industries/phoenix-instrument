@@ -1,12 +1,8 @@
 #ifndef POWER_CONTROL_HPP
 #define POWER_CONTROL_HPP
 
-#include "adc_hal.hpp"
-#include "led_router.hpp"
 #include "phoenix_guard.hpp"
 #include <stdint.h>
-
-class TwoWire;
 
 // Return codes surfaced by the power control helper.
 #define POWER_CONTROL_OK PHX_OK
@@ -15,21 +11,17 @@ class TwoWire;
 #define POWER_CONTROL_ERR_NOT_IMPLEMENTED PHX_ERR_NOT_IMPLEMENTED
 
 /**
- * @brief Wiring and peripheral dependencies required to energise the analog front-end.
+ * @brief Configuration for power domain control.
  */
 struct PowerControlConfig {
-  const LedRouterConfig* led_router_config; /**< Pin map used to initialise the LED router helper. */
-  const AdcHalConfig*    adc_config;        /**< ADC HAL configuration describing SPI and IRQ wiring. */
-  TwoWire*               wire_bus;          /**< I2C bus instance used to communicate with the digi-pot. */
-  uint8_t                digipot_address;   /**< 7-bit address assigned to the AD524x device on this board. */
-  int                    power_enable_pin;  /**< GPIO that asserts the shared analog power rail when driven HIGH. */
+  int power_enable_pin;      /**< GPIO that asserts the shared analog power rail when driven HIGH. */
   int neg_bias_shutdown_pin; /**< Active-low shutdown pin for the negative bias generator (set -1 when unused). */
   int indicator_red_pin;     /**< Optional indicator LED forced low during bring-up (set -1 when unused). */
   int indicator_blue_pin;    /**< Optional indicator LED forced low during bring-up (set -1 when unused). */
 };
 
 /**
- * @brief Power the analog domains and initialise peripheral drivers on demand.
+ * @brief Power the analog domains.
  */
 int power_control_prepare_power_domains(const PowerControlConfig* config);
 

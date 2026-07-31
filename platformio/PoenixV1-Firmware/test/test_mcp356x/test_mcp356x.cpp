@@ -1031,7 +1031,7 @@ static void test_read_single_ended_channel_times_out_when_data_stalls(void) {
 void setUp(void) {
   // Step 1. Initialise the MCP356x driver under test before each case runs.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
-
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, device_setup_initialize());
   // Step 2. Reset the ADC so each test begins from the datasheet power-on defaults.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   // Step 3. Wait for the reset sequence to complete before proceeding.
@@ -1051,7 +1051,7 @@ void setup() {
   // Step 1. Initialise Unity's serial transport for logging.
   UNITY_SETUP_SERIAL_DEFAULT();
   // Step 2. Run production bring-up so the analog rails energise and the powered ADC responds.
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, device_setup_initialize());
+
   // Step 3. Execute each MCP356x test case in sequence.
   RUN_TEST(test_fast_command_start_status);
   RUN_TEST(test_config0_register_roundtrip);

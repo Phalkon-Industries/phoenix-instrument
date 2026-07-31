@@ -42,8 +42,10 @@ const LightReadingsConfig g_device_light_readings_config = {
 };
 
 const PowerControlConfig g_device_power_control_config = {
-    &g_device_led_router_config, &g_device_adc_hal_config, &Wire, AD5242_I2C_ADDRESS,
-    PIN_ENABLE_5V_POWER,         PIN_NEG_BIAS_SHUTDOWN,    -1,    -1,
+    PIN_ENABLE_5V_POWER,
+    PIN_NEG_BIAS_SHUTDOWN,
+    -1,  // indicator_red_pin
+    -1,  // indicator_blue_pin
 };
 
 const ThermistorReaderConfig g_device_thermistor_reader_config = {
@@ -79,27 +81,41 @@ int device_setup_initialize(void) {
   static bool g_device_setup_ready = false;
 
   if (g_device_setup_ready) {
-    return LIGHT_READINGS_OK;
+    return PHX_OK;
   }
 
-  // Step 1: Energise shared power domains and initialise peripheral drivers.
+  // Step 1: Energise shared power domains.
   GUARD(power_control_prepare_power_domains(&g_device_power_control_config));
-
-  // Step 2: Initialize settings storage and load calibrated wiper codes from flash.
+  Serial.println("test");
+  // Step 2: Initialize I2C bus for digipots.
+  Wire.begin();
+  Serial.println("test2");
+  // Step 3: Initialize digipot HAL instances for LED current control.
+  GUARD(digipot_blue_initialize(MCP41U83_I2C_ADDRESS, &Wire));
+  GUARD(digipot_green_initialize(AD5242_I2C_ADDRESS, 1u, &Wire));
+  Serial.println("test3");
+  // Step 4: Initialize settings storage and load calibrated wiper codes from flash.
   GUARD(phoenix_settings_initialize(&k_default_settings));
-
-  // Step 3: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
+  Serial.println("test4");
+  // Step 5: Apply the caller-configurable MCP356x settings so ADC timing reflects the requested profile.
   GUARD(mcp356x_apply_settings(&g_device_mcp356x_settings));
-
-  // Step 4: Bring the light readings helper online so batches can run immediately.
-  GUARD(light_readings_initialize(&g_device_light_readings_config));
-
-  // Step 5: Apply calibrated wiper codes from settings to the digipot hardware.
-  GUARD(phoenix_settings_apply_wiper_codes());
-
-  // Step 6: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
+  Serial.println("test5");
+  // Step 6: Initialize ADC HAL.
+  GUARD(adc_hal_initialize(&g_device_adc_hal_config));
+  GUARD(adc_hal_apply_default_configuration());
+  Serial.println("test6");
+  // Step 7: Initialize LED router.
+  GUARD(led_router_initialize(&g_device_led_router_config));
+  Serial.println("test7");
+  // Step 8: Bring the light readings helper online so batches can run immediately.
+  // GUARD(light_readings_initialize(&g_device_light_readings_config));
+  Serial.println("test8");
+  // Step 9: Apply calibrated wiper codes from settings to the digipot hardware.
+  // GUARD(phoenix_settings_apply_wiper_codes());
+  Serial.println("test9");
+  // Step 10: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
   GUARD(thermistor_reader_initialize(&g_device_thermistor_reader_config));
-
+  Serial.println("test0");
   g_device_setup_ready = true;
   return LIGHT_READINGS_OK;
 }

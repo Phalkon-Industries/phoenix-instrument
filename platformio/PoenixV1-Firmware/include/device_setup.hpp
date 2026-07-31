@@ -3,9 +3,11 @@
 
 #include "ad524x.hpp"
 #include "adc_hal.hpp"
+#include "digipot_hal.hpp"
 #include "led_router.hpp"
 #include "light_readings.hpp"
 #include "mcp356x.hpp"
+#include "mcp41u83.hpp"
 #include "phoenix_settings.hpp"
 #include "power_control.hpp"
 #include "thermistor_reader.hpp"

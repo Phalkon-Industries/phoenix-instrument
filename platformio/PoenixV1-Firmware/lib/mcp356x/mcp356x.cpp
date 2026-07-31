@@ -548,7 +548,6 @@ int mcp356x_apply_settings(const mcp356x_settings* settings) {
   if ((static_cast<uint8_t>(settings->irq_mode) & 0xFCu) != 0u) {
     return MCP356X_ERR_INVALID_ARG;
   }
-
   // Step 3: Compose CONFIG0-3 images to reflect the requested gain/OSR/prescaler trio.
   const uint8_t config0_value = MCP356X_CONFIG0_DEFAULT;
   const uint8_t prescaler_bits =
@@ -759,19 +758,19 @@ int mcp356x_read_single_ended_channel(uint8_t channel_index, uint32_t timeout_us
     }
     case mcp356x_data_format::data32_left: {
       raw_word  = (uint32_t) (((uint32_t) adc_bytes[0] << 24) | ((uint32_t) adc_bytes[1] << 16) |
-                             ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
+                              ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
       raw_value = (int32_t) (static_cast<int32_t>(raw_word) >> 8);
       break;
     }
     case mcp356x_data_format::data32_signed: {
       raw_word  = (uint32_t) (((uint32_t) adc_bytes[0] << 24) | ((uint32_t) adc_bytes[1] << 16) |
-                             ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
+                              ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
       raw_value = (int32_t) raw_word;
       break;
     }
     case mcp356x_data_format::data32_signed_chid: {
       raw_word  = (uint32_t) (((uint32_t) adc_bytes[0] << 24) | ((uint32_t) adc_bytes[1] << 16) |
-                             ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
+                              ((uint32_t) adc_bytes[2] << 8) | adc_bytes[3]);
       raw_value = (int32_t) (static_cast<int32_t>(raw_word) >> 8);
       break;
     }
