@@ -53,7 +53,7 @@ void disable_negative_bias_generator(void) {
 }
 
 // Raise the shared analog rail, accounting for boards that omit a dedicated enable GPIO.
-void drive_5v_power_enable_high(void) {
+static void drive_5v_power_enable_high(void) {
   if (g_power_config.power_enable_pin < 0) {
     g_power_domains_energised = false;
     return;
@@ -64,7 +64,7 @@ void drive_5v_power_enable_high(void) {
 }
 
 // Drop the shared analog rail so downstream peripherals enter a low-power state.
-void drive_power_enable_low(void) {
+static void drive_power_enable_low(void) {
   if (g_power_config.power_enable_pin < 0) {
     g_power_domains_energised = false;
     return;
@@ -192,4 +192,20 @@ void power_control_reset_for_test(void) {
   g_adc_ready                 = false;
   g_digipot_ready             = false;
   g_neg_bias_generator_on     = false;
+}
+bool power_control_led_power_is_ready(void) {
+  // Step 1: Require the helper to be initialised before reporting ready state.
+  if (!g_is_initialized) {
+    return false;
+  }
+
+  // Step 2: Verify the 5V rail is asserted and the LM7705 generator is enabled.
+  if (!g_power_domains_energised) {
+    return false;
+  }
+  if (!g_neg_bias_generator_on) {
+    return false;
+  }
+
+  return true;
 }

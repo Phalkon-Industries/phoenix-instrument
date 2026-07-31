@@ -48,4 +48,14 @@ int power_control_shutdown(void);
  */
 void power_control_reset_for_test(void);
 
+/**
+ * @brief Report whether the 5V rail and LM7705 negative-bias generator are both asserted.
+ *
+ * Returns true only after power_control_prepare_power_domains() has succeeded and before
+ * power_control_enter_low_power() or power_control_shutdown() has dropped the rails.
+ * LED consumers should gate their routing on this predicate so the hardware invariant
+ * "LEDs never flash without both rails asserted" is enforced in firmware.
+ */
+bool power_control_led_power_is_ready(void);
+
 #endif  // POWER_CONTROL_HPP

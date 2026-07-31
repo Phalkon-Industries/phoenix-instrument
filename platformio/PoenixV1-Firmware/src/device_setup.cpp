@@ -47,19 +47,25 @@ const PowerControlConfig g_device_power_control_config = {
 };
 
 const ThermistorReaderConfig g_device_thermistor_reader_config = {
-    AdcHalChannel::ADC_HAL_CHANNEL_0,  // reference divider
-    AdcHalChannel::ADC_HAL_CHANNEL_1,  // board thermistor
-    AdcHalChannel::ADC_HAL_CHANNEL_2,  // water thermistor
+    AdcHalChannel::ADC_HAL_CHANNEL_7,  // reference divider (10k/10k)
+    {
+        // THERMISTOR_ID_SAMPLE (ch6) - Steinhart-Hart
+        {AdcHalChannel::ADC_HAL_CHANNEL_6, ThermistorModel::THERMISTOR_MODEL_STEINHART_HART, 10000.0f, 0.0f},
+        // THERMISTOR_ID_BLUE_LED (ch4) - Steinhart-Hart
+        {AdcHalChannel::ADC_HAL_CHANNEL_4, ThermistorModel::THERMISTOR_MODEL_STEINHART_HART, 10000.0f, 0.0f},
+        // THERMISTOR_ID_GREEN_LED (ch5) - Steinhart-Hart
+        {AdcHalChannel::ADC_HAL_CHANNEL_5, ThermistorModel::THERMISTOR_MODEL_STEINHART_HART, 10000.0f, 0.0f},
+        // THERMISTOR_ID_GAIN_STAGE (ch2) - Beta
+        {AdcHalChannel::ADC_HAL_CHANNEL_2, ThermistorModel::THERMISTOR_MODEL_BETA, 10000.0f, 0.0f},
+        // THERMISTOR_ID_LED_DRIVE_STAGE (ch3) - Beta
+        {AdcHalChannel::ADC_HAL_CHANNEL_3, ThermistorModel::THERMISTOR_MODEL_BETA, 10000.0f, 0.0f},
+    },
     PIN_THERMISTOR_ON,
     10000u,
     10000u,
     100000u,
     2000u,
     3380.0f,
-    10000.0f,
-    0.0f,
-    10000.0f,
-    0.0f,
 };
 
 // Default settings applied when flash is empty or corrupt.
