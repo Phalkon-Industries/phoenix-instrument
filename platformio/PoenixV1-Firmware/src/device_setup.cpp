@@ -34,8 +34,8 @@ static const uint32_t k_light_readings_pwm_period_timeout_us = 100000u;
 
 const LightReadingsConfig g_device_light_readings_config = {
     LedRouterState::LED_ROUTER_STATE_DRAIN,
-    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_4, 100u, PHOENIX_DEFAULT_GREEN_WIPER},
-    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_5, 100u, PHOENIX_DEFAULT_BLUE_WIPER},
+    {LedRouterState::LED_ROUTER_STATE_GREEN, AdcHalChannel::ADC_HAL_CHANNEL_1, 100u, PHOENIX_DEFAULT_GREEN_WIPER},
+    {LedRouterState::LED_ROUTER_STATE_BLUE, AdcHalChannel::ADC_HAL_CHANNEL_0, 100u, PHOENIX_DEFAULT_BLUE_WIPER},
     1000000u,
     {true, NRF_PWM3, TS5A3359_IN1, TS5A3359_IN2, k_light_readings_pwm_minimum_period_us,
      k_light_readings_pwm_period_timeout_us},
@@ -86,17 +86,16 @@ int device_setup_initialize(void) {
 
   // Step 1: Energise shared power domains.
   GUARD(power_control_prepare_power_domains(&g_device_power_control_config));
-  Serial.println("test");
+
   // Step 2: Initialize I2C bus for digipots.
   Wire.begin();
-  Serial.println("test2");
+
   // Step 3: Initialize digipot HAL instances for LED current control.
   GUARD(digipot_blue_initialize(MCP41U83_I2C_ADDRESS, &Wire));
   GUARD(digipot_green_initialize(AD5242_I2C_ADDRESS, 1u, &Wire));
-  Serial.println("test3");
+
   // Step 4: Initialize settings storage and load calibrated wiper codes from flash.
   GUARD(phoenix_settings_initialize(&k_default_settings));
-  Serial.println("test4");
   // Step 5: Initialize ADC HAL (which calls mcp356x_initialize internally).
   GUARD(adc_hal_initialize(&g_device_adc_hal_config));
 
@@ -105,19 +104,20 @@ int device_setup_initialize(void) {
 
   // Step 7: Override with board-specific MCP356x settings (OSR, conversion mode, etc.).
   GUARD(mcp356x_apply_settings(&g_device_mcp356x_settings));
-  Serial.println("test6");
+
   // Step 8: Initialize LED router.
   GUARD(led_router_initialize(&g_device_led_router_config));
-  Serial.println("test7");
-  // Step 9: Bring the light readings helper online so batches can run immediately.
-  GUARD(light_readings_initialize(&g_device_light_readings_config));
-  Serial.println("test8");
-  // Step 10: Apply calibrated wiper codes from settings to the digipot hardware.
+
+  // Step 9: Apply calibrated wiper codes from settings to the digipot hardware
+  //         before light_readings_initialize so the module sees the correct codes.
   GUARD(phoenix_settings_apply_wiper_codes());
-  Serial.println("test9");
+
+  // Step 10: Bring the light readings helper online so batches can run immediately.
+  GUARD(light_readings_initialize(&g_device_light_readings_config));
+
   // Step 11: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
   GUARD(thermistor_reader_initialize(&g_device_thermistor_reader_config));
-  Serial.println("test0");
+
   g_device_setup_ready = true;
   return LIGHT_READINGS_OK;
 }

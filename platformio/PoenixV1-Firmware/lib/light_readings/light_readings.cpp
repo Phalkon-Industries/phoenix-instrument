@@ -1,6 +1,6 @@
 #include "light_readings.hpp"
 
-#include "ad524x.hpp"
+#include "digipot_hal.hpp"
 #include "phoenix_guard.hpp"
 #include "power_control.hpp"
 #include <Arduino.h>
@@ -367,8 +367,8 @@ int light_readings_initialize(const LightReadingsConfig* config) {
   GUARD(led_router_set_state(config->drain_state));
 
   // Step 3: Program the digi-pot so colour-specific LED drive strengths start from a calibrated baseline.
-  GUARD(ad524x_set_wiper(k_light_readings_blue_channel, config->blue_channel.wiper_code));
-  GUARD(ad524x_set_wiper(k_light_readings_green_channel, config->green_channel.wiper_code));
+  GUARD(digipot_blue_set_wiper(config->blue_channel.wiper_code));
+  GUARD(digipot_green_set_wiper(config->green_channel.wiper_code));
 
   // Step 4: Cache the configuration so subsequent operations can reuse it without copying.
   g_light_config   = *config;
@@ -509,8 +509,8 @@ int light_readings_modify_settings(const LightReadingsRuntimeSettings* settings)
 
   // Step 4: Update the digipot wiper configuration when an override is provided.
   if (settings->apply_wiper_override) {
-    GUARD(ad524x_set_wiper(k_light_readings_blue_channel, settings->wiper_code));
-    GUARD(ad524x_set_wiper(k_light_readings_green_channel, settings->wiper_code));
+    GUARD(digipot_blue_set_wiper(settings->wiper_code));
+    GUARD(digipot_green_set_wiper(settings->wiper_code));
     g_light_config.blue_channel.wiper_code  = settings->wiper_code;
     g_light_config.green_channel.wiper_code = settings->wiper_code;
   }
