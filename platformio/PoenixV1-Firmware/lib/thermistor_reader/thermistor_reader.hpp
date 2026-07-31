@@ -12,24 +12,40 @@
 #define THERMISTOR_READER_ERR_COMPUTE_FAILURE PHX_ERR_HARDWARE_FAILURE
 
 enum class ThermistorId : uint8_t {
-  THERMISTOR_ID_BOARD = 0u,
-  THERMISTOR_ID_WATER,
+  THERMISTOR_ID_SAMPLE = 0u,      // ch6 - experimental sample thermistor (Steinhart-Hart)
+  THERMISTOR_ID_BLUE_LED,         // ch4 - blue LED thermistor (Steinhart-Hart)
+  THERMISTOR_ID_GREEN_LED,        // ch5 - green LED thermistor (Steinhart-Hart)
+  THERMISTOR_ID_GAIN_STAGE,       // ch2 - gain-stage thermistor (Beta)
+  THERMISTOR_ID_LED_DRIVE_STAGE,  // ch3 - LED-drive-stage thermistor (Beta)
+};
+
+enum class ThermistorModel : uint8_t {
+  THERMISTOR_MODEL_BETA = 0u,
+  THERMISTOR_MODEL_STEINHART_HART,
+};
+
+struct ThermistorSensorConfig {
+  AdcHalChannel   channel;
+  ThermistorModel model;
+  float           r25_ohms;
+  float           calibration_offset_c;
 };
 
 struct ThermistorReaderConfig {
-  AdcHalChannel reference_channel;
-  AdcHalChannel board_channel;
-  AdcHalChannel water_channel;
-  int           rail_enable_pin;
-  uint32_t      pullup_resistance_ohms;
-  uint32_t      reference_resistance_ohms;
-  uint32_t      adc_timeout_us;
-  uint32_t      settle_time_us;
-  float         board_beta_constant;
-  float         board_r25_ohms;
-  float         board_calibration_offset_c;
-  float         water_r25_ohms;
-  float         water_calibration_offset_c;
+  AdcHalChannel          reference_channel;
+  ThermistorSensorConfig sensors[5];  // One entry per ThermistorId
+  int                    rail_enable_pin;
+  uint32_t               pullup_resistance_ohms;
+  uint32_t               reference_resistance_ohms;
+  uint32_t               adc_timeout_us;
+  uint32_t               settle_time_us;
+  float                  beta_constant;  // Shared beta constant for all Beta-model sensors
+};
+
+struct ThermistorSweepResult {
+  float   temperatures_c[5];  // One per ThermistorId
+  int32_t reference_code;     // Raw reference divider code for drift tracking
+  bool    valid[5];           // Per-sensor validity flags
 };
 
 typedef void (*thermistor_reader_pin_mode_fn_t)(int pin, uint32_t mode);
@@ -40,6 +56,8 @@ typedef int (*thermistor_reader_adc_reader_fn_t)(AdcHalChannel channel, uint32_t
 int thermistor_reader_initialize(const ThermistorReaderConfig* config);
 
 int thermistor_reader_measure_celsius(ThermistorId id, float* temperature_c_out);
+
+int thermistor_reader_measure_all(ThermistorSweepResult* result_out);
 
 void thermistor_reader_reset_for_test(void);
 

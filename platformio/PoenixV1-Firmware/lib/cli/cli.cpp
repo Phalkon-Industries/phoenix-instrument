@@ -137,13 +137,13 @@ static int handle_sample(void) {
 
   // Step 4: Record enclosure temperature to help operators track thermal drift.
   float enclosure_temperature_c = 0.0f;
-  CLI_GUARD_EMIT("temperature_board",
-                 g_measurement_hooks.measure_temperature(ThermistorId::THERMISTOR_ID_BOARD, &enclosure_temperature_c));
+  CLI_GUARD_EMIT("temperature_board", g_measurement_hooks.measure_temperature(ThermistorId::THERMISTOR_ID_GAIN_STAGE,
+                                                                              &enclosure_temperature_c));
 
-  // Step 5: Measure the water probe temperature for the pH computation.
+  // Step 5: Measure the sample probe temperature for the pH computation.
   float sample_temperature_c = 0.0f;
   CLI_GUARD_EMIT("temperature_water",
-                 g_measurement_hooks.measure_temperature(ThermistorId::THERMISTOR_ID_WATER, &sample_temperature_c));
+                 g_measurement_hooks.measure_temperature(ThermistorId::THERMISTOR_ID_SAMPLE, &sample_temperature_c));
 
   // Step 6: Compute absorbance on both wavelengths using the cached baseline reference.
   double absorbance_blue  = 0.0;

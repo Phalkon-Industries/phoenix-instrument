@@ -20,7 +20,9 @@ static const uint8_t k_test_default_green_wiper = 0xD3u;
 
 // Default settings struct passed to initialize.
 static const PhoenixSettings k_test_defaults = {
-    k_test_default_blue_wiper, k_test_default_green_wiper, {0},  // reserved
+    k_test_default_blue_wiper,
+    k_test_default_green_wiper,
+    {0},  // reserved
 };
 
 // Test that default values are returned when no settings file exists.
@@ -197,8 +199,9 @@ void tearDown(void) {
 void setup(void) {
   UNITY_SETUP_SERIAL_DEFAULT();
 
-  // Step 1: Initialize Wire bus for digipot tests.
-  Wire.begin();
+  // Step 1: Run production bring-up so the analog rails energise and the powered digipot
+  // responds on the I2C bus. Settings tests re-initialise phoenix_settings themselves.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, device_setup_initialize());
 
   RUN_TEST(test_settings_default_values_on_first_load);
   RUN_TEST(test_settings_save_and_load_round_trip);

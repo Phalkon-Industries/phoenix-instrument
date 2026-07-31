@@ -71,11 +71,20 @@ static int thermistor_reader_adc_stub(AdcHalChannel channel, uint32_t timeout_us
     case AdcHalChannel::ADC_HAL_CHANNEL_0:
       *code_out = g_stub_reference_code;
       break;
-    case AdcHalChannel::ADC_HAL_CHANNEL_1:
-      *code_out = g_stub_board_code;
-      break;
     case AdcHalChannel::ADC_HAL_CHANNEL_2:
-      *code_out = g_stub_water_code;
+      *code_out = g_stub_board_code;  // Gain stage (beta model)
+      break;
+    case AdcHalChannel::ADC_HAL_CHANNEL_3:
+      *code_out = g_stub_board_code;  // LED drive stage (beta model)
+      break;
+    case AdcHalChannel::ADC_HAL_CHANNEL_4:
+      *code_out = g_stub_water_code;  // Blue LED (Steinhart-Hart)
+      break;
+    case AdcHalChannel::ADC_HAL_CHANNEL_5:
+      *code_out = g_stub_water_code;  // Green LED (Steinhart-Hart)
+      break;
+    case AdcHalChannel::ADC_HAL_CHANNEL_6:
+      *code_out = g_stub_water_code;  // Sample (Steinhart-Hart)
       break;
     default:
       *code_out = 0;
@@ -173,20 +182,46 @@ static float compute_expected_water_temperature(float resistance_ohms) {
 }
 
 static ThermistorReaderConfig make_test_config(void) {
-  ThermistorReaderConfig config     = {};
-  config.reference_channel          = AdcHalChannel::ADC_HAL_CHANNEL_0;
-  config.board_channel              = AdcHalChannel::ADC_HAL_CHANNEL_1;
-  config.water_channel              = AdcHalChannel::ADC_HAL_CHANNEL_2;
-  config.rail_enable_pin            = 11;
-  config.pullup_resistance_ohms     = 10000u;
-  config.reference_resistance_ohms  = 10000u;
-  config.adc_timeout_us             = 1000u;
-  config.settle_time_us             = 100u;
-  config.board_beta_constant        = 3380.0f;
-  config.board_r25_ohms             = 10000.0f;
-  config.board_calibration_offset_c = 0.0f;
-  config.water_r25_ohms             = 10000.0f;
-  config.water_calibration_offset_c = 0.0f;
+  ThermistorReaderConfig config = {};
+  config.reference_channel      = AdcHalChannel::ADC_HAL_CHANNEL_0;
+
+  // Configure sensors array for the 5 Tornado thermistors
+  // Sample thermistor (ch6) - Steinhart-Hart
+  config.sensors[0].channel              = AdcHalChannel::ADC_HAL_CHANNEL_6;
+  config.sensors[0].model                = ThermistorModel::THERMISTOR_MODEL_STEINHART_HART;
+  config.sensors[0].r25_ohms             = 10000.0f;
+  config.sensors[0].calibration_offset_c = 0.0f;
+
+  // Blue LED thermistor (ch4) - Steinhart-Hart
+  config.sensors[1].channel              = AdcHalChannel::ADC_HAL_CHANNEL_4;
+  config.sensors[1].model                = ThermistorModel::THERMISTOR_MODEL_STEINHART_HART;
+  config.sensors[1].r25_ohms             = 10000.0f;
+  config.sensors[1].calibration_offset_c = 0.0f;
+
+  // Green LED thermistor (ch5) - Steinhart-Hart
+  config.sensors[2].channel              = AdcHalChannel::ADC_HAL_CHANNEL_5;
+  config.sensors[2].model                = ThermistorModel::THERMISTOR_MODEL_STEINHART_HART;
+  config.sensors[2].r25_ohms             = 10000.0f;
+  config.sensors[2].calibration_offset_c = 0.0f;
+
+  // Gain stage thermistor (ch2) - Beta
+  config.sensors[3].channel              = AdcHalChannel::ADC_HAL_CHANNEL_2;
+  config.sensors[3].model                = ThermistorModel::THERMISTOR_MODEL_BETA;
+  config.sensors[3].r25_ohms             = 10000.0f;
+  config.sensors[3].calibration_offset_c = 0.0f;
+
+  // LED drive stage thermistor (ch3) - Beta
+  config.sensors[4].channel              = AdcHalChannel::ADC_HAL_CHANNEL_3;
+  config.sensors[4].model                = ThermistorModel::THERMISTOR_MODEL_BETA;
+  config.sensors[4].r25_ohms             = 10000.0f;
+  config.sensors[4].calibration_offset_c = 0.0f;
+
+  config.rail_enable_pin           = 11;
+  config.pullup_resistance_ohms    = 10000u;
+  config.reference_resistance_ohms = 10000u;
+  config.adc_timeout_us            = 1000u;
+  config.settle_time_us            = 100u;
+  config.beta_constant             = 3380.0f;
   return config;
 }
 
@@ -215,8 +250,8 @@ static void test_thermistor_reader_initialize_caches_config_values(void) {
   thermistor_reader_get_config_for_test(&cached);
 
   TEST_ASSERT_EQUAL_INT(static_cast<int>(config.reference_channel), static_cast<int>(cached.reference_channel));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.board_channel), static_cast<int>(cached.board_channel));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.water_channel), static_cast<int>(cached.water_channel));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[0].channel), static_cast<int>(cached.sensors[0].channel));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[1].channel), static_cast<int>(cached.sensors[1].channel));
   TEST_ASSERT_EQUAL_INT(config.rail_enable_pin, cached.rail_enable_pin);
   TEST_ASSERT_EQUAL_UINT32(config.adc_timeout_us, cached.adc_timeout_us);
 }
@@ -226,13 +261,13 @@ static void test_thermistor_reader_measure_rejects_null_output(void) {
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
 
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_ERR_INVALID_ARG,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, NULL));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, NULL));
 }
 
 static void test_thermistor_reader_measure_errors_when_uninitialized(void) {
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_ERR_NOT_INITIALIZED,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
 }
 
 static void test_thermistor_reader_measure_reads_reference_before_sensor(void) {
@@ -242,21 +277,21 @@ static void test_thermistor_reader_measure_reads_reference_before_sensor(void) {
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_WATER, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_SAMPLE, &temperature_c));
 
   TEST_ASSERT_EQUAL_UINT32(2u, g_recorded_channel_count);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(config.reference_channel), static_cast<int>(g_recorded_channels[0]));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.water_channel), static_cast<int>(g_recorded_channels[1]));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[0].channel), static_cast<int>(g_recorded_channels[1]));
 
   g_recorded_channel_count = 0u;
   thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
 
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
 
   TEST_ASSERT_EQUAL_UINT32(2u, g_recorded_channel_count);
   TEST_ASSERT_EQUAL_INT(static_cast<int>(config.reference_channel), static_cast<int>(g_recorded_channels[0]));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.board_channel), static_cast<int>(g_recorded_channels[1]));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[3].channel), static_cast<int>(g_recorded_channels[1]));
 }
 
 static void test_thermistor_reader_measure_propagates_adc_failures(void) {
@@ -269,7 +304,7 @@ static void test_thermistor_reader_measure_propagates_adc_failures(void) {
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(ADC_HAL_ERR_TIMEOUT,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
 }
 
 static void test_thermistor_reader_measure_computes_resistance_from_ratio(void) {
@@ -281,28 +316,28 @@ static void test_thermistor_reader_measure_computes_resistance_from_ratio(void) 
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
 
   float resistance_ohms = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_get_last_resistance_for_test(
-                                                  ThermistorId::THERMISTOR_ID_BOARD, &resistance_ohms));
+                                                  ThermistorId::THERMISTOR_ID_GAIN_STAGE, &resistance_ohms));
   TEST_ASSERT_FLOAT_WITHIN(0.5f, 10000.0f, resistance_ohms);
 }
 
-static void test_board_thermistor_reports_expected_temperature_at_25c(void) {
+static void test_gain_stage_thermistor_reports_expected_temperature_at_25c(void) {
   ThermistorReaderConfig config = make_test_config();
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
   thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
 
-  stage_board_resistance_codes(config, config.board_r25_ohms);
+  stage_board_resistance_codes(config, config.sensors[3].r25_ohms);
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
   TEST_ASSERT_FLOAT_WITHIN(0.2f, 25.0f, temperature_c);
 }
 
-static void test_board_thermistor_reports_expected_temperature_above_room(void) {
+static void test_gain_stage_thermistor_reports_expected_temperature_above_room(void) {
   ThermistorReaderConfig config = make_test_config();
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
   thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
@@ -311,11 +346,11 @@ static void test_board_thermistor_reports_expected_temperature_above_room(void) 
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
   TEST_ASSERT_FLOAT_WITHIN(0.5f, 36.8f, temperature_c);
 }
 
-static void test_board_thermistor_rejects_non_positive_resistance(void) {
+static void test_gain_stage_thermistor_rejects_non_positive_resistance(void) {
   ThermistorReaderConfig config = make_test_config();
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
   thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
@@ -325,7 +360,89 @@ static void test_board_thermistor_rejects_non_positive_resistance(void) {
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_ERR_COMPUTE_FAILURE,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
+}
+
+static void test_led_drive_stage_thermistor_reports_expected_temperature_at_25c(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  stage_board_resistance_codes(config, config.sensors[4].r25_ohms);
+
+  float temperature_c = 0.0f;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_LED_DRIVE_STAGE, &temperature_c));
+  TEST_ASSERT_FLOAT_WITHIN(0.2f, 25.0f, temperature_c);
+}
+
+static void test_sample_thermistor_reports_expected_temperature_in_high_range(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  stage_water_resistance_codes(config, 50000.0f);  // Use a ratio within the highest range
+
+  float temperature_c = 0.0f;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_SAMPLE, &temperature_c));
+  const float expected_temperature = compute_expected_water_temperature(50000.0f);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, expected_temperature, temperature_c);
+}
+
+static void test_sample_thermistor_reports_expected_temperature_in_mid_range(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  stage_water_resistance_codes(config, 2000.0f);  // falls in second table row
+
+  float temperature_c = 0.0f;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_SAMPLE, &temperature_c));
+  const float expected_temperature = compute_expected_water_temperature(2000.0f);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, expected_temperature, temperature_c);
+}
+
+static void test_sample_thermistor_validates_ratio_bounds(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  g_stub_reference_code = 100000;
+  g_stub_water_code     = 0;
+
+  float temperature_c = 0.0f;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_ERR_COMPUTE_FAILURE,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_SAMPLE, &temperature_c));
+}
+
+static void test_blue_led_thermistor_reports_expected_temperature(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  stage_water_resistance_codes(config, 10000.0f);  // R25 value
+
+  float temperature_c = 0.0f;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BLUE_LED, &temperature_c));
+  const float expected_temperature = compute_expected_water_temperature(10000.0f);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, expected_temperature, temperature_c);
+}
+
+static void test_green_led_thermistor_reports_expected_temperature(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  stage_water_resistance_codes(config, 10000.0f);  // R25 value
+
+  float temperature_c = 0.0f;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GREEN_LED, &temperature_c));
+  const float expected_temperature = compute_expected_water_temperature(10000.0f);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, expected_temperature, temperature_c);
 }
 
 static void test_measure_asserts_power_enable_before_sampling(void) {
@@ -337,11 +454,11 @@ static void test_measure_asserts_power_enable_before_sampling(void) {
 
   g_expected_rail_pin              = config.rail_enable_pin;
   g_adc_should_assert_rail_enabled = true;
-  stage_board_resistance_codes(config, config.board_r25_ohms);
+  stage_board_resistance_codes(config, config.sensors[3].r25_ohms);
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
 
   TEST_ASSERT_TRUE(g_gpio_event_count > 0u);
   TEST_ASSERT_EQUAL_INT(g_expected_rail_pin, g_gpio_events[0].pin);
@@ -360,11 +477,11 @@ static void test_measure_respects_settle_delay_configuration(void) {
                                             thermistor_reader_delay_stub);
 
   g_expected_rail_pin = config.rail_enable_pin;
-  stage_board_resistance_codes(config, config.board_r25_ohms);
+  stage_board_resistance_codes(config, config.sensors[3].r25_ohms);
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
 
   TEST_ASSERT_EQUAL_UINT32(1u, g_delay_call_count);
   TEST_ASSERT_EQUAL_UINT32(config.settle_time_us, g_last_delay_us);
@@ -384,7 +501,7 @@ static void test_measure_powers_down_on_reference_failure(void) {
 
   float temperature_c = 0.0f;
   TEST_ASSERT_EQUAL_INT(ADC_HAL_ERR_TIMEOUT,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BOARD, &temperature_c));
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
 
   TEST_ASSERT_TRUE(g_gpio_event_count > 0u);
   const size_t last_index = g_gpio_event_count - 1u;
@@ -392,45 +509,139 @@ static void test_measure_powers_down_on_reference_failure(void) {
   TEST_ASSERT_FALSE(g_rail_enabled);
 }
 
-static void test_water_thermistor_reports_expected_temperature_in_high_range(void) {
-  ThermistorReaderConfig config = make_test_config();
-  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
-  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
-
-  stage_water_resistance_codes(config, 50000.0f);  // Use a ratio within the highest range
-
-  float temperature_c = 0.0f;
-  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_WATER, &temperature_c));
-  const float expected_temperature = compute_expected_water_temperature(50000.0f);
-  TEST_ASSERT_FLOAT_WITHIN(0.5f, expected_temperature, temperature_c);
-}
-
-static void test_water_thermistor_reports_expected_temperature_in_mid_range(void) {
-  ThermistorReaderConfig config = make_test_config();
-  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
-  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
-
-  stage_water_resistance_codes(config, 2000.0f);  // falls in second table row
-
-  float temperature_c = 0.0f;
-  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_WATER, &temperature_c));
-  const float expected_temperature = compute_expected_water_temperature(2000.0f);
-  TEST_ASSERT_FLOAT_WITHIN(0.5f, expected_temperature, temperature_c);
-}
-
-static void test_water_thermistor_validates_ratio_bounds(void) {
+static void test_measure_all_samples_sample_thermistor_first(void) {
   ThermistorReaderConfig config = make_test_config();
   TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
   thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
 
   g_stub_reference_code = 100000;
-  g_stub_water_code     = 0;
+  g_stub_water_code     = 100000;
+  g_stub_board_code     = 100000;
 
+  ThermistorSweepResult result = {};
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_measure_all(&result));
+
+  // Verify sample thermistor (ch6) was sampled first after reference
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2u, g_recorded_channel_count);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.reference_channel), static_cast<int>(g_recorded_channels[0]));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[0].channel), static_cast<int>(g_recorded_channels[1]));
+}
+
+static void test_measure_all_reads_reference_channel_once_per_cycle(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  g_stub_reference_code = 100000;
+  g_stub_water_code     = 100000;
+  g_stub_board_code     = 100000;
+
+  ThermistorSweepResult result = {};
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_measure_all(&result));
+
+  // Count reference channel samples - should be exactly 1
+  size_t reference_count = 0u;
+  for (size_t i = 0u; i < g_recorded_channel_count; ++i) {
+    if (g_recorded_channels[i] == config.reference_channel) {
+      reference_count++;
+    }
+  }
+  TEST_ASSERT_EQUAL_UINT32(1u, reference_count);
+  TEST_ASSERT_EQUAL_INT32(100000, result.reference_code);
+}
+
+static void test_measure_all_covers_every_sensor(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  g_stub_reference_code = 100000;
+  g_stub_water_code     = 100000;
+  g_stub_board_code     = 100000;
+
+  ThermistorSweepResult result = {};
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_measure_all(&result));
+
+  // All 5 sensors should be valid
+  for (size_t i = 0u; i < 5u; ++i) {
+    TEST_ASSERT_TRUE_MESSAGE(result.valid[i], "All sensors should be valid");
+  }
+}
+
+static void test_measure_all_pulses_rail_once(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+  thermistor_reader_set_gpio_hooks_for_test(thermistor_reader_pin_mode_stub, thermistor_reader_digital_write_stub,
+                                            thermistor_reader_delay_stub);
+
+  g_expected_rail_pin   = config.rail_enable_pin;
+  g_stub_reference_code = 100000;
+  g_stub_water_code     = 100000;
+  g_stub_board_code     = 100000;
+
+  ThermistorSweepResult result = {};
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_measure_all(&result));
+
+  // Should have exactly 2 GPIO events: HIGH then LOW
+  TEST_ASSERT_EQUAL_UINT32(2u, g_gpio_event_count);
+  TEST_ASSERT_EQUAL_INT(g_expected_rail_pin, g_gpio_events[0].pin);
+  TEST_ASSERT_EQUAL_UINT32(HIGH, g_gpio_events[0].value);
+  TEST_ASSERT_EQUAL_INT(g_expected_rail_pin, g_gpio_events[1].pin);
+  TEST_ASSERT_EQUAL_UINT32(LOW, g_gpio_events[1].value);
+}
+
+static void test_measure_celsius_supports_new_ids(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  g_stub_reference_code = 100000;
+  g_stub_water_code     = 100000;
+  g_stub_board_code     = 100000;
+
+  // Test each new ThermistorId
   float temperature_c = 0.0f;
-  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_ERR_COMPUTE_FAILURE,
-                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_WATER, &temperature_c));
+
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_SAMPLE, &temperature_c));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[0].channel), static_cast<int>(g_recorded_channels[1]));
+
+  g_recorded_channel_count = 0u;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_BLUE_LED, &temperature_c));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[1].channel), static_cast<int>(g_recorded_channels[1]));
+
+  g_recorded_channel_count = 0u;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GREEN_LED, &temperature_c));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[2].channel), static_cast<int>(g_recorded_channels[1]));
+
+  g_recorded_channel_count = 0u;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_GAIN_STAGE, &temperature_c));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[3].channel), static_cast<int>(g_recorded_channels[1]));
+
+  g_recorded_channel_count = 0u;
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK,
+                        thermistor_reader_measure_celsius(ThermistorId::THERMISTOR_ID_LED_DRIVE_STAGE, &temperature_c));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(config.sensors[4].channel), static_cast<int>(g_recorded_channels[1]));
+}
+
+static void test_reference_divider_ratio_near_half_scale(void) {
+  ThermistorReaderConfig config = make_test_config();
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_initialize(&config));
+  thermistor_reader_set_adc_reader_for_test(thermistor_reader_adc_stub);
+
+  // Set reference code to simulate 10k/10k divider (should be ~half scale)
+  g_stub_reference_code = 50000;  // Half of full scale
+  g_stub_water_code     = 50000;
+
+  ThermistorSweepResult result = {};
+  TEST_ASSERT_EQUAL_INT(THERMISTOR_READER_OK, thermistor_reader_measure_all(&result));
+
+  // Reference code should be captured
+  TEST_ASSERT_EQUAL_INT32(50000, result.reference_code);
 }
 
 int runUnityTests(void) {
@@ -442,15 +653,24 @@ int runUnityTests(void) {
   RUN_TEST(test_thermistor_reader_measure_reads_reference_before_sensor);
   RUN_TEST(test_thermistor_reader_measure_propagates_adc_failures);
   RUN_TEST(test_thermistor_reader_measure_computes_resistance_from_ratio);
-  RUN_TEST(test_board_thermistor_reports_expected_temperature_at_25c);
-  RUN_TEST(test_board_thermistor_reports_expected_temperature_above_room);
-  RUN_TEST(test_board_thermistor_rejects_non_positive_resistance);
+  RUN_TEST(test_gain_stage_thermistor_reports_expected_temperature_at_25c);
+  RUN_TEST(test_gain_stage_thermistor_reports_expected_temperature_above_room);
+  RUN_TEST(test_gain_stage_thermistor_rejects_non_positive_resistance);
+  RUN_TEST(test_led_drive_stage_thermistor_reports_expected_temperature_at_25c);
   RUN_TEST(test_measure_asserts_power_enable_before_sampling);
   RUN_TEST(test_measure_respects_settle_delay_configuration);
   RUN_TEST(test_measure_powers_down_on_reference_failure);
-  RUN_TEST(test_water_thermistor_reports_expected_temperature_in_high_range);
-  RUN_TEST(test_water_thermistor_reports_expected_temperature_in_mid_range);
-  RUN_TEST(test_water_thermistor_validates_ratio_bounds);
+  RUN_TEST(test_sample_thermistor_reports_expected_temperature_in_high_range);
+  RUN_TEST(test_sample_thermistor_reports_expected_temperature_in_mid_range);
+  RUN_TEST(test_sample_thermistor_validates_ratio_bounds);
+  RUN_TEST(test_blue_led_thermistor_reports_expected_temperature);
+  RUN_TEST(test_green_led_thermistor_reports_expected_temperature);
+  RUN_TEST(test_measure_all_samples_sample_thermistor_first);
+  RUN_TEST(test_measure_all_reads_reference_channel_once_per_cycle);
+  RUN_TEST(test_measure_all_covers_every_sensor);
+  RUN_TEST(test_measure_all_pulses_rail_once);
+  RUN_TEST(test_measure_celsius_supports_new_ids);
+  RUN_TEST(test_reference_divider_ratio_near_half_scale);
   return UNITY_END();
 }
 

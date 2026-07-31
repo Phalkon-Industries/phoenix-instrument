@@ -32,11 +32,11 @@ void example(void) {
   }
 
   int32_t code = 0;
-  if (adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_4, 1000000u, &code) == ADC_HAL_OK) {
+  if (adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_0, 1000000u, &code) == ADC_HAL_OK) {
     // Use conversion result
   }
 
-  if (adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_4, 250000u, &code) == ADC_HAL_OK) {
+  if (adc_hal_read_channel_irq(AdcHalChannel::ADC_HAL_CHANNEL_0, 250000u, &code) == ADC_HAL_OK) {
     // Use interrupt-synchronised result
   }
 

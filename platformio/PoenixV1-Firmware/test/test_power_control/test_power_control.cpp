@@ -124,6 +124,47 @@ static void test_power_control_shutdown_disables_power(void) {
   TEST_ASSERT_EQUAL_INT(POWER_CONTROL_ERR_NOT_INITIALIZED, power_control_enter_low_power());
 }
 
+static void test_led_power_is_ready_returns_false_before_initialization(void) {
+  // Step 1: Verify the predicate returns false when the helper has not been initialised.
+  TEST_ASSERT_FALSE_MESSAGE(power_control_led_power_is_ready(),
+                            "Expected led_power_is_ready to return false before initialization");
+}
+
+static void test_led_power_is_ready_returns_true_after_bring_up(void) {
+  // Step 1: Bring the power domains online so the predicate can inspect live state.
+  bring_power_domains_online();
+
+  // Step 2: Confirm the predicate reports both rails are ready.
+  TEST_ASSERT_TRUE_MESSAGE(power_control_led_power_is_ready(),
+                           "Expected led_power_is_ready to return true after bring-up");
+}
+
+static void test_led_power_is_ready_returns_false_after_low_power(void) {
+  // Step 1: Bring up and then enter low power so the predicate reflects the de-energised state.
+  bring_power_domains_online();
+  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_enter_low_power());
+
+  // Step 2: Confirm the predicate returns false when the rails are dropped.
+  TEST_ASSERT_FALSE_MESSAGE(power_control_led_power_is_ready(),
+                            "Expected led_power_is_ready to return false after entering low power");
+}
+
+static void test_enter_low_power_disables_lm7705_and_5v(void) {
+  // Step 1: Bring the power domains online so the low-power transition can be observed.
+  bring_power_domains_online();
+
+  // Step 2: Enter low power and verify both rails are de-energised.
+  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_enter_low_power());
+  if (PIN_ENABLE_5V_POWER >= 0) {
+    TEST_ASSERT_EQUAL_MESSAGE(LOW, digitalRead(PIN_ENABLE_5V_POWER),
+                              "Expected 5V power enable pin to drive LOW in low-power state");
+  }
+  if (PIN_NEG_BIAS_SHUTDOWN >= 0) {
+    TEST_ASSERT_EQUAL_MESSAGE(HIGH, digitalRead(PIN_NEG_BIAS_SHUTDOWN),
+                              "Expected LM7705 shutdown pin to drive HIGH (generator off) in low-power state");
+  }
+}
+
 void setup() {
   UNITY_SETUP_SERIAL_DEFAULT();
   UNITY_BEGIN();
@@ -132,6 +173,10 @@ void setup() {
   RUN_TEST(test_power_control_requires_initialization_for_low_power);
   RUN_TEST(test_power_control_enters_low_power);
   RUN_TEST(test_power_control_shutdown_disables_power);
+  RUN_TEST(test_led_power_is_ready_returns_false_before_initialization);
+  RUN_TEST(test_led_power_is_ready_returns_true_after_bring_up);
+  RUN_TEST(test_led_power_is_ready_returns_false_after_low_power);
+  RUN_TEST(test_enter_low_power_disables_lm7705_and_5v);
   UNITY_END();
 }
 

@@ -5,7 +5,7 @@
 #include <string.h>
 
 namespace {
-constexpr size_t kThermistorCount = 2u;
+constexpr size_t kThermistorCount = 5u;
 
 void default_pin_mode(int pin, uint32_t mode) {
   ::pinMode(static_cast<uint32_t>(pin), mode);
@@ -63,14 +63,11 @@ size_t thermistor_reader_index_for_id(ThermistorId id) {
 }
 
 AdcHalChannel thermistor_reader_channel_for_id(ThermistorId id) {
-  switch (id) {
-    case ThermistorId::THERMISTOR_ID_BOARD:
-      return g_state.config.board_channel;
-    case ThermistorId::THERMISTOR_ID_WATER:
-      return g_state.config.water_channel;
-    default:
-      return g_state.config.board_channel;
+  const size_t sensor_index = thermistor_reader_index_for_id(id);
+  if (sensor_index >= kThermistorCount) {
+    return g_state.config.reference_channel;
   }
+  return g_state.config.sensors[sensor_index].channel;
 }
 
 // Step 1: Capture ADC samples so the library can convert dividers into resistances.
@@ -105,20 +102,20 @@ int thermistor_reader_compute_resistance(int32_t reference_code, int32_t sensor_
   return THERMISTOR_READER_OK;
 }
 
-// Step 3: Apply the Beta equation to the board thermistor so callers receive calibrated °C values.
-int thermistor_reader_convert_board_temperature(float resistance_ohms, float* temperature_c_out) {
+// Step 3: Apply the Beta equation to sensors using the Beta model so callers receive calibrated °C values.
+int thermistor_reader_convert_beta_temperature(float resistance_ohms, float r25_ohms, float calibration_offset_c,
+                                               float* temperature_c_out) {
   if ((temperature_c_out == NULL) || (resistance_ohms <= 0.0f)) {
     return THERMISTOR_READER_ERR_COMPUTE_FAILURE;
   }
 
-  const float beta_constant = g_state.config.board_beta_constant;
-  const float reference_res = g_state.config.board_r25_ohms;
-  if ((beta_constant <= 0.0f) || (reference_res <= 0.0f)) {
+  const float beta_constant = g_state.config.beta_constant;
+  if ((beta_constant <= 0.0f) || (r25_ohms <= 0.0f)) {
     return THERMISTOR_READER_ERR_COMPUTE_FAILURE;
   }
 
   const float nominal_temp_kelvin = 298.15f;  // 25 °C reference point specified in the datasheet.
-  const float ratio               = resistance_ohms / reference_res;
+  const float ratio               = resistance_ohms / r25_ohms;
   if (ratio <= 0.0f) {
     return THERMISTOR_READER_ERR_COMPUTE_FAILURE;
   }
@@ -129,23 +126,23 @@ int thermistor_reader_convert_board_temperature(float resistance_ohms, float* te
   }
 
   const float temperature_kelvin = 1.0f / inverse_temperature;
-  const float temperature_c      = temperature_kelvin - 273.15f + g_state.config.board_calibration_offset_c;
+  const float temperature_c      = temperature_kelvin - 273.15f + calibration_offset_c;
   *temperature_c_out             = temperature_c;
   return THERMISTOR_READER_OK;
 }
 
-// Step 4: Convert the water thermistor using datasheet Steinhart–Hart coefficients for each ratio segment.
-int thermistor_reader_convert_water_temperature(float resistance_ohms, float* temperature_c_out) {
+// Step 4: Convert sensors using the Steinhart-Hart model with datasheet coefficients for each ratio segment.
+int thermistor_reader_convert_steinhart_hart_temperature(float resistance_ohms, float r25_ohms,
+                                                         float calibration_offset_c, float* temperature_c_out) {
   if ((temperature_c_out == NULL) || (resistance_ohms <= 0.0f)) {
     return THERMISTOR_READER_ERR_COMPUTE_FAILURE;
   }
 
-  const float reference_res = g_state.config.water_r25_ohms;
-  if (reference_res <= 0.0f) {
+  if (r25_ohms <= 0.0f) {
     return THERMISTOR_READER_ERR_COMPUTE_FAILURE;
   }
 
-  const float ratio = resistance_ohms / reference_res;
+  const float ratio = resistance_ohms / r25_ohms;
   if (ratio <= 0.0f) {
     return THERMISTOR_READER_ERR_COMPUTE_FAILURE;
   }
@@ -165,14 +162,14 @@ int thermistor_reader_convert_water_temperature(float resistance_ohms, float* te
   const float ln_ratio    = logf(ratio);
   const float ln_ratio_sq = ln_ratio * ln_ratio;
   const float inverse_t   = matched_segment->coefficient_a + matched_segment->coefficient_b * ln_ratio +
-                          matched_segment->coefficient_c * ln_ratio_sq +
-                          matched_segment->coefficient_d * ln_ratio_sq * ln_ratio;
+                            matched_segment->coefficient_c * ln_ratio_sq +
+                            matched_segment->coefficient_d * ln_ratio_sq * ln_ratio;
   if (inverse_t <= 0.0f) {
     return THERMISTOR_READER_ERR_COMPUTE_FAILURE;
   }
 
   const float temperature_kelvin = 1.0f / inverse_t;
-  const float temperature_c      = temperature_kelvin - 273.15f + g_state.config.water_calibration_offset_c;
+  const float temperature_c      = temperature_kelvin - 273.15f + calibration_offset_c;
   *temperature_c_out             = temperature_c;
   return THERMISTOR_READER_OK;
 }
@@ -223,7 +220,6 @@ int thermistor_reader_measure_celsius(ThermistorId id, float* temperature_c_out)
 
   int                 result               = THERMISTOR_READER_OK;
   const bool          rail_control_enabled = (g_state.config.rail_enable_pin >= 0);
-  bool                rail_deassert_needed = false;
   int32_t             reference_code       = 0;
   int32_t             sensor_code          = 0;
   float               resistance_ohms      = 0.0f;
@@ -232,45 +228,48 @@ int thermistor_reader_measure_celsius(ThermistorId id, float* temperature_c_out)
 
   if (rail_control_enabled) {
     thermistor_reader_set_rail_state(true);
-    rail_deassert_needed = true;
   }
 
   result = thermistor_reader_sample_channel(g_state.config.reference_channel, &reference_code);
-  if (result != THERMISTOR_READER_OK) {
-    goto cleanup;
+  if (result == THERMISTOR_READER_OK) {
+    result = thermistor_reader_sample_channel(target_channel, &sensor_code);
   }
 
-  result = thermistor_reader_sample_channel(target_channel, &sensor_code);
-  if (result != THERMISTOR_READER_OK) {
-    goto cleanup;
+  if (result == THERMISTOR_READER_OK) {
+    result = thermistor_reader_compute_resistance(reference_code, sensor_code, &resistance_ohms);
   }
 
-  result = thermistor_reader_compute_resistance(reference_code, sensor_code, &resistance_ohms);
-  if (result != THERMISTOR_READER_OK) {
-    goto cleanup;
-  }
+  if (result == THERMISTOR_READER_OK) {
+    if (resistance_index < kThermistorCount) {
+      g_state.last_resistance_ohms[resistance_index]  = resistance_ohms;
+      g_state.last_resistance_valid[resistance_index] = true;
+    }
 
-  if (resistance_index < kThermistorCount) {
-    g_state.last_resistance_ohms[resistance_index]  = resistance_ohms;
-    g_state.last_resistance_valid[resistance_index] = true;
-  }
-
-  switch (id) {
-    case ThermistorId::THERMISTOR_ID_BOARD:
-      result = thermistor_reader_convert_board_temperature(resistance_ohms, temperature_c_out);
-      break;
-    case ThermistorId::THERMISTOR_ID_WATER:
-      result = thermistor_reader_convert_water_temperature(resistance_ohms, temperature_c_out);
-      break;
-    default:
+    if (resistance_index >= kThermistorCount) {
       result = THERMISTOR_READER_ERR_INVALID_ARG;
-      break;
+    }
+    else {
+      const ThermistorSensorConfig& sensor_config = g_state.config.sensors[resistance_index];
+      switch (sensor_config.model) {
+        case ThermistorModel::THERMISTOR_MODEL_BETA:
+          result = thermistor_reader_convert_beta_temperature(resistance_ohms, sensor_config.r25_ohms,
+                                                              sensor_config.calibration_offset_c, temperature_c_out);
+          break;
+        case ThermistorModel::THERMISTOR_MODEL_STEINHART_HART:
+          result = thermistor_reader_convert_steinhart_hart_temperature(
+              resistance_ohms, sensor_config.r25_ohms, sensor_config.calibration_offset_c, temperature_c_out);
+          break;
+        default:
+          result = THERMISTOR_READER_ERR_INVALID_ARG;
+          break;
+      }
+    }
   }
 
-cleanup:
-  if (rail_deassert_needed) {
+  if (rail_control_enabled) {
     thermistor_reader_set_rail_state(false);
   }
+
   return result;
 }
 
@@ -325,5 +324,97 @@ int thermistor_reader_get_last_resistance_for_test(ThermistorId id, float* resis
   }
 
   *resistance_out = g_state.last_resistance_ohms[resistance_index];
+  return THERMISTOR_READER_OK;
+}
+
+int thermistor_reader_measure_all(ThermistorSweepResult* result_out) {
+  if (result_out == NULL) {
+    return THERMISTOR_READER_ERR_INVALID_ARG;
+  }
+
+  memset(result_out, 0, sizeof(ThermistorSweepResult));
+
+  if (!g_state.initialized) {
+    return THERMISTOR_READER_ERR_NOT_INITIALIZED;
+  }
+
+  int        result               = THERMISTOR_READER_OK;
+  const bool rail_control_enabled = (g_state.config.rail_enable_pin >= 0);
+
+  // Step 1: Enable the thermistor rail once for the entire sweep
+  if (rail_control_enabled) {
+    thermistor_reader_set_rail_state(true);
+  }
+
+  // Step 2: Sample the reference divider once for all conversions
+  int32_t reference_code = 0;
+  result                 = thermistor_reader_sample_channel(g_state.config.reference_channel, &reference_code);
+  if (result != THERMISTOR_READER_OK) {
+    if (rail_control_enabled) {
+      thermistor_reader_set_rail_state(false);
+    }
+    return result;
+  }
+  result_out->reference_code = reference_code;
+
+  // Step 3: Sample sensors in order - sample thermistor first (ch6), then others
+  // This ordering minimizes self-heating effects on the sample thermistor
+  const ThermistorId sensor_order[kThermistorCount] = {
+      ThermistorId::THERMISTOR_ID_SAMPLE, ThermistorId::THERMISTOR_ID_BLUE_LED, ThermistorId::THERMISTOR_ID_GREEN_LED,
+      ThermistorId::THERMISTOR_ID_GAIN_STAGE, ThermistorId::THERMISTOR_ID_LED_DRIVE_STAGE};
+
+  for (size_t i = 0u; i < kThermistorCount; ++i) {
+    const ThermistorId  id             = sensor_order[i];
+    const size_t        sensor_index   = thermistor_reader_index_for_id(id);
+    const AdcHalChannel target_channel = thermistor_reader_channel_for_id(id);
+
+    int32_t sensor_code = 0;
+    result              = thermistor_reader_sample_channel(target_channel, &sensor_code);
+    if (result != THERMISTOR_READER_OK) {
+      result_out->valid[sensor_index] = false;
+      continue;
+    }
+
+    float resistance_ohms = 0.0f;
+    result                = thermistor_reader_compute_resistance(reference_code, sensor_code, &resistance_ohms);
+    if (result != THERMISTOR_READER_OK) {
+      result_out->valid[sensor_index] = false;
+      continue;
+    }
+
+    g_state.last_resistance_ohms[sensor_index]  = resistance_ohms;
+    g_state.last_resistance_valid[sensor_index] = true;
+
+    const ThermistorSensorConfig& sensor_config = g_state.config.sensors[sensor_index];
+    float                         temperature_c = 0.0f;
+
+    switch (sensor_config.model) {
+      case ThermistorModel::THERMISTOR_MODEL_BETA:
+        result = thermistor_reader_convert_beta_temperature(resistance_ohms, sensor_config.r25_ohms,
+                                                            sensor_config.calibration_offset_c, &temperature_c);
+        break;
+      case ThermistorModel::THERMISTOR_MODEL_STEINHART_HART:
+        result = thermistor_reader_convert_steinhart_hart_temperature(
+            resistance_ohms, sensor_config.r25_ohms, sensor_config.calibration_offset_c, &temperature_c);
+        break;
+      default:
+        result = THERMISTOR_READER_ERR_INVALID_ARG;
+        break;
+    }
+
+    if (result == THERMISTOR_READER_OK) {
+      result_out->temperatures_c[sensor_index] = temperature_c;
+      result_out->valid[sensor_index]          = true;
+    }
+    else {
+      result_out->valid[sensor_index] = false;
+    }
+  }
+
+  // Step 4: Disable the thermistor rail after the sweep
+  if (rail_control_enabled) {
+    thermistor_reader_set_rail_state(false);
+  }
+
   return THERMISTOR_READER_OK;
 }

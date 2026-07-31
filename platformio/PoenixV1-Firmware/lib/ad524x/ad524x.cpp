@@ -8,8 +8,8 @@
 //   driver. Reissuing Wire.begin() inside a library can disturb existing bus
 //   users, so we treat the TwoWire pointer as a dependency that is injected at
 //   init time.
-// - Firmware targets the dual-channel AD5242 configuration. Phoenix boards tie
-//   AD0/AD1 low, so the default 7-bit address is 0x2C; channel selection relies
+// - Firmware targets the dual-channel AD5242 configuration. The 7-bit I2C address
+//   is determined by the AD0/AD1 strap pins (0x2C-0x2F). Channel selection relies
 //   on the A/B bit in the instruction byte. Single-channel AD5241 boards are
 //   treated as the channel-0 subset.
 // - The silicon exposes two general-purpose outputs (O1/O2). Phoenix hardware

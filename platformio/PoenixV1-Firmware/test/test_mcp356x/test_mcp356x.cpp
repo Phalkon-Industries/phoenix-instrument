@@ -1050,7 +1050,9 @@ void tearDown(void) {
 void setup() {
   // Step 1. Initialise Unity's serial transport for logging.
   UNITY_SETUP_SERIAL_DEFAULT();
-  // Step 2. Execute each MCP356x test case in sequence.
+  // Step 2. Run production bring-up so the analog rails energise and the powered ADC responds.
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, device_setup_initialize());
+  // Step 3. Execute each MCP356x test case in sequence.
   RUN_TEST(test_fast_command_start_status);
   RUN_TEST(test_config0_register_roundtrip);
   RUN_TEST(test_full_reset_restores_por_defaults);

@@ -577,6 +577,31 @@ static void test_light_readings_reset_for_test_clears_initialization(void) {
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_sweep(&sweep));
 }
 
+static void test_light_readings_sweep_rejects_when_led_power_not_ready(void) {
+  // Step 1: Bring the helper online so the sweep guard can be exercised.
+  bring_light_readings_online();
+
+  // Step 2: Drop the power rails to simulate a condition where LED power is unavailable.
+  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_enter_low_power());
+
+  // Step 3: Confirm the sweep is rejected because the 5V rail and LM7705 are not asserted.
+  LightReadingsSweepSample sweep = {0};
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_POWER_NOT_READY, light_readings_sweep(&sweep));
+}
+
+static void test_light_readings_sweep_n_rejects_when_led_power_not_ready(void) {
+  // Step 1: Bring the helper online so the sweep_n guard can be exercised.
+  bring_light_readings_online();
+
+  // Step 2: Drop the power rails to simulate a condition where LED power is unavailable.
+  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_enter_low_power());
+
+  // Step 3: Confirm sweep_n is rejected because the 5V rail and LM7705 are not asserted.
+  LightReadingsSweepCollection collection = {};
+  collection.sweeps                       = g_test_sweep_storage;
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_POWER_NOT_READY, light_readings_sweep_n(1u, &collection));
+}
+
 void setup() {
   // Step 1: Prepare the Unity serial transport shared across firmware tests.
   UNITY_SETUP_SERIAL_DEFAULT();
@@ -608,6 +633,8 @@ void setup() {
   RUN_TEST(test_light_readings_shutdown_requires_initialization);
   RUN_TEST(test_light_readings_shutdown_clears_module_state);
   RUN_TEST(test_light_readings_reset_for_test_clears_initialization);
+  RUN_TEST(test_light_readings_sweep_rejects_when_led_power_not_ready);
+  RUN_TEST(test_light_readings_sweep_n_rejects_when_led_power_not_ready);
   RUN_TEST(test_light_readings_pwm_sweep_requires_initialization);
   RUN_TEST(test_light_readings_pwm_sweep_rejects_null_collection);
   RUN_TEST(test_light_readings_pwm_sweep_populates_samples);

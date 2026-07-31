@@ -6,19 +6,25 @@ namespace {
 constexpr uint32_t k_measurement_interval_ms = 1000u;
 
 const ThermistorReaderConfig k_thermistor_reader_config = {
-    AdcHalChannel::ADC_HAL_CHANNEL_0,  // reference
-    AdcHalChannel::ADC_HAL_CHANNEL_1,  // board divider
-    AdcHalChannel::ADC_HAL_CHANNEL_2,  // water divider
+    AdcHalChannel::ADC_HAL_CHANNEL_7,  // reference (10k/10k divider)
+    {
+        // THERMISTOR_ID_SAMPLE (ch6) - Steinhart-Hart
+        {AdcHalChannel::ADC_HAL_CHANNEL_6, ThermistorModel::THERMISTOR_MODEL_STEINHART_HART, 10000.0f, 0.0f},
+        // THERMISTOR_ID_BLUE_LED (ch4) - Steinhart-Hart
+        {AdcHalChannel::ADC_HAL_CHANNEL_4, ThermistorModel::THERMISTOR_MODEL_STEINHART_HART, 10000.0f, 0.0f},
+        // THERMISTOR_ID_GREEN_LED (ch5) - Steinhart-Hart
+        {AdcHalChannel::ADC_HAL_CHANNEL_5, ThermistorModel::THERMISTOR_MODEL_STEINHART_HART, 10000.0f, 0.0f},
+        // THERMISTOR_ID_GAIN_STAGE (ch2) - Beta
+        {AdcHalChannel::ADC_HAL_CHANNEL_2, ThermistorModel::THERMISTOR_MODEL_BETA, 10000.0f, 0.0f},
+        // THERMISTOR_ID_LED_DRIVE_STAGE (ch3) - Beta
+        {AdcHalChannel::ADC_HAL_CHANNEL_3, ThermistorModel::THERMISTOR_MODEL_BETA, 10000.0f, 0.0f},
+    },
     PIN_THERMISTOR_ON,
-    10000u,    // pullup_resistance_ohms
-    10000u,    // reference_resistance_ohms
-    100000u,   // adc_timeout_us
-    2000u,     // settle_time_us
-    3380.0f,   // board_beta_constant
-    10000.0f,  // board_r25_ohms
-    0.0f,      // board_calibration_offset_c
-    10000.0f,  // water_r25_ohms
-    0.0f,      // water_calibration_offset_c
+    10000u,   // pullup_resistance_ohms
+    10000u,   // reference_resistance_ohms
+    100000u,  // adc_timeout_us
+    2000u,    // settle_time_us
+    3380.0f,  // beta_constant (shared for all Beta-model sensors)
 };
 
 void halt_with_error(const __FlashStringHelper* label, int return_code) {
@@ -90,12 +96,13 @@ void setup() {
 }
 
 void loop() {
-  // Step 1: Sample both thermistors so the printout can display them side-by-side.
-  const TemperatureSample board_sample = capture_temperature(F("board"), ThermistorId::THERMISTOR_ID_BOARD);
-  const TemperatureSample water_sample = capture_temperature(F("water"), ThermistorId::THERMISTOR_ID_WATER);
+  // Step 1: Sample thermistors so the printout can display them side-by-side.
+  const TemperatureSample gain_stage_sample =
+      capture_temperature(F("gain_stage"), ThermistorId::THERMISTOR_ID_GAIN_STAGE);
+  const TemperatureSample sample_thermistor = capture_temperature(F("sample"), ThermistorId::THERMISTOR_ID_SAMPLE);
 
   // Step 2: Emit a tab-delimited row for easier visual comparison in the serial console.
-  print_row(board_sample, water_sample);
+  print_row(gain_stage_sample, sample_thermistor);
 
   // Step 3: Wait before taking the next measurement to limit self-heating.
   delay(k_measurement_interval_ms);
