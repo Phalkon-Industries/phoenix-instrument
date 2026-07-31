@@ -1,5 +1,5 @@
-#include "ad524x.hpp"
 #include "device_setup.hpp"
+#include "digipot_hal.hpp"
 #include "phoenix_settings.hpp"
 #include "unity_config.h"
 #include <Adafruit_LittleFS.h>
@@ -137,15 +137,17 @@ static void test_settings_reset_to_defaults(void) {
 // Test that apply_wiper_codes writes blue to channel 0 and green to channel 1.
 static void test_settings_apply_wiper_codes_writes_to_digipot(void) {
   // Step 1: Initialize digipot driver (requires Wire bus already started).
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
-
+  int result = digipot_blue_initialize(MCP41U83_I2C_ADDRESS, &Wire);
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, result);
+  result = digipot_green_initialize(AD5242_I2C_ADDRESS, 1, &Wire);
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, result);
   // Step 2: Initialize settings module (loads from flash or creates defaults).
   phoenix_settings_deinitialize();
   TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_initialize(&k_test_defaults));
 
   // Step 3: Save distinctive wiper codes to settings so we can verify channel mapping.
-  const uint8_t   test_blue_wiper  = 0x3Au;  // Distinctive value for blue.
-  const uint8_t   test_green_wiper = 0x5Cu;  // Distinctive value for green.
+  const uint16_t  test_blue_wiper  = 0x3Au;  // Distinctive value for blue.
+  const uint16_t  test_green_wiper = 0x5Cu;  // Distinctive value for green.
   PhoenixSettings test_settings    = *phoenix_settings_get();
   test_settings.blue_wiper_code    = test_blue_wiper;
   test_settings.green_wiper_code   = test_green_wiper;
@@ -156,14 +158,14 @@ static void test_settings_apply_wiper_codes_writes_to_digipot(void) {
 
   // Step 5: Read back wiper codes from digipot and verify channel mapping.
   // Blue LED uses digipot channel 0, green LED uses digipot channel 1.
-  uint8_t readback_channel_0 = 0u;
-  uint8_t readback_channel_1 = 0u;
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &readback_channel_0));
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(1u, &readback_channel_1));
+  uint16_t blue_reading;
+  uint16_t green_reading;
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, digipot_blue_read_wiper(&blue_reading));
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, digipot_green_read_wiper(&green_reading));
 
   // Step 6: Assert correct channel mapping: blue->channel 0, green->channel 1.
-  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_blue_wiper, readback_channel_0, "Blue wiper should be written to channel 0");
-  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_green_wiper, readback_channel_1, "Green wiper should be written to channel 1");
+  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_blue_wiper, blue_reading, "Blue wiper should be written to channel 0");
+  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_green_wiper, green_reading, "Green wiper should be written to channel 1");
 
   // Step 7: Clean up digipot state.
   ad524x_deinitialize();
@@ -175,14 +177,14 @@ static void test_settings_apply_wiper_codes_requires_initialization(void) {
   phoenix_settings_deinitialize();
 
   // Step 2: Initialize digipot driver so we can distinguish settings error from digipot error.
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
+  int err = digipot_blue_initialize(MCP41U83_I2C_ADDRESS, &Wire);
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, err);
+  err = digipot_green_initialize(AD5242_I2C_ADDRESS, 1, &Wire);
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, err);
 
   // Step 3: Attempt to apply wiper codes without initializing settings.
   const int result = phoenix_settings_apply_wiper_codes();
   TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_ERR_NOT_INITIALIZED, result);
-
-  // Step 4: Clean up.
-  ad524x_deinitialize();
 }
 
 }  // namespace
@@ -201,7 +203,8 @@ void setup(void) {
 
   // Step 1: Run production bring-up so the analog rails energise and the powered digipot
   // responds on the I2C bus. Settings tests re-initialise phoenix_settings themselves.
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, device_setup_initialize());
+  power_control_prepare_power_domains(&g_device_power_control_config);
+  Wire.begin();
 
   RUN_TEST(test_settings_default_values_on_first_load);
   RUN_TEST(test_settings_save_and_load_round_trip);
