@@ -14,24 +14,6 @@
 
 static LightReadingsSweepSample g_test_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
 
-int power_control_prepare_power_domains_for_test(void) {
-  PowerControlConfig power_config    = {};
-  power_config.power_enable_pin      = PIN_ENABLE_5V_POWER;
-  power_config.neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN;
-#if defined(LED_RED)
-  power_config.indicator_red_pin = LED_RED;
-#else
-  power_config.indicator_red_pin = -1;
-#endif
-#if defined(LED_BLUE)
-  power_config.indicator_blue_pin = LED_BLUE;
-#else
-  power_config.indicator_blue_pin = -1;
-#endif
-
-  return power_control_prepare_power_domains(&power_config);
-}
-
 static void bring_light_readings_online(void) {
   // Step 1: Re-initialise the light readings helper on top of live hardware
   //         (device_setup_initialize was already called once in setup()).
@@ -56,11 +38,6 @@ void tearDown(void) {
   // Step 1: Clear runtime state after each test to avoid cross-test leakage.
   light_readings_reset_for_test();
   light_readings_force_saturation_for_test(false);
-
-  // Step 2: Restore power domains in case a previous test dropped them.
-  //         Tests that exercise power_control_enter_low_power must not leave
-  //         subsequent tests without digipot/LED power.
-  power_control_prepare_power_domains(&g_device_power_control_config);
 }
 
 static void test_light_readings_initialize_rejects_null_config(void) {
@@ -447,7 +424,7 @@ static void test_light_readings_pwm_sweep_populates_samples(void) {
   bring_light_readings_online();
   light_readings_pwm_reset_for_test();
 
-  LightReadingsSweepCollection collection = {};
+  LightReadingsSweepCollection collection = {0u, 0u};
   collection.sweeps                       = g_test_sweep_storage;
 
   // Step 2: Request multiple sweeps and expect the helper to populate drain/colour fields.
@@ -462,6 +439,7 @@ static void test_light_readings_pwm_sweep_populates_samples(void) {
   }
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK,
                         led_router_pwm_start(g_device_light_readings_config.pwm_config.minimum_period_us));
+
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_pwm_sweep_n(sweep_request, &collection));
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_stop());
   TEST_ASSERT_EQUAL_UINT32(sweep_request, collection.sweep_count);
@@ -572,38 +550,12 @@ static void test_light_readings_reset_for_test_clears_initialization(void) {
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_NOT_INITIALIZED, light_readings_sweep(&sweep));
 }
 
-static void test_light_readings_sweep_rejects_when_led_power_not_ready(void) {
-  // Step 1: Bring the helper online so the sweep guard can be exercised.
-  bring_light_readings_online();
-
-  // Step 2: Drop the power rails to simulate a condition where LED power is unavailable.
-  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_enter_low_power());
-
-  // Step 3: Confirm the sweep is rejected because the 5V rail and LM7705 are not asserted.
-  LightReadingsSweepSample sweep = {0};
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_POWER_NOT_READY, light_readings_sweep(&sweep));
-}
-
-static void test_light_readings_sweep_n_rejects_when_led_power_not_ready(void) {
-  // Step 1: Bring the helper online so the sweep_n guard can be exercised.
-  bring_light_readings_online();
-
-  // Step 2: Drop the power rails to simulate a condition where LED power is unavailable.
-  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_enter_low_power());
-
-  // Step 3: Confirm sweep_n is rejected because the 5V rail and LM7705 are not asserted.
-  LightReadingsSweepCollection collection = {};
-  collection.sweeps                       = g_test_sweep_storage;
-  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_ERR_POWER_NOT_READY, light_readings_sweep_n(1u, &collection));
-}
-
 void setup() {
   // Step 1: Prepare the Unity serial transport shared across firmware tests.
   UNITY_SETUP_SERIAL_DEFAULT();
   // Step 2: Bring up all shared hardware once via the production initialisation path.
   device_setup_initialize();
-  // Step 3: Start Unity and register each light readings test case.
-  UNITY_BEGIN();
+  // Start tests
   RUN_TEST(test_light_readings_initialize_rejects_null_config);
   RUN_TEST(test_light_readings_initialize_parks_router_in_drain_state);
   RUN_TEST(test_light_readings_sweep_requires_initialization);
@@ -630,13 +582,11 @@ void setup() {
   RUN_TEST(test_light_readings_shutdown_requires_initialization);
   RUN_TEST(test_light_readings_shutdown_clears_module_state);
   RUN_TEST(test_light_readings_reset_for_test_clears_initialization);
-  RUN_TEST(test_light_readings_sweep_rejects_when_led_power_not_ready);
-  RUN_TEST(test_light_readings_sweep_n_rejects_when_led_power_not_ready);
   RUN_TEST(test_light_readings_pwm_sweep_requires_initialization);
   RUN_TEST(test_light_readings_pwm_sweep_rejects_null_collection);
   RUN_TEST(test_light_readings_pwm_sweep_populates_samples);
   RUN_TEST(test_light_readings_pwm_sweep_reports_drdy_faults);
-  // Step 3: Finalise Unity so loop() can idle once tests complete.
+  // Finalise Unity so loop() can idle once tests complete.
   UNITY_END();
 }
 

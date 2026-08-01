@@ -170,7 +170,7 @@ static int light_readings_wait_for_router_state(uint32_t period_index, LedRouter
     }
 
     if (g_pwm_state.period_counter > period_index) {
-      return LIGHT_READINGS_ERR_TIMEOUT;
+      return LIGHT_READINGS_ERR_MISSED_CYCLE;
     }
 
     if ((timeout_us > 0u) && ((micros() - start_us) >= timeout_us)) {
