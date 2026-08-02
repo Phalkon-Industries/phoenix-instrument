@@ -23,9 +23,10 @@ bool phoenix_benchmark_pot_sweep_format_summary_row(const PhoenixBenchmarkPotSwe
     return false;
   }
 
-  const int written = std::snprintf(buffer, length, "0x%02X %9ld %9ld %5s %5s", values.wiper_code,
-                                    static_cast<long>(values.blue_max_code), static_cast<long>(values.green_max_code),
-                                    values.blue_saturated ? "yes" : "no", values.green_saturated ? "yes" : "no");
+  const int written =
+      std::snprintf(buffer, length, "0x%04X %9ld %9ld %5s %5s", static_cast<unsigned int>(values.wiper_code),
+                    static_cast<long>(values.blue_max_code), static_cast<long>(values.green_max_code),
+                    values.blue_saturated ? "yes" : "no", values.green_saturated ? "yes" : "no");
   if (written <= 0) {
     return false;
   }

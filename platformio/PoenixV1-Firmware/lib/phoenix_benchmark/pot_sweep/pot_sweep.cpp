@@ -1,5 +1,6 @@
 #include "pot_sweep.hpp"
 
+#include "../../digipot_hal/digipot_hal.hpp"
 #include "../../light_readings/light_readings.hpp"
 #include "../../mcp356x/mcp356x.hpp"
 #include "../channel_map/channel_map.hpp"
@@ -390,25 +391,35 @@ PhoenixBenchmarkPotSweepExecutionStatus phoenix_benchmark_pot_sweep_run(
   uint32_t rows_generated = 0u;
   bool     has_warnings   = false;
 
-  bool    blue_recommendation_valid = false;
-  uint8_t blue_recommended_wiper    = 0u;
-  int32_t blue_best_code            = std::numeric_limits<int32_t>::min();
+  bool     blue_recommendation_valid = false;
+  uint16_t blue_recommended_wiper    = 0u;
+  int32_t  blue_best_code            = std::numeric_limits<int32_t>::min();
 
-  bool    green_recommendation_valid = false;
-  uint8_t green_recommended_wiper    = 0u;
-  int32_t green_best_code            = std::numeric_limits<int32_t>::min();
+  bool     green_recommendation_valid = false;
+  uint16_t green_recommended_wiper    = 0u;
+  int32_t  green_best_code            = std::numeric_limits<int32_t>::min();
 
-  for (uint32_t wiper = 0u; wiper <= 0xFFu; ++wiper) {
-    const uint8_t wiper_code = static_cast<uint8_t>(wiper & 0xFFu);
+  for (uint32_t wiper = 0u; wiper < k_phoenix_benchmark_pot_sweep_max_wiper_count; ++wiper) {
+    const uint16_t wiper_code = static_cast<uint16_t>(wiper);
 
-    LightReadingsRuntimeSettings wiper_settings = {
-        .apply_dwell_override = false,
-        .dwell_us             = 0u,
-        .apply_wiper_override = true,
-        .wiper_code           = wiper_code,
-    };
+    // Step 7a: Set the blue wiper (MCP41U83T supports full 10-bit range).
+    int wiper_result = digipot_blue_set_wiper(wiper_code);
+    if (wiper_result != DIGIPOT_HAL_OK) {
+      (void) shutdown_light_readings();
+      return {false,
+              has_warnings,
+              k_error_light_runtime,
+              rows_generated,
+              blue_recommendation_valid,
+              blue_recommended_wiper,
+              green_recommendation_valid,
+              green_recommended_wiper};
+    }
 
-    if (light_readings_modify_settings(&wiper_settings) != LIGHT_READINGS_OK) {
+    // Step 7b: Set the green wiper (AD5242 8-bit), clamping to its max.
+    const uint16_t green_code = (wiper_code <= DIGIPOT_GREEN_MAX_WIPER) ? wiper_code : DIGIPOT_GREEN_MAX_WIPER;
+    wiper_result              = digipot_green_set_wiper(green_code);
+    if (wiper_result != DIGIPOT_HAL_OK) {
       (void) shutdown_light_readings();
       return {false,
               has_warnings,

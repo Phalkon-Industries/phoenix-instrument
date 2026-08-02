@@ -13,11 +13,11 @@ constexpr std::size_t k_phoenix_benchmark_pot_sweep_summary_buffer_bytes = 160u;
  * @brief Values rendered into a single row of the pot sweep summary table.
  */
 struct PhoenixBenchmarkPotSweepSummaryRowValues {
-  uint8_t wiper_code;
-  int32_t blue_max_code;
-  int32_t green_max_code;
-  bool    blue_saturated;
-  bool    green_saturated;
+  uint16_t wiper_code;
+  int32_t  blue_max_code;
+  int32_t  green_max_code;
+  bool     blue_saturated;
+  bool     green_saturated;
 };
 
 /**
