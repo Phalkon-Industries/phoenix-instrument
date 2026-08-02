@@ -27,6 +27,7 @@ void reset_defaults(void) {
 
 void setUp(void) {
   // Step 1. Ensure each test starts from the shared default configuration.
+  device_setup_initialize();
   reset_defaults();
 }
 
@@ -196,8 +197,8 @@ static void test_channel_map_run_executes_full_sequence(void) {
   // Step 2. Execute the channel map run with null printing callbacks.
   PhoenixBenchmarkStateAccumulator                accumulators[3] = {};
   const PhoenixBenchmarkChannelMapOutputCallbacks callbacks       = {
-            .print_line  = nullptr,
-            .print_ready = nullptr,
+      .print_line  = nullptr,
+      .print_ready = nullptr,
   };
 
   const PhoenixBenchmarkChannelMapExecutionStatus status =
@@ -227,8 +228,8 @@ static void test_channel_map_run_reports_errors(void) {
 
   PhoenixBenchmarkStateAccumulator                accumulators[3] = {};
   const PhoenixBenchmarkChannelMapOutputCallbacks callbacks       = {
-            .print_line  = nullptr,
-            .print_ready = nullptr,
+      .print_line  = nullptr,
+      .print_ready = nullptr,
   };
 
   // Step 2. Execute the run and confirm the failure propagates descriptive metadata.
@@ -259,8 +260,8 @@ static void test_channel_map_run_records_saturation_warning(void) {
 
   PhoenixBenchmarkStateAccumulator                accumulators[3] = {};
   const PhoenixBenchmarkChannelMapOutputCallbacks callbacks       = {
-            .print_line  = nullptr,
-            .print_ready = nullptr,
+      .print_line  = nullptr,
+      .print_ready = nullptr,
   };
 
   // Step 2. Execute the run and capture the saturation warning flags.
@@ -284,6 +285,7 @@ static void test_channel_map_run_records_saturation_warning(void) {
 void setup() {
   // Step 1. Initialise Unity's serial bridge for the channel map tests.
   UNITY_SETUP_SERIAL_DEFAULT();
+  device_setup_initialize();
 
   // Step 2. Execute every test case covering parsing and runtime behaviour.
   RUN_TEST(test_parse_command_accepts_plain_channel_map);
