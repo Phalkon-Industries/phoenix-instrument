@@ -18,8 +18,8 @@
  * k_light_calibration_default_config for typical operation.
  */
 struct LightCalibrationConfig {
-  uint8_t  start_wiper;          /**< First wiper code to test (inclusive). */
-  uint8_t  end_wiper;            /**< Last wiper code to test (inclusive). */
+  uint16_t start_wiper;          /**< First wiper code to test (inclusive). */
+  uint16_t end_wiper;            /**< Last wiper code to test (inclusive). */
   uint32_t sweeps_per_wiper;     /**< Number of PWM sweeps per wiper position. */
   int32_t  saturation_threshold; /**< ADC code ceiling; codes at or above are saturated. */
 };
@@ -34,10 +34,10 @@ struct LightCalibrationConfig {
 struct LightCalibrationResult {
   bool        success;          /**< True if calibration completed without errors. */
   bool        blue_valid;       /**< True if a valid (non-saturated) blue wiper was found. */
-  uint8_t     blue_wiper_code;  /**< Recommended blue wiper (highest below threshold). */
+  uint16_t    blue_wiper_code;  /**< Recommended blue wiper (highest below threshold). */
   int32_t     blue_max_code;    /**< Max ADC code observed at recommended blue wiper. */
   bool        green_valid;      /**< True if a valid (non-saturated) green wiper was found. */
-  uint8_t     green_wiper_code; /**< Recommended green wiper (highest below threshold). */
+  uint16_t    green_wiper_code; /**< Recommended green wiper (highest below threshold). */
   int32_t     green_max_code;   /**< Max ADC code observed at recommended green wiper. */
   const char* error_message;    /**< Null on success; points to error string on failure. */
 };
@@ -51,7 +51,7 @@ struct LightCalibrationResult {
  * @param blue_sat   True if blue channel is saturated.
  * @param green_sat  True if green channel is saturated.
  */
-typedef void (*LightCalibrationProgressCallback)(uint8_t wiper_code, int32_t blue_max, int32_t green_max, bool blue_sat,
+typedef void (*LightCalibrationProgressCallback)(uint16_t wiper_code, int32_t blue_max, int32_t green_max, bool blue_sat,
                                                  bool green_sat);
 
 /**
@@ -108,7 +108,7 @@ void light_calibration_set_sweep_runner_for_test(int (*runner)(uint32_t, LightRe
  *
  * @param setter Replacement function, or NULL to restore production implementation.
  */
-void light_calibration_set_wiper_setter_for_test(int (*setter)(uint8_t));
+void light_calibration_set_wiper_setter_for_test(int (*setter)(uint16_t));
 
 /**
  * @brief Restore all production implementations.

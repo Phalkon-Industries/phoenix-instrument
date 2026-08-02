@@ -1,3 +1,4 @@
+#include "digipot_hal.hpp"
 #include "light_calibration.hpp"
 #include "light_readings.hpp"
 #include "unity_config.h"
@@ -9,7 +10,7 @@ namespace {
 
 // ===================== Test Fixtures ============================================
 
-static uint8_t  g_test_wiper_code        = 0u;
+static uint16_t g_test_wiper_code        = 0u;
 static uint32_t g_test_sweep_call_count  = 0u;
 static bool     g_test_sweep_should_fail = false;
 static int32_t  g_test_blue_max_by_wiper[256];
@@ -44,7 +45,7 @@ static int mock_sweep_n(uint32_t sweep_count, LightReadingsSweepCollection* resu
 }
 
 // Mock wiper setter that records the wiper code.
-static int mock_set_wiper(uint8_t wiper_code) {
+static int mock_set_wiper(uint16_t wiper_code) {
   g_test_wiper_code = wiper_code;
   return LIGHT_READINGS_OK;
 }
@@ -90,9 +91,9 @@ static void test_calibration_finds_optimal_below_threshold(void) {
   // Step 4: Verify success and recommended wipers are the highest below threshold.
   TEST_ASSERT_TRUE(result.success);
   TEST_ASSERT_TRUE(result.blue_valid);
-  TEST_ASSERT_EQUAL_UINT8(250u, result.blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT16(250u, result.blue_wiper_code);
   TEST_ASSERT_TRUE(result.green_valid);
-  TEST_ASSERT_EQUAL_UINT8(248u, result.green_wiper_code);
+  TEST_ASSERT_EQUAL_UINT16(248u, result.green_wiper_code);
 
   light_calibration_clear_test_hooks();
 }
@@ -116,12 +117,13 @@ static void test_calibration_handles_all_saturated(void) {
   LightCalibrationConfig config = k_light_calibration_default_config;
   LightCalibrationResult result = light_calibration_run(&config);
 
-  // Step 4: Verify we still get a result but with fallback to 0.
+  // Step 4: Verify we get a result with fallback to max wiper.
+  //         Blue uses 10-bit (MCP41U83T), green uses 8-bit (AD5242).
   TEST_ASSERT_TRUE(result.success);
   TEST_ASSERT_FALSE(result.blue_valid);
-  TEST_ASSERT_EQUAL_UINT8(0u, result.blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT16(DIGIPOT_BLUE_MAX_WIPER, result.blue_wiper_code);
   TEST_ASSERT_FALSE(result.green_valid);
-  TEST_ASSERT_EQUAL_UINT8(0u, result.green_wiper_code);
+  TEST_ASSERT_EQUAL_UINT16(DIGIPOT_GREEN_MAX_WIPER, result.green_wiper_code);
 
   light_calibration_clear_test_hooks();
 }
@@ -172,9 +174,9 @@ static void test_calibration_reports_per_channel_results(void) {
   // Step 4: Verify independent recommendations.
   TEST_ASSERT_TRUE(result.success);
   TEST_ASSERT_TRUE(result.blue_valid);
-  TEST_ASSERT_EQUAL_UINT8(100u, result.blue_wiper_code);
+  TEST_ASSERT_EQUAL_UINT16(100u, result.blue_wiper_code);
   TEST_ASSERT_TRUE(result.green_valid);
-  TEST_ASSERT_EQUAL_UINT8(200u, result.green_wiper_code);
+  TEST_ASSERT_EQUAL_UINT16(200u, result.green_wiper_code);
 
   light_calibration_clear_test_hooks();
 }

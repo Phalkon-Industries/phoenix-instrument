@@ -41,7 +41,7 @@ struct LightReadingsChannelConfig {
   LedRouterState router_state; /**< Router state used when sampling this colour directly. */
   AdcHalChannel  adc_channel;  /**< ADC channel wired to this photodiode. */
   uint32_t       dwell_us;     /**< Delay applied after routing before sampling. */
-  uint8_t        wiper_code;   /**< Digipot wiper code applied during initialisation. */
+  uint16_t       wiper_code;   /**< Digipot wiper code applied during initialisation. */
 };
 
 /**
@@ -74,7 +74,7 @@ struct LightReadingsRuntimeSettings {
   bool     apply_dwell_override; /**< When true, updates both channel dwell timings. */
   uint32_t dwell_us;             /**< Replacement dwell interval expressed in microseconds. */
   bool     apply_wiper_override; /**< When true, applies a new digipot wiper code to both LEDs. */
-  uint8_t  wiper_code;           /**< Digipot wiper code routed to each colour when overriding. */
+  uint16_t wiper_code;           /**< Digipot wiper code routed to each colour when overriding. */
 };
 
 /**

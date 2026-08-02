@@ -184,7 +184,7 @@ static void reset_baseline_cache(void) {
 }
 
 // Progress callback for calibration; prints each wiper result in a table row.
-static void calibration_progress_callback(uint8_t wiper_code, int32_t blue_max, int32_t green_max, bool blue_sat,
+static void calibration_progress_callback(uint16_t wiper_code, int32_t blue_max, int32_t green_max, bool blue_sat,
                                           bool green_sat) {
   char line[80];
   snprintf(line, sizeof(line), "%5u %10ld %10ld   %s   %s", static_cast<unsigned>(wiper_code), (long) blue_max,

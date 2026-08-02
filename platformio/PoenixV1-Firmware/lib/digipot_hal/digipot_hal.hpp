@@ -25,6 +25,10 @@
 #endif
 #define DIGIPOT_HAL_ERR_NOT_IMPLEMENTED PHX_ERR_NOT_IMPLEMENTED
 
+// ===================== Wiper Resolution Limits =================================
+#define DIGIPOT_BLUE_MAX_WIPER 1023u /**< MCP41U83T 10-bit resolution */
+#define DIGIPOT_GREEN_MAX_WIPER 255u /**< AD5242 8-bit resolution */
+
 /**
  * @brief Initialize the blue LED digipot (MCP41U83T).
  *

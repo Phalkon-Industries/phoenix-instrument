@@ -55,10 +55,6 @@ static constexpr int k_indicator_blue_pin = -1;
 #endif
 
 static PowerControlConfig g_power_control_config = {
-    .led_router_config     = &k_led_router_config,
-    .adc_config            = &k_adc_hal_config,
-    .wire_bus              = &Wire,
-    .digipot_address       = AD5242_I2C_ADDRESS,
     .power_enable_pin      = PIN_ENABLE_5V_POWER,
     .neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN,
     .indicator_red_pin     = k_indicator_red_pin,
@@ -101,16 +97,20 @@ static bool configure_digipot_midscale(void) {
 }
 
 static bool program_wipers(uint8_t wiper_code) {
-  // Step 1: Iterate across each digi-pot channel and update its wiper position.
-  for (size_t i = 0; i < k_digipot_channel_count; ++i) {
-    int return_code = ad524x_set_wiper(k_digipot_channels[i], wiper_code);
-    if (return_code != AD524X_OK) {
-      Serial.print(F("ad524x_set_wiper failed on channel "));
-      Serial.print(k_digipot_channels[i]);
-      Serial.print(F(": "));
-      Serial.println(return_code);
-      return false;
-    }
+  // Step 1: Update blue LED digipot (MCP41U83T).
+  int return_code = digipot_blue_set_wiper(wiper_code);
+  if (return_code != DIGIPOT_HAL_OK) {
+    Serial.print(F("digipot_blue_set_wiper failed: "));
+    Serial.println(return_code);
+    return false;
+  }
+
+  // Step 2: Update green LED digipot (AD5242 channel 1).
+  return_code = digipot_green_set_wiper(wiper_code);
+  if (return_code != DIGIPOT_HAL_OK) {
+    Serial.print(F("digipot_green_set_wiper failed: "));
+    Serial.println(return_code);
+    return false;
   }
   return true;
 }
