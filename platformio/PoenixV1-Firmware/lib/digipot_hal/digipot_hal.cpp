@@ -23,7 +23,7 @@ int digipot_blue_read_wiper(uint16_t* code_out) {
 }
 
 // Green LED digipot (AD5242) - 8-bit resolution
-int digipot_green_initialize(uint8_t i2c_address, uint8_t channel, void* wire_bus) {
+int digipot_green_initialize(uint8_t i2c_address, void* wire_bus) {
   return ad524x_initialize(i2c_address, static_cast<TwoWire*>(wire_bus));
 }
 

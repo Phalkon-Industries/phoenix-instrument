@@ -24,7 +24,7 @@ static void test_digipot_blue_set_wiper_rejects_out_of_range_code(void) {
 
 // Test: Green wiper rejects out-of-range code (> 255)
 static void test_digipot_green_set_wiper_rejects_out_of_range_code(void) {
-  int result = digipot_green_initialize(AD5242_I2C_ADDRESS, 1, &Wire);
+  int result = digipot_green_initialize(AD5242_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, result);
 
   // Try to set code beyond 8-bit range
@@ -51,7 +51,7 @@ static void test_digipot_blue_round_trip(void) {
 
 // Test: Green wiper round-trip (write then read)
 static void test_digipot_green_round_trip(void) {
-  int result = digipot_green_initialize(AD5242_I2C_ADDRESS, 1, &Wire);
+  int result = digipot_green_initialize(AD5242_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, result);
 
   // Write a test value
@@ -68,7 +68,7 @@ static void test_digipot_green_round_trip(void) {
 
 // Test: Green shutdown works
 static void test_digipot_green_shutdown_works(void) {
-  int result = digipot_green_initialize(AD5242_I2C_ADDRESS, 1, &Wire);
+  int result = digipot_green_initialize(AD5242_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, result);
 
   // Enable shutdown
@@ -83,7 +83,7 @@ static void test_digipot_green_shutdown_works(void) {
 // Test: Both digipots can coexist on the same I2C bus
 static void test_digipot_both_coexist(void) {
   // Initialize both
-  int result = digipot_green_initialize(AD5242_I2C_ADDRESS, 1, &Wire);
+  int result = digipot_green_initialize(AD5242_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, result);
 
   result = digipot_blue_initialize(MCP41U83_I2C_ADDRESS, &Wire);

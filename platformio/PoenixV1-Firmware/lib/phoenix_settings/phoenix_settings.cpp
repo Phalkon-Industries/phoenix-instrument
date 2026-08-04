@@ -175,7 +175,7 @@ int phoenix_settings_apply_wiper_codes(void) {
   // Step 2: Apply blue wiper code to blue LED digipot (MCP41U83T).
   GUARD(digipot_blue_set_wiper(g_cached_settings.blue_wiper_code));
 
-  // Step 3: Apply green wiper code to green LED digipot (AD5242 channel 1).
+  // Step 3: Apply green wiper code to green LED digipot (AD5242).
   GUARD(digipot_green_set_wiper(g_cached_settings.green_wiper_code));
 
   return PHOENIX_SETTINGS_OK;

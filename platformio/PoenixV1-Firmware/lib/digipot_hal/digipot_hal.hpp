@@ -60,12 +60,13 @@ int digipot_blue_read_wiper(uint16_t* code_out);
 /**
  * @brief Initialize the green LED digipot (AD5242).
  *
+ * The RDAC channel is determined by DIGIPOT_GREEN_AD5242_CHANNEL.
+ *
  * @param i2c_address 7-bit I2C address (0x2C-0x2F).
- * @param channel Channel selection (0 or 1).
  * @param wire_bus Pointer to the I2C bus instance.
  * @return DIGIPOT_HAL_OK on success, or a negative error code.
  */
-int digipot_green_initialize(uint8_t i2c_address, uint8_t channel, void* wire_bus);
+int digipot_green_initialize(uint8_t i2c_address, void* wire_bus);
 
 /**
  * @brief Set the green LED wiper position.

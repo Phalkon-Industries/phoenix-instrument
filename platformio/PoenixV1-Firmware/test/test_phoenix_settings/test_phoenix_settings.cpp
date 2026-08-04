@@ -139,7 +139,7 @@ static void test_settings_apply_wiper_codes_writes_to_digipot(void) {
   // Step 1: Initialize digipot driver (requires Wire bus already started).
   int result = digipot_blue_initialize(MCP41U83_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, result);
-  result = digipot_green_initialize(AD5242_I2C_ADDRESS, 1, &Wire);
+  result = digipot_green_initialize(AD5242_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, result);
   // Step 2: Initialize settings module (loads from flash or creates defaults).
   phoenix_settings_deinitialize();
@@ -157,15 +157,14 @@ static void test_settings_apply_wiper_codes_writes_to_digipot(void) {
   TEST_ASSERT_EQUAL_INT(PHOENIX_SETTINGS_OK, phoenix_settings_apply_wiper_codes());
 
   // Step 5: Read back wiper codes from digipot and verify channel mapping.
-  // Blue LED uses digipot channel 0, green LED uses digipot channel 1.
   uint16_t blue_reading;
   uint16_t green_reading;
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, digipot_blue_read_wiper(&blue_reading));
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, digipot_green_read_wiper(&green_reading));
 
-  // Step 6: Assert correct channel mapping: blue->channel 0, green->channel 1.
-  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_blue_wiper, blue_reading, "Blue wiper should be written to channel 0");
-  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_green_wiper, green_reading, "Green wiper should be written to channel 1");
+  // Step 6: Assert correct channel mapping.
+  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_blue_wiper, blue_reading, "Blue wiper should be written to its channel");
+  TEST_ASSERT_EQUAL_UINT8_MESSAGE(test_green_wiper, green_reading, "Green wiper should be written to its channel");
 
   // Step 7: Clean up digipot state.
   ad524x_deinitialize();
@@ -179,7 +178,7 @@ static void test_settings_apply_wiper_codes_requires_initialization(void) {
   // Step 2: Initialize digipot driver so we can distinguish settings error from digipot error.
   int err = digipot_blue_initialize(MCP41U83_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, err);
-  err = digipot_green_initialize(AD5242_I2C_ADDRESS, 1, &Wire);
+  err = digipot_green_initialize(AD5242_I2C_ADDRESS, &Wire);
   TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, err);
 
   // Step 3: Attempt to apply wiper codes without initializing settings.
