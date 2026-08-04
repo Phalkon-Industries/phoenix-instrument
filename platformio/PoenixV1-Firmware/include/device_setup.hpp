@@ -65,8 +65,8 @@ H   H   NO2 (Drain)
 // ===================== Default Settings ======================================
 // Factory default settings used at boot when flash is empty or corrupt.
 // These values are persisted to flash by phoenix_settings on first run.
-#define PHOENIX_DEFAULT_BLUE_WIPER 0x3FFu   // 1023 — MCP41U83T 10-bit max
-#define PHOENIX_DEFAULT_GREEN_WIPER 0xD3u   // 211 — AD5242 8-bit
+#define PHOENIX_DEFAULT_BLUE_WIPER 0x227u  // 1023 — MCP41U83T 10-bit max
+#define PHOENIX_DEFAULT_GREEN_WIPER 0x0Fu  // 211 — AD5242 8-bit
 
 extern const LedRouterConfig        g_device_led_router_config;
 extern const LedRouterPwmConfig     g_device_led_router_pwm_backend;

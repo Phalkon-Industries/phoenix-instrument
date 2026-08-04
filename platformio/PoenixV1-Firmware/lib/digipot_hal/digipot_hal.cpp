@@ -32,13 +32,13 @@ int digipot_green_set_wiper(uint16_t code) {
   if (code > 255u) {
     return DIGIPOT_HAL_ERR_INVALID_ARG;
   }
-  return ad524x_set_wiper(1, static_cast<uint8_t>(code));  // Channel 1 for green LED
+  return ad524x_set_wiper(DIGIPOT_GREEN_AD5242_CHANNEL, static_cast<uint8_t>(code));  // Channel for green LED
 }
 
 int digipot_green_read_wiper(uint16_t* code_out) {
   GUARD_NONNULL(code_out);
   uint8_t code   = 0;
-  int     result = ad524x_get_wiper(1, &code);  // Channel 1 for green LED
+  int     result = ad524x_get_wiper(DIGIPOT_GREEN_AD5242_CHANNEL, &code);  // Channel for green LED
   if (result == AD524X_OK) {
     *code_out = static_cast<uint16_t>(code);
   }
@@ -46,5 +46,5 @@ int digipot_green_read_wiper(uint16_t* code_out) {
 }
 
 int digipot_green_shutdown(bool enable) {
-  return ad524x_shutdown(1, enable);  // Channel 1 for green LED
+  return ad524x_shutdown(DIGIPOT_GREEN_AD5242_CHANNEL, enable);  // Channel for green LED
 }

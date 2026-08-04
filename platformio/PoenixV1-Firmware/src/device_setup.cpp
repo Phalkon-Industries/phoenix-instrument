@@ -92,7 +92,7 @@ int device_setup_initialize(void) {
 
   // Step 3: Initialize digipot HAL instances for LED current control.
   GUARD(digipot_blue_initialize(MCP41U83_I2C_ADDRESS, &Wire));
-  GUARD(digipot_green_initialize(AD5242_I2C_ADDRESS, 1u, &Wire));
+  GUARD(digipot_green_initialize(AD5242_I2C_ADDRESS, DIGIPOT_GREEN_AD5242_CHANNEL, &Wire));
 
   // Step 4: Initialize settings storage and load calibrated wiper codes from flash.
   GUARD(phoenix_settings_initialize(&k_default_settings));

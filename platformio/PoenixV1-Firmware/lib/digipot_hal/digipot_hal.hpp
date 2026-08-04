@@ -29,6 +29,9 @@
 #define DIGIPOT_BLUE_MAX_WIPER 1023u /**< MCP41U83T 10-bit resolution */
 #define DIGIPOT_GREEN_MAX_WIPER 255u /**< AD5242 8-bit resolution */
 
+// ===================== AD5242 Channel Selection ================================
+#define DIGIPOT_GREEN_AD5242_CHANNEL 0u /**< AD5242 RDAC channel wired to green LED */
+
 /**
  * @brief Initialize the blue LED digipot (MCP41U83T).
  *
