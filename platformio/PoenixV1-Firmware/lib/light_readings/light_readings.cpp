@@ -509,10 +509,17 @@ int light_readings_modify_settings(const LightReadingsRuntimeSettings* settings)
 
   // Step 4: Update the digipot wiper configuration when an override is provided.
   if (settings->apply_wiper_override) {
+    // Step 4a: Blue wiper accepts the full 10-bit range.
     GUARD(digipot_blue_set_wiper(settings->wiper_code));
-    GUARD(digipot_green_set_wiper(settings->wiper_code));
+
+    // Step 4b: Clamp the green wiper to its 8-bit limit since the AD5242
+    //          cannot accept codes beyond 255.
+    const uint16_t green_code =
+        (settings->wiper_code <= DIGIPOT_GREEN_MAX_WIPER) ? settings->wiper_code : DIGIPOT_GREEN_MAX_WIPER;
+    GUARD(digipot_green_set_wiper(green_code));
+
     g_light_config.blue_channel.wiper_code  = settings->wiper_code;
-    g_light_config.green_channel.wiper_code = settings->wiper_code;
+    g_light_config.green_channel.wiper_code = green_code;
   }
 
   return LIGHT_READINGS_OK;

@@ -51,14 +51,15 @@ struct LightCalibrationResult {
  * @param blue_sat   True if blue channel is saturated.
  * @param green_sat  True if green channel is saturated.
  */
-typedef void (*LightCalibrationProgressCallback)(uint16_t wiper_code, int32_t blue_max, int32_t green_max, bool blue_sat,
-                                                 bool green_sat);
+typedef void (*LightCalibrationProgressCallback)(uint16_t wiper_code, int32_t blue_max, int32_t green_max,
+                                                 bool blue_sat, bool green_sat);
 
 /**
  * @brief Default configuration for typical calibration runs.
  *
- * Sweeps all 256 wiper values with 5 PWM sweeps each, using the standard
- * 90% saturation threshold.
+ * Sweeps the full 10-bit blue digipot wiper range with 5 PWM sweeps per step,
+ * using the standard 90% saturation threshold. The green AD5242 digipot
+ * (8-bit) is clamped automatically at the HAL level.
  */
 extern const LightCalibrationConfig k_light_calibration_default_config;
 

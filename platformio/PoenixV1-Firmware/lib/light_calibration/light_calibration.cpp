@@ -18,7 +18,7 @@ static constexpr const char* k_error_stats_failed = "statistics computation fail
 // ===================== Default Configuration ====================================
 const LightCalibrationConfig k_light_calibration_default_config = {
     .start_wiper          = 0u,
-    .end_wiper            = static_cast<uint16_t>(DIGIPOT_GREEN_MAX_WIPER),
+    .end_wiper            = static_cast<uint16_t>(DIGIPOT_BLUE_MAX_WIPER),
     .sweeps_per_wiper     = 5u,
     .saturation_threshold = k_saturation_threshold,
 };
@@ -105,8 +105,8 @@ LightCalibrationResult light_calibration_run_with_progress(const LightCalibratio
   // Step 3: Allocate sweep storage on stack.
   static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
   LightReadingsSweepCollection    sweeps = {
-         .sweep_count = 0u,
-         .sweeps      = sweep_storage,
+      .sweep_count = 0u,
+      .sweeps      = sweep_storage,
   };
 
   // Step 4: Track best (highest non-saturated) wiper per channel.
@@ -117,7 +117,7 @@ LightCalibrationResult light_calibration_run_with_progress(const LightCalibratio
   const SweepRunner sweep_runner = get_sweep_runner();
   const WiperSetter wiper_setter = get_wiper_setter();
 
-for (uint16_t wiper = effective_config.start_wiper; wiper <= effective_config.end_wiper; ++wiper) {
+  for (uint16_t wiper = effective_config.start_wiper; wiper <= effective_config.end_wiper; ++wiper) {
     const uint16_t wiper_code = wiper;
 
     // Step 5a: Set both wipers to current test value.
