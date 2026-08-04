@@ -1,20 +1,21 @@
 #include "adc_hal.hpp"
+#include "device_setup.hpp"
+#include "digipot_hal.hpp"
 #include "led_router.hpp"
-#include "main.hpp"
 #include "power_control.hpp"
 
 struct PhotodiodeSample {
-  uint8_t wiper_code;
-  int32_t channel4_code;
-  int32_t channel5_code;
+  uint16_t wiper_code;
+  int32_t  channel0_code;
+  int32_t  channel1_code;
 };
 
-static const uint32_t k_spi_clock_hz          = 500000UL;
-static const uint32_t k_settle_delay_ms       = 1UL;
-static const uint8_t  k_digipot_channels[]    = {0u, 1u};
-static const size_t   k_digipot_channel_count = sizeof(k_digipot_channels) / sizeof(k_digipot_channels[0]);
-static const uint8_t  k_wiper_codes[]         = {0x00, 0x10, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0, 0xFF};
-static const size_t   k_sample_count          = sizeof(k_wiper_codes) / sizeof(k_wiper_codes[0]);
+static const uint32_t k_settle_delay_ms = 1UL;
+static const uint32_t k_scan_hold_ms    = 500UL;  // Pause at each wiper step so the scope trace settles.
+// Hand-picked wiper codes spanning the blue MCP41U83T's 10-bit range (0-1023).
+// The green AD5242 is clamped to its 8-bit max (255) by program_wipers.
+static const uint16_t k_wiper_codes[] = {0x000, 0x010, 0x020, 0x040, 0x0FF};
+static const size_t   k_sample_count  = sizeof(k_wiper_codes) / sizeof(k_wiper_codes[0]);
 
 static PhotodiodeSample g_samples[k_sample_count];
 
@@ -34,35 +35,6 @@ static const LedRouterConfig k_led_router_config = {
     TS5A3359_IN1,
     TS5A3359_IN2,
     {false, nullptr},
-};
-
-static const AdcHalConfig k_adc_hal_config = {
-    PIN_ADC_CS,
-    k_spi_clock_hz,
-    PIN_ADC_IRQ,
-};
-
-#if defined(LED_RED)
-static constexpr int k_indicator_red_pin = LED_RED;
-#else
-static constexpr int k_indicator_red_pin = -1;
-#endif
-
-#if defined(LED_BLUE)
-static constexpr int k_indicator_blue_pin = LED_BLUE;
-#else
-static constexpr int k_indicator_blue_pin = -1;
-#endif
-
-static PowerControlConfig g_power_control_config = {
-    .led_router_config     = &k_led_router_config,
-    .adc_config            = &k_adc_hal_config,
-    .wire_bus              = &Wire,
-    .digipot_address       = AD5242_I2C_ADDRESS,
-    .power_enable_pin      = PIN_ENABLE_5V_POWER,
-    .neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN,
-    .indicator_red_pin     = k_indicator_red_pin,
-    .indicator_blue_pin    = k_indicator_blue_pin,
 };
 
 static void wait_for_serial(void) {
@@ -86,59 +58,50 @@ static bool select_led_switch_state(LedRouterState state) {
   return true;
 }
 
-static bool configure_digipot_midscale(void) {
-  for (size_t i = 0; i < k_digipot_channel_count; ++i) {
-    const int return_code = ad524x_set_midscale(k_digipot_channels[i]);
-    if (return_code != AD524X_OK) {
-      Serial.print(F("ad524x_set_midscale failed on channel "));
-      Serial.print(k_digipot_channels[i]);
-      Serial.print(F(": "));
-      Serial.println(return_code);
-      return false;
-    }
+static bool program_wipers(uint16_t wiper_code) {
+  // Step 1: Set the blue MCP41U83T wiper (supports full 10-bit range).
+  int return_code = digipot_blue_set_wiper(wiper_code);
+  if (return_code != DIGIPOT_HAL_OK) {
+    Serial.print(F("digipot_blue_set_wiper failed: "));
+    Serial.println(return_code);
+    return false;
+  }
+
+  // Step 2: Set the green AD5242 wiper, clamping to its 8-bit maximum.
+  const uint16_t green_code = (wiper_code <= DIGIPOT_GREEN_MAX_WIPER) ? wiper_code : DIGIPOT_GREEN_MAX_WIPER;
+  return_code               = digipot_green_set_wiper(green_code);
+  if (return_code != DIGIPOT_HAL_OK) {
+    Serial.print(F("digipot_green_set_wiper failed: "));
+    Serial.println(return_code);
+    return false;
   }
   return true;
 }
 
-static bool program_wipers(uint8_t wiper_code) {
-  // Step 1: Iterate across each digi-pot channel and update its wiper position.
-  for (size_t i = 0; i < k_digipot_channel_count; ++i) {
-    int return_code = ad524x_set_wiper(k_digipot_channels[i], wiper_code);
-    if (return_code != AD524X_OK) {
-      Serial.print(F("ad524x_set_wiper failed on channel "));
-      Serial.print(k_digipot_channels[i]);
-      Serial.print(F(": "));
-      Serial.println(return_code);
-      return false;
-    }
-  }
-  return true;
-}
-
-static bool capture_sample(size_t index, uint8_t wiper_code) {
+static bool capture_sample(size_t index, uint16_t wiper_code) {
   // Step 1: Program the wiper code before sampling.
   if (!program_wipers(wiper_code)) {
     return false;
   }
 
   // Step 2: Allow the analog front-end time to settle after the resistance change.
-  delay(k_settle_delay_ms);  // Allow the transimpedance amplifiers to settle after the resistance step.
+  delay(k_settle_delay_ms);
 
   // Step 3: Initialize the sample record with the applied wiper code.
   PhotodiodeSample sample = {};
   sample.wiper_code       = wiper_code;
 
-  // Step 4: Read both ADC channels and record failures for debugging.
-  int return_code = adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_4, 1000000u, &sample.channel4_code);
+  // Step 4: Read photodiode ADC channels (ch0 = blue, ch1 = green).
+  int return_code = adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_0, 1000000u, &sample.channel0_code);
   if (return_code != ADC_HAL_OK) {
-    Serial.print(F("read channel 4 failed: "));
+    Serial.print(F("read channel 0 failed: "));
     Serial.println(return_code);
     return false;
   }
 
-  return_code = adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_5, 1000000u, &sample.channel5_code);
+  return_code = adc_hal_read_single_ended(AdcHalChannel::ADC_HAL_CHANNEL_1, 1000000u, &sample.channel1_code);
   if (return_code != ADC_HAL_OK) {
-    Serial.print(F("read channel 5 failed: "));
+    Serial.print(F("read channel 1 failed: "));
     Serial.println(return_code);
     return false;
   }
@@ -149,8 +112,7 @@ static bool capture_sample(size_t index, uint8_t wiper_code) {
 }
 
 static bool collect_samples(void) {
-  // Step 1: Iterate across the wiper sweep table and capture each sample in sequence.
-  for (size_t i = 0; i < k_sample_count; ++i) {
+  for (size_t i = 0u; i < k_sample_count; ++i) {
     if (!capture_sample(i, k_wiper_codes[i])) {
       return false;
     }
@@ -164,18 +126,24 @@ static void print_samples_inline(const char* label) {
   Serial.print('\t');
 
   // Step 2: Print each recorded sample as a tab-separated tuple.
-  for (size_t i = 0; i < k_sample_count; ++i) {
+  for (size_t i = 0u; i < k_sample_count; ++i) {
     const PhotodiodeSample& sample = g_samples[i];
 
     Serial.print(F("0x"));
-    if (sample.wiper_code < 0x10) {
+    if (sample.wiper_code < 0x10u) {
+      Serial.print(F("000"));
+    }
+    else if (sample.wiper_code < 0x100u) {
+      Serial.print(F("00"));
+    }
+    else if (sample.wiper_code < 0x1000u) {
       Serial.print('0');
     }
     Serial.print(sample.wiper_code, HEX);
     Serial.print(',');
-    Serial.print(sample.channel4_code);
+    Serial.print(sample.channel0_code);
     Serial.print(',');
-    Serial.print(sample.channel5_code);
+    Serial.print(sample.channel1_code);
 
     if ((i + 1u) < k_sample_count) {
       Serial.print('\t');
@@ -185,19 +153,11 @@ static void print_samples_inline(const char* label) {
 }
 
 static void park_hardware(void) {
-  // Step 1: Return each digi-pot to midscale so the next sweep starts uniformly.
-  for (size_t i = 0; i < k_digipot_channel_count; ++i) {
-    (void) ad524x_set_midscale(k_digipot_channels[i]);
-  }
+  // Step 1: Return both digipots to mid-scale so the next sweep starts uniformly.
+  (void) digipot_blue_set_wiper(DIGIPOT_BLUE_MAX_WIPER / 2u);
+  (void) digipot_green_set_wiper(DIGIPOT_GREEN_MAX_WIPER / 2u);
 
-  // Step 2: Ask the ADC to enter standby and log any failure codes.
-  int standby_return_code = adc_hal_enter_standby();
-  if (standby_return_code != ADC_HAL_OK) {
-    Serial.print(F("adc_hal_enter_standby failed: "));
-    Serial.println(standby_return_code);
-  }
-
-  // Step 3: Park the router in the drain state for the next run.
+  // Step 2: Park the router in the drain state for the next run.
   (void) select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN);
 }
 
@@ -206,21 +166,32 @@ void setup() {
   Serial.begin(115200);
   wait_for_serial();
 
-  // Step 2: Power the hardware domains and initialise shared peripherals.
-  const int power_return_code = power_control_prepare_power_domains(&g_power_control_config);
-  if (power_return_code != POWER_CONTROL_OK) {
-    Serial.print(F("power_control_prepare_power_domains failed: "));
-    Serial.println(power_return_code);
-    return;
-  }
-  if (!configure_digipot_midscale()) {
-    return;
-  }
+  // Step 2: Bring up all shared hardware via the production initialisation path.
+  (void) device_setup_initialize();
+
+  // Step 3: Park the router in the drain state before sampling.
   if (!select_led_switch_state(LedRouterState::LED_ROUTER_STATE_DRAIN)) {
     return;
   }
+
   // Step 4: Inform the operator about the sweep output format.
-  Serial.println(F("# Sweep format per line: state\t(wiper_hex,ch4_code,ch5_code)*"));
+  Serial.println(F("# Sweep format per line: state\\t(wiper_hex,ch0_code,ch1_code)*"));
+  Serial.println(F("# Cycle: Drain → Green → Blue, scanning wiper at each state"));
+  Serial.print(F("# Wiper codes: "));
+  for (size_t i = 0u; i < k_sample_count; ++i) {
+    Serial.print(F("0x"));
+    if (k_wiper_codes[i] < 0x10u) {
+      Serial.print(F("00"));
+    }
+    else if (k_wiper_codes[i] < 0x100u) {
+      Serial.print('0');
+    }
+    Serial.print(k_wiper_codes[i], HEX);
+    if ((i + 1u) < k_sample_count) {
+      Serial.print(',');
+    }
+  }
+  Serial.println();
 }
 
 void loop() {

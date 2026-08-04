@@ -1,5 +1,6 @@
 #include "ad524x.hpp"
 #include "device_setup.hpp"
+#include "power_control.hpp"
 #include "unity_config.h"
 #include <Wire.h>
 #include <stddef.h>
@@ -199,9 +200,12 @@ static void test_ad524x_shutdown_toggles_channel_power(void) {
 void setup() {
   // Step 1. Initialise the serial transport shared across Unity tests.
   UNITY_SETUP_SERIAL_DEFAULT();
-  // Step 2. Bring up the I2C peripheral so the driver can communicate.
+  // Step 2. Run production bring-up so the analog rails energise and the powered digipot
+  // responds on the I2C bus.
+  power_control_prepare_power_domains(&g_device_power_control_config);
   Wire.begin();
   // Step 3. Start the Unity harness and execute each suite member.
+  UNITY_BEGIN();
   UNITY_BEGIN();
   RUN_TEST(test_ad524x_is_initialized_reports_false_before_init);
   RUN_TEST(test_ad524x_build_instruction_rejects_invalid_inputs);

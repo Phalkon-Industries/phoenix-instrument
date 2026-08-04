@@ -1,7 +1,8 @@
 #include "light_readings.hpp"
 
-#include "ad524x.hpp"
+#include "digipot_hal.hpp"
 #include "phoenix_guard.hpp"
+#include "power_control.hpp"
 #include <Arduino.h>
 #include <hal/nrf_gpio.h>
 #include <limits.h>
@@ -169,7 +170,7 @@ static int light_readings_wait_for_router_state(uint32_t period_index, LedRouter
     }
 
     if (g_pwm_state.period_counter > period_index) {
-      return LIGHT_READINGS_ERR_TIMEOUT;
+      return LIGHT_READINGS_ERR_MISSED_CYCLE;
     }
 
     if ((timeout_us > 0u) && ((micros() - start_us) >= timeout_us)) {
@@ -366,8 +367,8 @@ int light_readings_initialize(const LightReadingsConfig* config) {
   GUARD(led_router_set_state(config->drain_state));
 
   // Step 3: Program the digi-pot so colour-specific LED drive strengths start from a calibrated baseline.
-  GUARD(ad524x_set_wiper(k_light_readings_blue_channel, config->blue_channel.wiper_code));
-  GUARD(ad524x_set_wiper(k_light_readings_green_channel, config->green_channel.wiper_code));
+  GUARD(digipot_blue_set_wiper(config->blue_channel.wiper_code));
+  GUARD(digipot_green_set_wiper(config->green_channel.wiper_code));
 
   // Step 4: Cache the configuration so subsequent operations can reuse it without copying.
   g_light_config   = *config;
@@ -381,6 +382,11 @@ int light_readings_sweep(LightReadingsSweepSample* sweep_out) {
 
   // Step 2: Ensure the helper has been initialised before manipulating hardware.
   GUARD_INITIALIZED(g_is_initialized);
+
+  // Step 2.5: Verify the 5V rail and LM7705 generator are asserted before routing LEDs.
+  if (!power_control_led_power_is_ready()) {
+    return LIGHT_READINGS_ERR_POWER_NOT_READY;
+  }
 
   bool drain_blue_saturated        = false;
   bool drain_green_saturated       = false;
@@ -444,6 +450,11 @@ int light_readings_sweep_n(uint32_t sweep_count, LightReadingsSweepCollection* r
   // Step 2: Require initialisation before running a sweep sequence.
   GUARD_INITIALIZED(g_is_initialized);
 
+  // Step 2.5: Verify the 5V rail and LM7705 generator are asserted before routing LEDs.
+  if (!power_control_led_power_is_ready()) {
+    return LIGHT_READINGS_ERR_POWER_NOT_READY;
+  }
+
   // Step 3: Ensure callers provide backing storage when requesting one or more sweeps.
   if ((results_out->sweeps == NULL) && (sweep_count > 0u)) {
     return LIGHT_READINGS_ERR_INVALID_ARG;
@@ -498,10 +509,17 @@ int light_readings_modify_settings(const LightReadingsRuntimeSettings* settings)
 
   // Step 4: Update the digipot wiper configuration when an override is provided.
   if (settings->apply_wiper_override) {
-    GUARD(ad524x_set_wiper(k_light_readings_blue_channel, settings->wiper_code));
-    GUARD(ad524x_set_wiper(k_light_readings_green_channel, settings->wiper_code));
+    // Step 4a: Blue wiper accepts the full 10-bit range.
+    GUARD(digipot_blue_set_wiper(settings->wiper_code));
+
+    // Step 4b: Clamp the green wiper to its 8-bit limit since the AD5242
+    //          cannot accept codes beyond 255.
+    const uint16_t green_code =
+        (settings->wiper_code <= DIGIPOT_GREEN_MAX_WIPER) ? settings->wiper_code : DIGIPOT_GREEN_MAX_WIPER;
+    GUARD(digipot_green_set_wiper(green_code));
+
     g_light_config.blue_channel.wiper_code  = settings->wiper_code;
-    g_light_config.green_channel.wiper_code = settings->wiper_code;
+    g_light_config.green_channel.wiper_code = green_code;
   }
 
   return LIGHT_READINGS_OK;
@@ -604,6 +622,11 @@ int light_readings_pwm_sweep_n(uint32_t sweep_count, LightReadingsSweepCollectio
 
   // Step 2: Ensure the helper has been initialised before manipulating hardware.
   GUARD_INITIALIZED(g_is_initialized);
+
+  // Step 2.5: Verify the 5V rail and LM7705 generator are asserted before routing LEDs.
+  if (!power_control_led_power_is_ready()) {
+    return LIGHT_READINGS_ERR_POWER_NOT_READY;
+  }
 
   // Step 3: Require callers to supply backing storage when sweeps are requested.
   if ((results_out->sweeps == NULL) && (sweep_count > 0u)) {

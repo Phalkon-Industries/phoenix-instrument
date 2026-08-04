@@ -1,6 +1,6 @@
 #include "phoenix_settings.hpp"
 
-#include "ad524x.hpp"
+#include "digipot_hal.hpp"
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
 #include <string.h>
@@ -172,11 +172,11 @@ int phoenix_settings_apply_wiper_codes(void) {
   // Step 1: Ensure module is initialized.
   GUARD_INITIALIZED(g_initialized);
 
-  // Step 2: Apply blue wiper code to channel 0 (matches light_readings mapping).
-  GUARD(ad524x_set_wiper(0u, g_cached_settings.blue_wiper_code));
+  // Step 2: Apply blue wiper code to blue LED digipot (MCP41U83T).
+  GUARD(digipot_blue_set_wiper(g_cached_settings.blue_wiper_code));
 
-  // Step 3: Apply green wiper code to channel 1 (matches light_readings mapping).
-  GUARD(ad524x_set_wiper(1u, g_cached_settings.green_wiper_code));
+  // Step 3: Apply green wiper code to green LED digipot (AD5242).
+  GUARD(digipot_green_set_wiper(g_cached_settings.green_wiper_code));
 
   return PHOENIX_SETTINGS_OK;
 }

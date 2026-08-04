@@ -287,8 +287,8 @@ static void test_cold_sweep_run_populates_samples_and_statistics(void) {
 
   static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
   LightReadingsSweepCollection    sweep_collection = {
-         .sweep_count = 0u,
-         .sweeps      = sweep_storage,
+      .sweep_count = 0u,
+      .sweeps      = sweep_storage,
   };
   LightReadingsSweepStats stats = {};
 
@@ -340,8 +340,8 @@ static void test_cold_sweep_run_reports_saturation_warning(void) {
 
   static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
   LightReadingsSweepCollection    sweep_collection = {
-         .sweep_count = 0u,
-         .sweeps      = sweep_storage,
+      .sweep_count = 0u,
+      .sweeps      = sweep_storage,
   };
   LightReadingsSweepStats stats = {};
 
@@ -373,8 +373,8 @@ static void test_cold_sweep_run_reports_error_when_hardware_not_ready(void) {
 
   static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT] = {};
   LightReadingsSweepCollection    sweep_collection                              = {
-                                      .sweep_count = 0u,
-                                      .sweeps      = sweep_storage,
+      .sweep_count = 0u,
+      .sweeps      = sweep_storage,
   };
   LightReadingsSweepStats stats = {};
 
@@ -1990,7 +1990,9 @@ static void test_pot_sweep_run_rejects_insufficient_row_capacity(void) {
 void setup() {
   // Step 1: Initialise Unity's serial logging channel.
   UNITY_SETUP_SERIAL_DEFAULT();
-  // Step 2: Run the full Phoenix benchmark support test suite.
+  // Step 2: Bring up all shared hardware once via the production initialisation path.
+  (void) device_setup_initialize();
+  // Step 3: Run the full Phoenix benchmark support test suite.
   UNITY_BEGIN();
   run_mcp356x_latency_lookup_tests();
   RUN_TEST(test_osr_latency_options_apply_defaults_inherit_initialised_values);

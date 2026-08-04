@@ -134,7 +134,10 @@ static void test_adc_hal_read_channel_irq_returns_sample_from_hardware(void) {
 void setup() {
   // Step 1. Prepare the Unity serial transport shared across firmware tests.
   UNITY_SETUP_SERIAL_DEFAULT();
-  // Step 2. Start Unity and register each ADC HAL test case.
+  // Step 2. Run production bring-up so the analog rails energise and the powered ADC responds.
+  power_control_prepare_power_domains(&g_device_power_control_config);
+
+  // Step 3. Start Unity and register each ADC HAL test case.
   UNITY_BEGIN();
   RUN_TEST(test_adc_hal_initialize_rejects_null_config);
   RUN_TEST(test_adc_hal_initialize_programs_backend_defaults);
@@ -146,7 +149,7 @@ void setup() {
   RUN_TEST(test_adc_hal_read_channel_irq_times_out_without_interrupt);
   RUN_TEST(test_adc_hal_read_channel_irq_returns_sample_when_isr_fires);
   RUN_TEST(test_adc_hal_read_channel_irq_returns_sample_from_hardware);
-  // Step 3. Signal Unity to flush results before yielding to loop().
+  // Step 4. Signal Unity to flush results before yielding to loop().
   UNITY_END();
 }
 

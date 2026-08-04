@@ -965,6 +965,34 @@ static void test_fast_command_wrappers_return_success(void) {
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_enter_standby(NULL));
 }
 
+static void test_read_single_ended_all_channels_return_valid_codes(void) {
+  // Step 1. Apply the default configuration so the helper can trigger conversions.
+  TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
+
+  // Step 2. Sweep every logical channel (0-7) and verify each returns a valid 24-bit code.
+  for (uint8_t channel = 0u; channel <= 7u; ++channel) {
+    int32_t   conversion  = INT32_MIN;
+    const int return_code = mcp356x_read_single_ended_channel(channel, 200000u, &conversion);
+
+    // Step 2a. Print the raw result so the serial log shows per-channel values.
+    UnityPrint("  ch");
+    UnityPrintNumber(channel);
+    UnityPrint("  return_code=");
+    UnityPrintNumber(return_code);
+    UnityPrint("  raw_code=");
+    UnityPrintNumber(conversion);
+    UNITY_OUTPUT_CHAR('\n');
+
+    // Step 2b. Assert the read succeeded.
+    TEST_ASSERT_EQUAL_INT_MESSAGE(MCP356X_OK, return_code, "Channel read should succeed");
+
+    // Step 2c. Verify the conversion fits within the 24-bit signed range.
+    TEST_ASSERT_GREATER_OR_EQUAL_INT32_MESSAGE(-0x800000, conversion, "Code must be >= -2^23");
+    TEST_ASSERT_LESS_OR_EQUAL_INT32_MESSAGE(0x7FFFFF, conversion, "Code must be <= 2^23 - 1");
+    TEST_ASSERT_NOT_EQUAL_INT32_MESSAGE(0x0, conversion, "Code must be != 0");
+  }
+}
+
 static void test_read_single_ended_channel_returns_sample(void) {
   // Step 1. Apply the default configuration so the helper can trigger a conversion.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_apply_default_config());
@@ -1031,7 +1059,7 @@ static void test_read_single_ended_channel_times_out_when_data_stalls(void) {
 void setUp(void) {
   // Step 1. Initialise the MCP356x driver under test before each case runs.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_initialize(PIN_ADC_CS, k_spi_clock_hz));
-
+  TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, device_setup_initialize());
   // Step 2. Reset the ADC so each test begins from the datasheet power-on defaults.
   TEST_ASSERT_EQUAL(MCP356X_OK, mcp356x_full_reset(NULL));
   // Step 3. Wait for the reset sequence to complete before proceeding.
@@ -1050,7 +1078,9 @@ void tearDown(void) {
 void setup() {
   // Step 1. Initialise Unity's serial transport for logging.
   UNITY_SETUP_SERIAL_DEFAULT();
-  // Step 2. Execute each MCP356x test case in sequence.
+  // Step 2. Run production bring-up so the analog rails energise and the powered ADC responds.
+
+  // Step 3. Execute each MCP356x test case in sequence.
   RUN_TEST(test_fast_command_start_status);
   RUN_TEST(test_config0_register_roundtrip);
   RUN_TEST(test_full_reset_restores_por_defaults);
@@ -1098,6 +1128,7 @@ void setup() {
   RUN_TEST(test_gain_helpers_require_initialization);
   RUN_TEST(test_enter_standby_wrapper_matches_fast_command_status);
   RUN_TEST(test_fast_command_wrappers_return_success);
+  RUN_TEST(test_read_single_ended_all_channels_return_valid_codes);
   RUN_TEST(test_read_single_ended_channel_returns_sample);
   RUN_TEST(test_read_single_ended_channel_times_out_when_data_stalls);
   // Step 3. Finalise Unity before handing control back to loop().

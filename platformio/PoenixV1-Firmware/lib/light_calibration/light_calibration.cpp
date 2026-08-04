@@ -1,6 +1,6 @@
 #include "light_calibration.hpp"
 
-#include "ad524x.hpp"
+#include "digipot_hal.hpp"
 #include "light_readings.hpp"
 #include <cstdint>
 #include <cstring>
@@ -18,7 +18,7 @@ static constexpr const char* k_error_stats_failed = "statistics computation fail
 // ===================== Default Configuration ====================================
 const LightCalibrationConfig k_light_calibration_default_config = {
     .start_wiper          = 0u,
-    .end_wiper            = 255u,
+    .end_wiper            = static_cast<uint16_t>(DIGIPOT_BLUE_MAX_WIPER),
     .sweeps_per_wiper     = 5u,
     .saturation_threshold = k_saturation_threshold,
 };
@@ -27,7 +27,7 @@ namespace {
 
 // ===================== Test Hook State ==========================================
 typedef int (*SweepRunner)(uint32_t, LightReadingsSweepCollection*);
-typedef int (*WiperSetter)(uint8_t);
+typedef int (*WiperSetter)(uint16_t);
 
 static SweepRunner g_sweep_runner = nullptr;
 static WiperSetter g_wiper_setter = nullptr;
@@ -40,7 +40,7 @@ static int production_sweep_n(uint32_t sweep_count, LightReadingsSweepCollection
 }
 
 // Sets both digipot wipers to the same value via light_readings runtime settings.
-static int production_set_wiper(uint8_t wiper_code) {
+static int production_set_wiper(uint16_t wiper_code) {
   LightReadingsRuntimeSettings settings = {
       .apply_dwell_override = false,
       .dwell_us             = 0u,
@@ -95,18 +95,18 @@ LightCalibrationResult light_calibration_run_with_progress(const LightCalibratio
   LightCalibrationResult result = {};
   result.success                = false;
   result.blue_valid             = false;
-  result.blue_wiper_code        = 0xFFu;
+  result.blue_wiper_code        = static_cast<uint16_t>(DIGIPOT_BLUE_MAX_WIPER);
   result.blue_max_code          = 0;
   result.green_valid            = false;
-  result.green_wiper_code       = 0xFFu;
+  result.green_wiper_code       = static_cast<uint16_t>(DIGIPOT_GREEN_MAX_WIPER);
   result.green_max_code         = 0;
   result.error_message          = nullptr;
 
   // Step 3: Allocate sweep storage on stack.
   static LightReadingsSweepSample sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
   LightReadingsSweepCollection    sweeps = {
-         .sweep_count = 0u,
-         .sweeps      = sweep_storage,
+      .sweep_count = 0u,
+      .sweeps      = sweep_storage,
   };
 
   // Step 4: Track best (highest non-saturated) wiper per channel.
@@ -117,8 +117,8 @@ LightCalibrationResult light_calibration_run_with_progress(const LightCalibratio
   const SweepRunner sweep_runner = get_sweep_runner();
   const WiperSetter wiper_setter = get_wiper_setter();
 
-  for (uint32_t wiper = effective_config.start_wiper; wiper <= effective_config.end_wiper; ++wiper) {
-    const uint8_t wiper_code = static_cast<uint8_t>(wiper & 0xFFu);
+  for (uint16_t wiper = effective_config.start_wiper; wiper <= effective_config.end_wiper; ++wiper) {
+    const uint16_t wiper_code = wiper;
 
     // Step 5a: Set both wipers to current test value.
     const int wiper_result = wiper_setter(wiper_code);
@@ -181,7 +181,7 @@ void light_calibration_set_sweep_runner_for_test(int (*runner)(uint32_t, LightRe
   g_sweep_runner = runner;
 }
 
-void light_calibration_set_wiper_setter_for_test(int (*setter)(uint8_t)) {
+void light_calibration_set_wiper_setter_for_test(int (*setter)(uint16_t)) {
   g_wiper_setter = setter;
 }
 

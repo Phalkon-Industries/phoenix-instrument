@@ -32,12 +32,8 @@ static constexpr const char* k_error_adc_saturation   = "adc saturation";
 static PhoenixBenchmarkChannelMapDefaults g_defaults             = {};
 static const char*                        g_last_sample_error    = nullptr;
 static PowerControlConfig                 g_power_control_config = {
-                    .led_router_config     = &g_device_led_router_config,
-                    .adc_config            = &g_device_adc_hal_config,
-                    .wire_bus              = &Wire,
-                    .digipot_address       = AD5242_I2C_ADDRESS,
-                    .power_enable_pin      = PIN_ENABLE_5V_POWER,
-                    .neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN,
+    .power_enable_pin      = PIN_ENABLE_5V_POWER,
+    .neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN,
 #if defined(LED_RED)
     .indicator_red_pin = LED_RED,
 #else
@@ -297,13 +293,12 @@ PhoenixBenchmarkChannelMapParseResult phoenix_benchmark_channel_map_parse_comman
 }
 
 void phoenix_benchmark_channel_map_reset_state(void) {
-  // Step 1: Clear persistent defaults and cached hardware status.
+  // Step 1: Clear persistent defaults, cached hardware status, and light-reading state
+  //         so repeated test cases see a cold-started module.  Shared hardware
+  //         (LED router, ADC HAL, digipots) is initialised once by
+  //         device_setup_initialize and must not be reset here.
   g_defaults          = PhoenixBenchmarkChannelMapDefaults{};
   g_last_sample_error = nullptr;
-  power_control_reset_for_test();
   light_readings_reset_for_test();
   light_readings_force_saturation_for_test(false);
-  led_router_reset_for_test();
-  adc_hal_reset_for_test();
-  ad524x_deinitialize();
 }

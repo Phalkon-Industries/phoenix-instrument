@@ -6,8 +6,12 @@
 
 /**
  * @brief Maximum number of discrete wiper positions supported per sweep.
+ *
+ * Set to the blue-channel maximum (MCP41U83T 10-bit) so the sweep covers
+ * the full digipot range.  The green AD5242 (8-bit) saturates at codes
+ * above 255, which the digipot HAL handles at the hardware layer.
  */
-constexpr std::size_t k_phoenix_benchmark_pot_sweep_max_wiper_count = 256u;
+constexpr std::size_t k_phoenix_benchmark_pot_sweep_max_wiper_count = 1024u;
 
 /**
  * @brief Baseline configuration applied to potentiometer sweeps when callers omit overrides.
@@ -57,11 +61,11 @@ struct PhoenixBenchmarkPotSweepParseResult {
  * @brief Per-wiper metrics collected during a sweep execution.
  */
 struct PhoenixBenchmarkPotSweepRowMetrics {
-  uint8_t wiper_code;
-  int32_t blue_max_code;
-  int32_t green_max_code;
-  bool    blue_saturated;
-  bool    green_saturated;
+  uint16_t wiper_code;
+  int32_t  blue_max_code;
+  int32_t  green_max_code;
+  bool     blue_saturated;
+  bool     green_saturated;
 };
 
 /**
@@ -73,9 +77,9 @@ struct PhoenixBenchmarkPotSweepExecutionStatus {
   const char* message;
   uint32_t    rows_generated;
   bool        blue_recommendation_valid;
-  uint8_t     blue_recommended_wiper;
+  uint16_t    blue_recommended_wiper;
   bool        green_recommendation_valid;
-  uint8_t     green_recommended_wiper;
+  uint16_t    green_recommended_wiper;
 };
 
 /**

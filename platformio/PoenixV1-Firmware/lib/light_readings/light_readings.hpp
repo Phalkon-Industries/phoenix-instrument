@@ -16,6 +16,8 @@
 #define LIGHT_READINGS_ERR_PWM_NOT_CONFIGURED (PHX_ERR_MODULE_BASE - 3)
 #define LIGHT_READINGS_ERR_PWM_UNSUPPORTED_INSTANCE (PHX_ERR_MODULE_BASE - 4)
 #define LIGHT_READINGS_ERR_PWM_NOT_RUNNING (PHX_ERR_MODULE_BASE - 5)
+#define LIGHT_READINGS_ERR_POWER_NOT_READY (PHX_ERR_MODULE_BASE - 6)
+#define LIGHT_READINGS_ERR_MISSED_CYCLE (PHX_ERR_MODULE_BASE - 7)
 #define LIGHT_READINGS_ERR_NOT_IMPLEMENTED PHX_ERR_NOT_IMPLEMENTED
 #define LIGHT_READINGS_ERR_TIMEOUT PHX_ERR_TIMEOUT
 
@@ -39,7 +41,7 @@ struct LightReadingsChannelConfig {
   LedRouterState router_state; /**< Router state used when sampling this colour directly. */
   AdcHalChannel  adc_channel;  /**< ADC channel wired to this photodiode. */
   uint32_t       dwell_us;     /**< Delay applied after routing before sampling. */
-  uint8_t        wiper_code;   /**< Digipot wiper code applied during initialisation. */
+  uint16_t       wiper_code;   /**< Digipot wiper code applied during initialisation. */
 };
 
 /**
@@ -72,7 +74,7 @@ struct LightReadingsRuntimeSettings {
   bool     apply_dwell_override; /**< When true, updates both channel dwell timings. */
   uint32_t dwell_us;             /**< Replacement dwell interval expressed in microseconds. */
   bool     apply_wiper_override; /**< When true, applies a new digipot wiper code to both LEDs. */
-  uint8_t  wiper_code;           /**< Digipot wiper code routed to each colour when overriding. */
+  uint16_t wiper_code;           /**< Digipot wiper code routed to each colour when overriding. */
 };
 
 /**

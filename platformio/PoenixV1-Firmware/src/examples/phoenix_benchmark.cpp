@@ -32,8 +32,8 @@ constexpr size_t        k_command_buffer_bytes           = 160u;
 constexpr size_t        k_adc_speed_command_buffer_bytes = 160u;
 constexpr char          k_whitespace_tokens[]            = " \t\r\n";
 
-constexpr AdcHalChannel k_channel_a = AdcHalChannel::ADC_HAL_CHANNEL_4;
-constexpr AdcHalChannel k_channel_b = AdcHalChannel::ADC_HAL_CHANNEL_5;
+constexpr AdcHalChannel k_channel_a = AdcHalChannel::ADC_HAL_CHANNEL_0;
+constexpr AdcHalChannel k_channel_b = AdcHalChannel::ADC_HAL_CHANNEL_1;
 
 const PhoenixBenchmarkChannelMapDefaults k_channel_map_defaults = {
     .sweep_count = 100u,
@@ -951,14 +951,14 @@ bool print_cold_sweep_summary(const LightReadingsSweepStats& stats, uint8_t satu
   for (const auto& row : rows) {
     const LightReadingsStatisticSummary&            summary = *row.summary;
     const PhoenixBenchmarkColdSweepSummaryRowValues values  = {
-         .label              = row.label,
-         .sample_count       = summary.sample_count,
-         .mean               = summary.mean,
-         .standard_deviation = summary.standard_deviation,
-         .min_code           = summary.min_value,
-         .max_code           = summary.max_value,
-         .has_samples        = summary.has_samples,
-         .saturated          = (saturation_mask & row.saturation_bit) != 0u,
+        .label              = row.label,
+        .sample_count       = summary.sample_count,
+        .mean               = summary.mean,
+        .standard_deviation = summary.standard_deviation,
+        .min_code           = summary.min_value,
+        .max_code           = summary.max_value,
+        .has_samples        = summary.has_samples,
+        .saturated          = (saturation_mask & row.saturation_bit) != 0u,
     };
 
     if (!phoenix_benchmark_cold_sweep_format_summary_row(values, line_buffer, sizeof(line_buffer))) {
@@ -1496,7 +1496,10 @@ void setup() {
   Serial.begin(k_serial_baud_rate);
   wait_for_serial();
 
-  // Step 2: Reset cached driver state and seed baseline defaults.
+  // Step 2: Bring up all shared hardware (power, ADC, I2C, digipots, LED router).
+  (void) device_setup_initialize();
+
+  // Step 3: Reset cached driver state and seed baseline defaults.
   phoenix_benchmark_channel_map_reset_state();
   phoenix_benchmark_channel_map_initialise(k_channel_map_defaults);
   phoenix_benchmark_adc_speed_reset_state();

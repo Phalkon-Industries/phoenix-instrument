@@ -179,10 +179,10 @@ static int stub_measure_temperature_success(ThermistorId id, float* temperature_
   }
 
   switch (id) {
-    case ThermistorId::THERMISTOR_ID_BOARD:
+    case ThermistorId::THERMISTOR_ID_GAIN_STAGE:
       *temperature_c_out = g_stub_board_temperature_c;
       return THERMISTOR_READER_OK;
-    case ThermistorId::THERMISTOR_ID_WATER:
+    case ThermistorId::THERMISTOR_ID_SAMPLE:
       *temperature_c_out = g_stub_water_temperature_c;
       return THERMISTOR_READER_OK;
     default:
@@ -196,7 +196,7 @@ static int stub_measure_temperature_error(ThermistorId id, float* temperature_c_
     return THERMISTOR_READER_ERR_INVALID_ARG;
   }
 
-  if (id == ThermistorId::THERMISTOR_ID_BOARD) {
+  if (id == ThermistorId::THERMISTOR_ID_GAIN_STAGE) {
     *temperature_c_out = g_stub_board_temperature_c;
     return THERMISTOR_READER_OK;
   }
@@ -206,9 +206,9 @@ static int stub_measure_temperature_error(ThermistorId id, float* temperature_c_
 }
 
 static const CliMeasurementHooks k_stub_hooks_success           = {stub_sweep_success, stub_compute_success,
-                                                         stub_measure_temperature_success};
+                                                                   stub_measure_temperature_success};
 static const CliMeasurementHooks k_stub_hooks_error             = {stub_sweep_error, stub_compute_success,
-                                                       stub_measure_temperature_success};
+                                                                   stub_measure_temperature_success};
 static const CliMeasurementHooks k_stub_hooks_temperature_error = {stub_sweep_success, stub_compute_success,
                                                                    stub_measure_temperature_error};
 

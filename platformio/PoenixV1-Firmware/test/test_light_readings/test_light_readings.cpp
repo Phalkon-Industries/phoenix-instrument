@@ -1,6 +1,7 @@
 #include "ad524x.hpp"
 #include "adc_hal.hpp"
 #include "device_setup.hpp"
+#include "digipot_hal.hpp"
 #include "led_router.hpp"
 #include "light_readings.hpp"
 #include "power_control.hpp"
@@ -13,59 +14,30 @@
 
 static LightReadingsSweepSample g_test_sweep_storage[LIGHT_READINGS_MAX_SWEEP_COUNT];
 
-int power_control_prepare_power_domains_for_test(void) {
-  PowerControlConfig power_config    = {};
-  power_config.led_router_config     = &g_device_led_router_config;
-  power_config.adc_config            = &g_device_adc_hal_config;
-  power_config.wire_bus              = &Wire;
-  power_config.digipot_address       = AD5242_I2C_ADDRESS;
-  power_config.power_enable_pin      = PIN_ENABLE_5V_POWER;
-  power_config.neg_bias_shutdown_pin = PIN_NEG_BIAS_SHUTDOWN;
-#if defined(LED_RED)
-  power_config.indicator_red_pin = LED_RED;
-#else
-  power_config.indicator_red_pin = -1;
-#endif
-#if defined(LED_BLUE)
-  power_config.indicator_blue_pin = LED_BLUE;
-#else
-  power_config.indicator_blue_pin = -1;
-#endif
-
-  return power_control_prepare_power_domains(&power_config);
-}
-
 static void bring_light_readings_online(void) {
-  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_prepare_power_domains_for_test());
-  // Step 1: Initialise the light readings helper under test.
+  // Step 1: Re-initialise the light readings helper on top of live hardware
+  //         (device_setup_initialize was already called once in setup()).
+  light_readings_reset_for_test();
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&g_device_light_readings_config));
 }
 
 static void bring_light_readings_online_with_config(const LightReadingsConfig* config) {
-  // Step 1: Bring the hardware power domains online using the shared setup helper.
-  TEST_ASSERT_EQUAL_INT(POWER_CONTROL_OK, power_control_prepare_power_domains_for_test());
-
-  // Step 2: Initialise the light readings helper with the provided configuration override.
+  // Step 1: Re-initialise the light readings helper with the provided configuration override.
+  light_readings_reset_for_test();
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(config));
 }
 
 void setUp(void) {
-  // Step 1: Reset state so each test exercises a clean instance of every helper.
-  power_control_reset_for_test();
+  // Step 1: Reset only the light readings helper so each test starts with a clean instance.
+  //         Shared hardware (ADC, LED router, digipots) is initialised once in setup().
   light_readings_reset_for_test();
-  led_router_reset_for_test();
-  adc_hal_reset_for_test();
-  ad524x_deinitialize();
+  light_readings_force_saturation_for_test(false);
 }
 
 void tearDown(void) {
   // Step 1: Clear runtime state after each test to avoid cross-test leakage.
-  power_control_reset_for_test();
   light_readings_reset_for_test();
   light_readings_force_saturation_for_test(false);
-  led_router_reset_for_test();
-  adc_hal_reset_for_test();
-  ad524x_deinitialize();
 }
 
 static void test_light_readings_initialize_rejects_null_config(void) {
@@ -74,11 +46,9 @@ static void test_light_readings_initialize_rejects_null_config(void) {
 }
 
 static void test_light_readings_initialize_parks_router_in_drain_state(void) {
-  Wire.begin();
-  // Step 1: Bring the LED router online so the helper can command states.
-  TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_initialize(&g_device_led_router_config));
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_initialize(AD5242_I2C_ADDRESS, &Wire));
-  // Step 2: Initialise the light readings helper using the canonical configuration.
+  // Step 1: Re-initialise the light readings helper using the canonical configuration
+  //         on top of hardware already brought up by device_setup_initialize in setup().
+  light_readings_reset_for_test();
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_initialize(&g_device_light_readings_config));
 
   // Step 3: Confirm the helper parks the router in the configured drain state.
@@ -87,13 +57,14 @@ static void test_light_readings_initialize_parks_router_in_drain_state(void) {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(g_device_light_readings_config.drain_state), static_cast<int>(observed_state));
 
   // Step 4: Verify wiper codes were applied for both photodiodes.
-  uint8_t blue_wiper = 0u;
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &blue_wiper));
-  TEST_ASSERT_EQUAL_UINT8(g_device_light_readings_config.blue_channel.wiper_code, blue_wiper);
+  //         Blue uses MCP41U83T (10-bit), green uses AD5242 (8-bit).
+  uint16_t blue_wiper = 0u;
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, digipot_blue_read_wiper(&blue_wiper));
+  TEST_ASSERT_EQUAL_UINT16(g_device_light_readings_config.blue_channel.wiper_code, blue_wiper);
 
-  uint8_t green_wiper = 0u;
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(1u, &green_wiper));
-  TEST_ASSERT_EQUAL_UINT8(g_device_light_readings_config.green_channel.wiper_code, green_wiper);
+  uint16_t green_wiper = 0u;
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, digipot_green_read_wiper(&green_wiper));
+  TEST_ASSERT_EQUAL_UINT16(g_device_light_readings_config.green_channel.wiper_code, green_wiper);
 }
 
 static void test_light_readings_sweep_requires_initialization(void) {
@@ -453,7 +424,7 @@ static void test_light_readings_pwm_sweep_populates_samples(void) {
   bring_light_readings_online();
   light_readings_pwm_reset_for_test();
 
-  LightReadingsSweepCollection collection = {};
+  LightReadingsSweepCollection collection = {0u, 0u};
   collection.sweeps                       = g_test_sweep_storage;
 
   // Step 2: Request multiple sweeps and expect the helper to populate drain/colour fields.
@@ -468,6 +439,7 @@ static void test_light_readings_pwm_sweep_populates_samples(void) {
   }
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK,
                         led_router_pwm_start(g_device_light_readings_config.pwm_config.minimum_period_us));
+
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_pwm_sweep_n(sweep_request, &collection));
   TEST_ASSERT_EQUAL_INT(LED_ROUTER_OK, led_router_pwm_stop());
   TEST_ASSERT_EQUAL_UINT32(sweep_request, collection.sweep_count);
@@ -540,12 +512,13 @@ static void test_light_readings_modify_settings_updates_runtime_configuration(vo
   TEST_ASSERT_EQUAL_INT(LIGHT_READINGS_OK, light_readings_modify_settings(&overrides));
 
   // Step 2: Confirm the digi-pot wiper codes were updated for both photodiodes.
-  uint8_t blue_wiper  = 0u;
-  uint8_t green_wiper = 0u;
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(0u, &blue_wiper));
-  TEST_ASSERT_EQUAL_INT(AD524X_OK, ad524x_get_wiper(1u, &green_wiper));
-  TEST_ASSERT_EQUAL_UINT8(overrides.wiper_code, blue_wiper);
-  TEST_ASSERT_EQUAL_UINT8(overrides.wiper_code, green_wiper);
+  //         Blue uses MCP41U83T (10-bit), green uses AD5242 (8-bit).
+  uint16_t blue_wiper  = 0u;
+  uint16_t green_wiper = 0u;
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, digipot_blue_read_wiper(&blue_wiper));
+  TEST_ASSERT_EQUAL_INT(DIGIPOT_HAL_OK, digipot_green_read_wiper(&green_wiper));
+  TEST_ASSERT_EQUAL_UINT16(overrides.wiper_code, blue_wiper);
+  TEST_ASSERT_EQUAL_UINT16(overrides.wiper_code, green_wiper);
 
   // Step 3: Capture the cached configuration so dwell overrides can be validated.
   LightReadingsConfig config_snapshot = {};
@@ -580,8 +553,9 @@ static void test_light_readings_reset_for_test_clears_initialization(void) {
 void setup() {
   // Step 1: Prepare the Unity serial transport shared across firmware tests.
   UNITY_SETUP_SERIAL_DEFAULT();
-  // Step 2: Start Unity and register each light readings test case.
-  UNITY_BEGIN();
+  // Step 2: Bring up all shared hardware once via the production initialisation path.
+  device_setup_initialize();
+  // Start tests
   RUN_TEST(test_light_readings_initialize_rejects_null_config);
   RUN_TEST(test_light_readings_initialize_parks_router_in_drain_state);
   RUN_TEST(test_light_readings_sweep_requires_initialization);
@@ -612,7 +586,7 @@ void setup() {
   RUN_TEST(test_light_readings_pwm_sweep_rejects_null_collection);
   RUN_TEST(test_light_readings_pwm_sweep_populates_samples);
   RUN_TEST(test_light_readings_pwm_sweep_reports_drdy_faults);
-  // Step 3: Finalise Unity so loop() can idle once tests complete.
+  // Finalise Unity so loop() can idle once tests complete.
   UNITY_END();
 }
 

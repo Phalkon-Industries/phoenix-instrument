@@ -24,8 +24,8 @@
  * existing stored data.
  */
 struct PhoenixSettings {
-  uint8_t blue_wiper_code;  /**< Calibrated digipot wiper code for blue LED channel. */
-  uint8_t green_wiper_code; /**< Calibrated digipot wiper code for green LED channel. */
+  uint16_t blue_wiper_code;  /**< Calibrated digipot wiper code for blue LED channel (MCP41U83T, 0-1023). */
+  uint16_t green_wiper_code; /**< Calibrated digipot wiper code for green LED channel (AD5242, 0-255). */
   uint8_t reserved[6];      /**< Reserved for future fields; zeroed on creation. */
 };
 

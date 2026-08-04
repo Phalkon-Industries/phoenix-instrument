@@ -2,6 +2,7 @@
 
 #include "../../adc_hal/adc_hal.hpp"
 #include "../channel_map/channel_map.hpp"
+#include "digipot_hal.hpp"
 #include <Arduino.h>
 #include <cctype>
 #include <cerrno>
@@ -68,10 +69,10 @@ MicrosProvider       g_micros_provider        = ::micros;
 DelayProvider        g_delay_provider         = ::delayMicroseconds;
 
 bool default_wiper_setter(uint8_t blue_code, uint8_t green_code) {
-  if (ad524x_set_wiper(k_digipot_channels[0], blue_code) != AD524X_OK) {
+  if (digipot_blue_set_wiper(blue_code) != DIGIPOT_HAL_OK) {
     return false;
   }
-  if (ad524x_set_wiper(k_digipot_channels[1], green_code) != AD524X_OK) {
+  if (digipot_green_set_wiper(green_code) != DIGIPOT_HAL_OK) {
     return false;
   }
   return true;
