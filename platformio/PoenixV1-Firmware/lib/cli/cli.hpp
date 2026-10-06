@@ -28,7 +28,7 @@ typedef enum CliDispatchResult {
 struct CliMeasurementHooks {
   int (*sweep_n)(uint32_t sweep_count, LightReadingsSweepCollection* results_out);
   int (*compute_stats)(const LightReadingsSweepCollection* sweep_collection, LightReadingsSweepStats* stats_out);
-  int (*measure_temperature)(ThermistorId id, float* temperature_c_out);
+  int (*measure_all_temperatures)(ThermistorSweepResult* result_out);
 };
 
 /**

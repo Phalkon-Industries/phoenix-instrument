@@ -13,12 +13,46 @@ constexpr uint32_t k_baseline_sweep_count     = 500u;
 constexpr double   k_cli_default_salinity_psu = 35.0;
 
 // Firmware version string reported by the 'v' command for host sanity checks.
-constexpr const char* k_firmware_version = "phoenix-cli 1.0.0";
+constexpr const char* k_firmware_version = "phoenix-cli 1.1.0";
+
+// Column labels for every thermistor, indexed by ThermistorId so they line up with ThermistorSweepResult.
+constexpr size_t      k_cli_thermistor_count                           = 5u;
+constexpr const char* k_cli_temperature_labels[k_cli_thermistor_count] = {
+    "temp_sample", "temp_blue", "temp_green", "temp_gain", "temp_drive",
+};
+static_assert(sizeof(ThermistorSweepResult::valid) / sizeof(ThermistorSweepResult::valid[0]) == k_cli_thermistor_count,
+              "CLI temperature labels must cover every thermistor");
+
+constexpr size_t k_cli_sample_thermistor_index = static_cast<size_t>(ThermistorId::THERMISTOR_ID_SAMPLE);
+
+// Channel order shared by the stats table and the CSV columns; see channel_summary_at().
+constexpr size_t      k_cli_channel_count                      = 4u;
+constexpr const char* k_cli_channel_names[k_cli_channel_count] = {"drain_blue", "drain_green", "blue", "green"};
+
+// Per-channel statistic columns emitted in CSV mode, in row order.
+constexpr size_t      k_cli_channel_stat_count                           = 5u;
+constexpr const char* k_cli_channel_stat_names[k_cli_channel_stat_count] = {"mean", "stddev", "min", "max", "drift"};
+
+// Selects how baseline/sample results are printed. Table is the human-readable default; CSV emits one
+// comma-separated record per command under a fixed header so host scripts can log results directly.
+enum class CliOutputMode : uint8_t {
+  CLI_OUTPUT_MODE_TABLE = 0u,
+  CLI_OUTPUT_MODE_CSV,
+};
 
 struct CliCommandEntry {
   const char* name;
   int (*handler)(void);
   const char* help;
+};
+
+// Derived values from a sample run; ph_valid is false when pH could not be computed.
+struct CliSampleResult {
+  double absorbance_blue;
+  double absorbance_green;
+  double r_ratio;
+  double ph_value;
+  bool   ph_valid;
 };
 
 static Print* g_cli_output = &Serial;
@@ -27,17 +61,26 @@ static void cli_emit_error(const char* label, int error_code);
 
 #define CLI_GUARD_EMIT(label, expression) GUARD_EMIT(cli_emit_error, label, expression)
 
-static int  handle_help(void);
-static int  handle_version(void);
-static int  handle_baseline(void);
-static int  handle_sample(void);
-static int  handle_calibrate(void);
-static void reset_baseline_cache(void);
+static int                                  handle_help(void);
+static int                                  handle_version(void);
+static int                                  handle_baseline(void);
+static int                                  handle_sample(void);
+static int                                  handle_calibrate(void);
+static int                                  handle_csv_mode(void);
+static int                                  handle_table_mode(void);
+static void                                 reset_baseline_cache(void);
+static char                                 cli_field_separator(void);
+static void                                 emit_status(const char* message);
+static const LightReadingsStatisticSummary& channel_summary_at(const LightReadingsSweepStats& stats, size_t index);
+static void                                 emit_channel_stats(const LightReadingsSweepStats& stats);
 static void emit_channel_summary(const char* channel_name, const LightReadingsStatisticSummary& summary);
-static void emit_baseline_success(const LightReadingsSweepStats& stats);
-static void emit_sample_success(const LightReadingsSweepStats& stats, float sample_temperature_c,
-                                float enclosure_temperature_c, double absorbance_blue, double absorbance_green,
-                                double r_ratio, double ph_value, bool ph_valid);
+static void emit_temperatures(const ThermistorSweepResult& temperatures);
+static void emit_baseline_success(const LightReadingsSweepStats& stats, const ThermistorSweepResult& temperatures);
+static void emit_sample_success(const LightReadingsSweepStats& stats, const ThermistorSweepResult& temperatures,
+                                const CliSampleResult& result);
+static void emit_csv_header(void);
+static void emit_csv_row(const char* record_type, const LightReadingsSweepStats& stats,
+                         const ThermistorSweepResult& temperatures, const CliSampleResult* result);
 static int  compute_channel_absorbance(const LightReadingsStatisticSummary& reference_channel,
                                        const LightReadingsStatisticSummary& reference_drain,
                                        const LightReadingsStatisticSummary& sample_channel,
@@ -47,11 +90,17 @@ static int  compute_absorbance_pair(const LightReadingsSweepStats& baseline_stat
                                     double* absorbance_green_out);
 
 constexpr CliCommandEntry k_cli_commands[] = {
-    {"b", handle_baseline, "Capture baseline sweep"}, {"s", handle_sample, "Capture sample sweep + pH"},
-    {"c", handle_calibrate, "Run light calibration"}, {"v", handle_version, "Print firmware version"},
-    {"help", handle_help, "List commands"},           {NULL, NULL, NULL},
+    {"b", handle_baseline, "Capture baseline sweep"},
+    {"s", handle_sample, "Capture sample sweep + pH"},
+    {"c", handle_calibrate, "Run light calibration"},
+    {"v", handle_version, "Print firmware version"},
+    {"csv", handle_csv_mode, "Print b/s results as CSV records (emits header)"},
+    {"table", handle_table_mode, "Print b/s results as tables (default)"},
+    {"help", handle_help, "List commands"},
+    {NULL, NULL, NULL},
 };
 
+static CliOutputMode           g_cli_output_mode      = CliOutputMode::CLI_OUTPUT_MODE_TABLE;
 static bool                    g_cli_ready            = false;
 static bool                    g_ready_banner_sent    = false;
 static bool                    g_serial_was_connected = false;
@@ -63,7 +112,7 @@ static LightReadingsSweepStats g_baseline_stats       = {0u,
                                                          {0u, 0.0, 0.0, 0, 0, 0.0, false}};
 
 static const CliMeasurementHooks k_default_measurement_hooks = {
-    light_readings_pwm_sweep_n, light_readings_compute_sweep_stats, thermistor_reader_measure_celsius};
+    light_readings_pwm_sweep_n, light_readings_compute_sweep_stats, thermistor_reader_measure_all};
 
 static CliMeasurementHooks g_measurement_hooks = k_default_measurement_hooks;
 
@@ -95,12 +144,30 @@ static int handle_version(void) {
     g_cli_output->println("settings: not initialized");
   }
 
+  // Step 2: Report the active output mode so hosts can confirm how b/s results will be formatted.
+  g_cli_output->println((g_cli_output_mode == CliOutputMode::CLI_OUTPUT_MODE_CSV) ? "output_mode:      csv" :
+                                                                                    "output_mode:      table");
+
+  return PHX_OK;
+}
+
+// Switches b/s output to CSV and prints the header so a host log starts with column names.
+static int handle_csv_mode(void) {
+  g_cli_output_mode = CliOutputMode::CLI_OUTPUT_MODE_CSV;
+  emit_csv_header();
+  return PHX_OK;
+}
+
+// Restores the human-readable table output for b/s.
+static int handle_table_mode(void) {
+  g_cli_output_mode = CliOutputMode::CLI_OUTPUT_MODE_TABLE;
+  g_cli_output->println("output_mode: table");
   return PHX_OK;
 }
 
 // Captures a baseline sweep and caches the resulting statistics for later samples.
 static int handle_baseline(void) {
-  g_cli_output->println("Taking baseline...");
+  emit_status("Taking baseline...");
   delay(1);  // needed for print to happen when it needs to and not after measurement is finished. I think compiler
              // overoptimizes
   LightReadingsSweepCollection sweeps = {0u, g_light_readings_sweep_storage};
@@ -109,9 +176,13 @@ static int handle_baseline(void) {
   LightReadingsSweepStats stats = {};
   CLI_GUARD_EMIT("stats", g_measurement_hooks.compute_stats(&sweeps, &stats));
 
+  // Record every thermistor so LED and board temperatures can be compared against the sample run.
+  ThermistorSweepResult temperatures = {};
+  CLI_GUARD_EMIT("temperature", g_measurement_hooks.measure_all_temperatures(&temperatures));
+
   g_baseline_stats = stats;
   g_baseline_valid = true;
-  emit_baseline_success(g_baseline_stats);
+  emit_baseline_success(g_baseline_stats, temperatures);
   return PHX_OK;
 }
 
@@ -123,7 +194,7 @@ static int handle_sample(void) {
     return PHX_ERR_NOT_INITIALIZED;
   }
 
-  g_cli_output->println("Taking sample...");
+  emit_status("Taking sample...");
   delay(1);  // needed for print to happen when it needs to and not after measurement is finished. I think compiler
              // overoptimizes
   LightReadingsSweepCollection sweeps       = {0u, g_light_readings_sweep_storage};
@@ -135,43 +206,36 @@ static int handle_sample(void) {
   // Step 3: Compute per-channel statistics for downstream absorbance math.
   CLI_GUARD_EMIT("stats", g_measurement_hooks.compute_stats(&sweeps, &sample_stats));
 
-  // Step 4: Record enclosure temperature to help operators track thermal drift.
-  float enclosure_temperature_c = 0.0f;
-  CLI_GUARD_EMIT("temperature_board", g_measurement_hooks.measure_temperature(ThermistorId::THERMISTOR_ID_GAIN_STAGE,
-                                                                              &enclosure_temperature_c));
+  // Step 4: Sweep every thermistor in one rail pulse. The sample thermistor feeds the pH computation; the LED,
+  //         gain-stage, and LED-drive-stage readings let operators track thermal drift. Individual sensor failures
+  //         are reported per column instead of aborting the sample.
+  ThermistorSweepResult temperatures = {};
+  CLI_GUARD_EMIT("temperature", g_measurement_hooks.measure_all_temperatures(&temperatures));
 
-  // Step 5: Measure the sample probe temperature for the pH computation.
-  float sample_temperature_c = 0.0f;
-  CLI_GUARD_EMIT("temperature_water",
-                 g_measurement_hooks.measure_temperature(ThermistorId::THERMISTOR_ID_SAMPLE, &sample_temperature_c));
+  // Step 5: Compute absorbance on both wavelengths using the cached baseline reference.
+  CliSampleResult result = {0.0, 0.0, 0.0, 0.0, false};
+  CLI_GUARD_EMIT("absorbance", compute_absorbance_pair(g_baseline_stats, sample_stats, &result.absorbance_blue,
+                                                       &result.absorbance_green));
 
-  // Step 6: Compute absorbance on both wavelengths using the cached baseline reference.
-  double absorbance_blue  = 0.0;
-  double absorbance_green = 0.0;
-  CLI_GUARD_EMIT("absorbance",
-                 compute_absorbance_pair(g_baseline_stats, sample_stats, &absorbance_blue, &absorbance_green));
-
-  // Step 7: Convert the absorbance pair into the r-ratio expected by the pH library.
+  // Step 6: Convert the absorbance pair into the r-ratio expected by the pH library.
   // If this fails (e.g. negative ratio), we still emit the measurements for diagnostics.
-  double r_ratio        = 0.0;
-  bool   ph_valid       = true;
-  int    r_ratio_result = ph_equations_calc_r_ratio(absorbance_green, absorbance_blue, &r_ratio);
+  result.ph_valid    = temperatures.valid[k_cli_sample_thermistor_index];
+  int r_ratio_result = ph_equations_calc_r_ratio(result.absorbance_green, result.absorbance_blue, &result.r_ratio);
   if (r_ratio_result != PH_EQUATIONS_OK) {
-    ph_valid = false;
+    result.ph_valid = false;
   }
 
-  // Step 8: Use the r-ratio plus temperature and salinity to produce the final pH reading.
-  double ph_value = 0.0;
-  if (ph_valid) {
-    int ph_result = ph_equations_compute_ph(r_ratio, static_cast<double>(sample_temperature_c),
-                                            k_cli_default_salinity_psu, &ph_value);
+  // Step 7: Use the r-ratio plus sample temperature and salinity to produce the final pH reading.
+  if (result.ph_valid) {
+    const double sample_temperature_c = static_cast<double>(temperatures.temperatures_c[k_cli_sample_thermistor_index]);
+    int          ph_result =
+        ph_equations_compute_ph(result.r_ratio, sample_temperature_c, k_cli_default_salinity_psu, &result.ph_value);
     if (ph_result != PH_EQUATIONS_OK) {
-      ph_valid = false;
+      result.ph_valid = false;
     }
   }
 
-  emit_sample_success(sample_stats, sample_temperature_c, enclosure_temperature_c, absorbance_blue, absorbance_green,
-                      r_ratio, ph_value, ph_valid);
+  emit_sample_success(sample_stats, temperatures, result);
 
   return PHX_OK;
 }
@@ -262,30 +326,155 @@ static int handle_calibrate(void) {
   return PHX_OK;
 }
 
+// Returns the field separator for the active output mode so error lines match the surrounding stream.
+static char cli_field_separator(void) {
+  return (g_cli_output_mode == CliOutputMode::CLI_OUTPUT_MODE_CSV) ? ',' : '\t';
+}
+
+// Prints a progress message in table mode only, keeping the CSV stream limited to header/records/errors.
+static void emit_status(const char* message) {
+  if (g_cli_output_mode == CliOutputMode::CLI_OUTPUT_MODE_TABLE) {
+    g_cli_output->println(message);
+  }
+}
+
+// Returns channel summaries in k_cli_channel_names order.
+static const LightReadingsStatisticSummary& channel_summary_at(const LightReadingsSweepStats& stats, size_t index) {
+  switch (index) {
+    case 0u:
+      return stats.drain_blue;
+    case 1u:
+      return stats.drain_green;
+    case 2u:
+      return stats.blue;
+    default:
+      return stats.green;
+  }
+}
+
+// Emits the per-channel stats table shared by baseline and sample output.
+static void emit_channel_stats(const LightReadingsSweepStats& stats) {
+  char line[120];
+  snprintf(line, sizeof(line), "%-12s %14s %10s %10s %10s %10s", "channel", "mean", "stddev", "min", "max", "drift");
+  g_cli_output->println(line);
+
+  for (size_t index = 0u; index < k_cli_channel_count; ++index) {
+    emit_channel_summary(k_cli_channel_names[index], channel_summary_at(stats, index));
+  }
+}
+
 // Emits fixed-width summary stats for a single channel to ensure columns align.
 static void emit_channel_summary(const char* channel_name, const LightReadingsStatisticSummary& summary) {
   char line[120];
-  snprintf(line, sizeof(line), "%-12s %5lu %14.2f %10.2f %10ld %10ld %10.4f", channel_name,
-           (unsigned long) summary.sample_count, summary.mean, summary.standard_deviation, (long) summary.min_value,
-           (long) summary.max_value, summary.drift_slope);
+  snprintf(line, sizeof(line), "%-12s %14.2f %10.2f %10ld %10ld %10.4f", channel_name, summary.mean,
+           summary.standard_deviation, (long) summary.min_value, (long) summary.max_value, summary.drift_slope);
   g_cli_output->println(line);
 }
 
-// Emits a baseline success row with a header for readability.
-static void emit_baseline_success(const LightReadingsSweepStats& stats) {
-  g_cli_output->println("channel      count           mean     stddev        min        max      drift");
+// Emits every thermistor reading in °C as a header row plus a value row; failed sensors print ERR.
+static void emit_temperatures(const ThermistorSweepResult& temperatures) {
+  char cell[16];
+  for (size_t index = 0u; index < k_cli_thermistor_count; ++index) {
+    snprintf(cell, sizeof(cell), "%12s", k_cli_temperature_labels[index]);
+    g_cli_output->print(cell);
+  }
+  g_cli_output->println();
 
-  emit_channel_summary("drain_blue", stats.drain_blue);
-  emit_channel_summary("drain_green", stats.drain_green);
-  emit_channel_summary("blue", stats.blue);
-  emit_channel_summary("green", stats.green);
+  for (size_t index = 0u; index < k_cli_thermistor_count; ++index) {
+    if (temperatures.valid[index]) {
+      snprintf(cell, sizeof(cell), "%12.2f", static_cast<double>(temperatures.temperatures_c[index]));
+    }
+    else {
+      snprintf(cell, sizeof(cell), "%12s", "ERR");
+    }
+    g_cli_output->print(cell);
+  }
+  g_cli_output->println();
 }
 
-// Emits the shared error format used by GUARD_EMIT callers.
+// Emits baseline channel stats followed by the temperatures captured alongside them.
+static void emit_baseline_success(const LightReadingsSweepStats& stats, const ThermistorSweepResult& temperatures) {
+  if (g_cli_output_mode == CliOutputMode::CLI_OUTPUT_MODE_CSV) {
+    emit_csv_row("baseline", stats, temperatures, NULL);
+    return;
+  }
+
+  emit_channel_stats(stats);
+  g_cli_output->println();
+  emit_temperatures(temperatures);
+}
+
+// Emits the CSV header shared by baseline and sample records. Columns: record type, then mean/stddev/min/max/drift
+// per channel, then every thermistor, then absorbance/r-ratio/pH (left empty on baseline records).
+static void emit_csv_header(void) {
+  g_cli_output->print("type");
+  for (size_t channel = 0u; channel < k_cli_channel_count; ++channel) {
+    for (size_t stat = 0u; stat < k_cli_channel_stat_count; ++stat) {
+      g_cli_output->print(',');
+      g_cli_output->print(k_cli_channel_names[channel]);
+      g_cli_output->print('_');
+      g_cli_output->print(k_cli_channel_stat_names[stat]);
+    }
+  }
+  for (size_t index = 0u; index < k_cli_thermistor_count; ++index) {
+    g_cli_output->print(',');
+    g_cli_output->print(k_cli_temperature_labels[index]);
+  }
+  g_cli_output->println(",abs_blue,abs_green,r_ratio,ph");
+}
+
+// Emits one CSV record matching emit_csv_header(). Missing values (no samples, failed thermistor, baseline-only
+// records, or an invalid pH) are written as empty fields so CSV readers treat them as null.
+static void emit_csv_row(const char* record_type, const LightReadingsSweepStats& stats,
+                         const ThermistorSweepResult& temperatures, const CliSampleResult* result) {
+  char cell[96];
+  g_cli_output->print(record_type);
+
+  for (size_t channel = 0u; channel < k_cli_channel_count; ++channel) {
+    const LightReadingsStatisticSummary& summary = channel_summary_at(stats, channel);
+    if (summary.has_samples) {
+      snprintf(cell, sizeof(cell), ",%.2f,%.2f,%ld,%ld,%.4f", summary.mean, summary.standard_deviation,
+               (long) summary.min_value, (long) summary.max_value, summary.drift_slope);
+    }
+    else {
+      snprintf(cell, sizeof(cell), ",,,,,");
+    }
+    g_cli_output->print(cell);
+  }
+
+  for (size_t index = 0u; index < k_cli_thermistor_count; ++index) {
+    if (temperatures.valid[index]) {
+      snprintf(cell, sizeof(cell), ",%.2f", static_cast<double>(temperatures.temperatures_c[index]));
+    }
+    else {
+      snprintf(cell, sizeof(cell), ",");
+    }
+    g_cli_output->print(cell);
+  }
+
+  if (result == NULL) {
+    g_cli_output->println(",,,,");
+    return;
+  }
+
+  snprintf(cell, sizeof(cell), ",%.6f,%.6f,%.6f", result->absorbance_blue, result->absorbance_green, result->r_ratio);
+  g_cli_output->print(cell);
+  if (result->ph_valid) {
+    snprintf(cell, sizeof(cell), ",%.4f", result->ph_value);
+  }
+  else {
+    snprintf(cell, sizeof(cell), ",");
+  }
+  g_cli_output->println(cell);
+}
+
+// Emits the shared error format used by GUARD_EMIT callers; comma-separated in CSV mode, tab-separated otherwise.
 static void cli_emit_error(const char* label, int error_code) {
-  g_cli_output->print("error\t");
+  const char separator = cli_field_separator();
+  g_cli_output->print("error");
+  g_cli_output->print(separator);
   g_cli_output->print(label);
-  g_cli_output->print("\t");
+  g_cli_output->print(separator);
   g_cli_output->println(error_code);
 }
 
@@ -327,31 +516,32 @@ static int compute_absorbance_pair(const LightReadingsSweepStats& baseline_stats
                                     sample_stats.drain_green, absorbance_green_out);
 }
 
-// Emits the full sample success payload with headers for readability.
-static void emit_sample_success(const LightReadingsSweepStats& stats, float sample_temperature_c,
-                                float enclosure_temperature_c, double absorbance_blue, double absorbance_green,
-                                double r_ratio, double ph_value, bool ph_valid) {
-  g_cli_output->println("channel      count           mean     stddev        min        max      drift");
+// Emits the full sample success payload with headers for readability. The pH row is always last so hosts can
+// read the final result from the last line.
+static void emit_sample_success(const LightReadingsSweepStats& stats, const ThermistorSweepResult& temperatures,
+                                const CliSampleResult& result) {
+  if (g_cli_output_mode == CliOutputMode::CLI_OUTPUT_MODE_CSV) {
+    emit_csv_row("sample", stats, temperatures, &result);
+    return;
+  }
 
-  emit_channel_summary("drain_blue", stats.drain_blue);
-  emit_channel_summary("drain_green", stats.drain_green);
-  emit_channel_summary("blue", stats.blue);
-  emit_channel_summary("green", stats.green);
-
+  emit_channel_stats(stats);
   g_cli_output->println();
-  g_cli_output->println("temp_sample  temp_encl   abs_blue   abs_green    r_ratio        pH");
-  char result_line[120];
-  if (ph_valid) {
-    snprintf(result_line, sizeof(result_line), "%11.2f %10.2f %10.6f %11.6f %10.6f %9.4f",
-             static_cast<double>(sample_temperature_c), static_cast<double>(enclosure_temperature_c), absorbance_blue,
-             absorbance_green, r_ratio, ph_value);
+  emit_temperatures(temperatures);
+  g_cli_output->println();
+
+  char line[120];
+  snprintf(line, sizeof(line), "%12s%12s%12s%12s", "abs_blue", "abs_green", "r_ratio", "pH");
+  g_cli_output->println(line);
+  if (result.ph_valid) {
+    snprintf(line, sizeof(line), "%12.6f%12.6f%12.6f%12.4f", result.absorbance_blue, result.absorbance_green,
+             result.r_ratio, result.ph_value);
   }
   else {
-    snprintf(result_line, sizeof(result_line), "%11.2f %10.2f %10.6f %11.6f %10.6f     ERROR",
-             static_cast<double>(sample_temperature_c), static_cast<double>(enclosure_temperature_c), absorbance_blue,
-             absorbance_green, r_ratio);
+    snprintf(line, sizeof(line), "%12.6f%12.6f%12.6f%12s", result.absorbance_blue, result.absorbance_green,
+             result.r_ratio, "ERROR");
   }
-  g_cli_output->println(result_line);
+  g_cli_output->println(line);
 }
 }  // namespace
 
@@ -367,13 +557,18 @@ CliDispatchResult cli_dispatch_command(const char* command_token) {
     }
   }
 
-  g_cli_output->print("error\tunknown_command\t");
+  const char separator = cli_field_separator();
+  g_cli_output->print("error");
+  g_cli_output->print(separator);
+  g_cli_output->print("unknown_command");
+  g_cli_output->print(separator);
   g_cli_output->println(command_token);
   return CLI_DISPATCH_UNKNOWN_COMMAND;
 }
 
 void cli_initialize(void) {
   reset_baseline_cache();
+  g_cli_output_mode   = CliOutputMode::CLI_OUTPUT_MODE_TABLE;
   g_measurement_hooks = k_default_measurement_hooks;
   g_cli_ready         = true;
   g_ready_banner_sent = false;
@@ -426,7 +621,7 @@ void cli_poll(void) {
 
   // Step 2: Send ready banner when Serial connection is established.
   if (!g_ready_banner_sent && serial_connected) {
-    g_cli_output->println("phoenix-cli ready (commands: b, s, c, v, help)");
+    g_cli_output->println("phoenix-cli ready (commands: b, s, c, v, csv, table, help)");
     g_ready_banner_sent = true;
   }
 

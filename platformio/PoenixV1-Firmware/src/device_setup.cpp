@@ -115,7 +115,7 @@ int device_setup_initialize(void) {
   // Step 10: Bring the light readings helper online so batches can run immediately.
   GUARD(light_readings_initialize(&g_device_light_readings_config));
 
-  // Step 11: Stage the thermistor reader so sample commands can capture enclosure and water temperatures.
+  // Step 11: Stage the thermistor reader so baseline/sample commands can capture every board temperature.
   GUARD(thermistor_reader_initialize(&g_device_thermistor_reader_config));
 
   g_device_setup_ready = true;
